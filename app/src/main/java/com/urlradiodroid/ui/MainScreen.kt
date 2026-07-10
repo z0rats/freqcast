@@ -10,8 +10,9 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import androidx.core.content.ContextCompat
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,25 +22,30 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -51,17 +57,22 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.urlradiodroid.R
-import com.urlradiodroid.data.AppDatabase
 import com.urlradiodroid.data.RadioStation
+import com.urlradiodroid.data.RadioStationRepository
+import com.urlradiodroid.data.StationBackupJson
 import com.urlradiodroid.ui.components.NowPlayingBottomBar
 import com.urlradiodroid.ui.components.PlaybackStatus
 import com.urlradiodroid.ui.components.StationItem
@@ -70,39 +81,50 @@ import com.urlradiodroid.ui.theme.background_gradient_end
 import com.urlradiodroid.ui.theme.background_gradient_mid
 import com.urlradiodroid.ui.theme.background_gradient_start
 import com.urlradiodroid.ui.theme.card_surface
+import com.urlradiodroid.ui.theme.card_surface_active
 import com.urlradiodroid.ui.theme.text_secondary
+import com.urlradiodroid.util.StationShare
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private val _playbackService = mutableStateOf<RadioPlaybackService?>(null)
+    private val playbackServiceState = mutableStateOf<RadioPlaybackService?>(null)
     private var isBound = false
 
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = service as? RadioPlaybackService.LocalBinder
-            _playbackService.value = binder?.getService()
-            isBound = true
-        }
+    private val serviceConnection =
+        object : ServiceConnection {
+            override fun onServiceConnected(
+                name: ComponentName?,
+                service: IBinder?,
+            ) {
+                val binder = service as? RadioPlaybackService.LocalBinder
+                playbackServiceState.value = binder?.getService()
+                isBound = true
+            }
 
-        override fun onServiceDisconnected(name: ComponentName?) {
-            _playbackService.value = null
-            isBound = false
+            override fun onServiceDisconnected(name: ComponentName?) {
+                playbackServiceState.value = null
+                isBound = false
+            }
         }
-    }
 
     private var viewModelRef: MainViewModel? = null
 
-    private val addStationLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            // Reload stations when returning from AddStationActivity
-            viewModelRef?.loadStations()
+    private val addStationLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                // Reload stations when returning from AddStationActivity
+                viewModelRef?.loadStations()
+            }
         }
-    }
 
-    private val requestNotificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { _ -> /* Result handled by system; notification will show if granted */ }
+    private val requestNotificationPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { _ ->
+            // Result handled by system; notification will show if granted
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,11 +132,11 @@ class MainActivity : ComponentActivity() {
 
         requestNotificationPermissionIfNeeded()
 
-        val database = AppDatabase.getDatabase(this)
-        val viewModelFactory = MainViewModel.provideFactory(database)
+        val repository = RadioStationRepository.create(this)
+        val viewModelFactory = MainViewModel.provideFactory(repository)
 
         setContent {
-            val playbackService by _playbackService
+            val playbackService by playbackServiceState
             URLRadioDroidTheme {
                 val viewModel: MainViewModel = viewModel(factory = viewModelFactory)
                 viewModelRef = viewModel
@@ -130,9 +152,10 @@ class MainActivity : ComponentActivity() {
                         addStationLauncher.launch(Intent(this, AddStationActivity::class.java))
                     },
                     onStationEdit = { station ->
-                        val intent = Intent(this, AddStationActivity::class.java).apply {
-                            putExtra(AddStationActivity.EXTRA_STATION_ID, station.id)
-                        }
+                        val intent =
+                            Intent(this, AddStationActivity::class.java).apply {
+                                putExtra(AddStationActivity.EXTRA_STATION_ID, station.id)
+                            }
                         addStationLauncher.launch(intent)
                     },
                     onResume = {
@@ -141,7 +164,7 @@ class MainActivity : ComponentActivity() {
                     onStationDelete = { station ->
                         showDeleteConfirmation(station) { stationToDelete ->
                             if (viewModel.getCurrentPlayingStationId() == stationToDelete.id) {
-                                _playbackService.value?.stopPlayback()
+                                playbackServiceState.value?.stopPlayback()
                                 viewModel.updateCurrentPlayingStation(null)
                             }
                             viewModel.deleteStation(stationToDelete.id)
@@ -151,16 +174,17 @@ class MainActivity : ComponentActivity() {
                         playStation(station, viewModel)
                     },
                     onNowPlayingClick = { station ->
-                        val intent = Intent(this, PlaybackActivity::class.java).apply {
-                            putExtra(PlaybackActivity.EXTRA_STATION_ID, station.id)
-                            putExtra(PlaybackActivity.EXTRA_STATION_NAME, station.name)
-                            putExtra(PlaybackActivity.EXTRA_STREAM_URL, station.streamUrl)
-                        }
+                        val intent =
+                            Intent(this, PlaybackActivity::class.java).apply {
+                                putExtra(PlaybackActivity.EXTRA_STATION_ID, station.id)
+                                putExtra(PlaybackActivity.EXTRA_STATION_NAME, station.name)
+                                putExtra(PlaybackActivity.EXTRA_STREAM_URL, station.streamUrl)
+                            }
                         startActivity(intent)
                     },
                     playbackService = playbackService,
                     onStopPlayback = {
-                        _playbackService.value?.stopPlayback()
+                        playbackServiceState.value?.stopPlayback()
                     },
                 )
             }
@@ -169,7 +193,8 @@ class MainActivity : ComponentActivity() {
 
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
         ) {
             requestNotificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -196,16 +221,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun playStation(station: RadioStation, viewModel: MainViewModel) {
-        val isCurrentlyPlayingThis = viewModelRef?.getCurrentPlayingStationId() == station.id &&
-                _playbackService.value?.isPlaying() == true
+    private fun playStation(
+        station: RadioStation,
+        viewModel: MainViewModel,
+    ) {
+        val isCurrentlyPlayingThis =
+            viewModelRef?.getCurrentPlayingStationId() == station.id &&
+                playbackServiceState.value?.isPlaying() == true
         if (isCurrentlyPlayingThis) {
-            _playbackService.value?.stopPlayback()
+            playbackServiceState.value?.stopPlayback()
             return
         }
 
         if (!isNetworkAvailable()) {
-            android.widget.Toast.makeText(this, getString(R.string.error_network), android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast
+                .makeText(
+                    this,
+                    getString(R.string.error_network),
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
             return
         }
 
@@ -224,14 +258,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun showDeleteConfirmation(station: RadioStation, onConfirm: (RadioStation) -> Unit) {
-        androidx.appcompat.app.AlertDialog.Builder(this)
+    private fun showDeleteConfirmation(
+        station: RadioStation,
+        onConfirm: (RadioStation) -> Unit,
+    ) {
+        androidx.appcompat.app.AlertDialog
+            .Builder(this)
             .setTitle(getString(R.string.delete_station))
             .setMessage(getString(R.string.delete_station_confirmation))
             .setPositiveButton(getString(R.string.delete)) { _, _ ->
                 onConfirm(station)
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
+            }.setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -240,7 +277,7 @@ class MainActivity : ComponentActivity() {
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 }
 
@@ -255,7 +292,7 @@ fun MainScreen(
     onNowPlayingClick: (RadioStation) -> Unit,
     onStopPlayback: () -> Unit,
     playbackService: RadioPlaybackService?,
-    onResume: () -> Unit
+    onResume: () -> Unit,
 ) {
     val stations by viewModel.filteredStations.collectAsState(initial = emptyList())
     val allStations by viewModel.stations.collectAsState(initial = emptyList())
@@ -263,11 +300,12 @@ fun MainScreen(
     val currentPlayingStationId by viewModel.currentPlayingStationId.collectAsState()
 
     // Find current playing station by ID
-    val currentPlayingStation = remember(currentPlayingStationId, allStations) {
-        currentPlayingStationId?.let { id ->
-            allStations.find { it.id == id }
+    val currentPlayingStation =
+        remember(currentPlayingStationId, allStations) {
+            currentPlayingStationId?.let { id ->
+                allStations.find { it.id == id }
+            }
         }
-    }
 
     // Update playing state and timeshift/live state periodically
     var isPlaying by remember { mutableStateOf(false) }
@@ -276,6 +314,7 @@ fun MainScreen(
     var hasTimeshift by remember { mutableStateOf(false) }
     var isAtLive by remember { mutableStateOf(true) }
     var isBufferingCurrentStation by remember { mutableStateOf(false) }
+    var trackTitle by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentPlayingStationId) {
         isStarting = true
         startError = false
@@ -288,34 +327,43 @@ fun MainScreen(
             isStarting = false
         }
     }
+    // Reactively mirror the service's playback state instead of polling it on a timer.
     LaunchedEffect(playbackService, currentPlayingStation) {
-        while (true) {
-            val svc = playbackService
-            val serviceIsPlaying = svc?.isPlaying() ?: false
-            val currentMediaId = svc?.getPlayer()?.currentMediaItem?.mediaId
-            val isCurrentStationPlaying = currentPlayingStation != null &&
-                    currentMediaId == currentPlayingStation.streamUrl &&
-                    serviceIsPlaying
+        val svc = playbackService
+        if (svc == null) {
+            isPlaying = false
+            hasTimeshift = false
+            isAtLive = true
+            isBufferingCurrentStation = false
+            trackTitle = null
+            return@LaunchedEffect
+        }
+        svc.playbackSnapshot.collect { snapshot ->
+            val isCurrentStationPlaying =
+                currentPlayingStation != null &&
+                    snapshot.currentMediaId == currentPlayingStation.streamUrl &&
+                    snapshot.isPlaying
             isPlaying = isCurrentStationPlaying
-            hasTimeshift = svc?.hasTimeshift() ?: false
-            isAtLive = svc?.isAtLive() ?: true
-            val buffering = svc?.isBuffering() ?: false
-            isBufferingCurrentStation = buffering && currentMediaId == currentPlayingStation?.streamUrl
+            hasTimeshift = snapshot.hasTimeshift
+            isAtLive = snapshot.isAtLive
+            isBufferingCurrentStation =
+                snapshot.isBuffering && snapshot.currentMediaId == currentPlayingStation?.streamUrl
+            trackTitle = snapshot.trackTitle
             if (isCurrentStationPlaying) {
                 isStarting = false
                 startError = false
             }
-            kotlinx.coroutines.delay(200)
         }
     }
 
-    val playbackStatus = when {
-        startError -> PlaybackStatus.ERROR
-        isPlaying -> PlaybackStatus.PLAYING
-        isStarting -> PlaybackStatus.STARTING
-        isBufferingCurrentStation -> PlaybackStatus.STARTING
-        else -> PlaybackStatus.PAUSED
-    }
+    val playbackStatus =
+        when {
+            startError -> PlaybackStatus.ERROR
+            isPlaying -> PlaybackStatus.PLAYING
+            isStarting -> PlaybackStatus.STARTING
+            isBufferingCurrentStation -> PlaybackStatus.STARTING
+            else -> PlaybackStatus.PAUSED
+        }
 
     val onPlayStationWithState: (RadioStation) -> Unit = { station ->
         startError = false
@@ -327,6 +375,55 @@ fun MainScreen(
     LaunchedEffect(Unit) {
         onResume()
     }
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var showMenu by remember { mutableStateOf(false) }
+
+    val exportChooserTitle = stringResource(R.string.export_stations)
+    val onExportClick: () -> Unit = {
+        coroutineScope.launch {
+            try {
+                val json = viewModel.exportStationsJson()
+                StationShare.share(context, json, exportChooserTitle, "url-radio-droid-stations")
+            } catch (e: Exception) {
+                Toast.makeText(context, context.getString(R.string.export_error), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val shareStationTitle = stringResource(R.string.share_station)
+    val onStationShareClick: (RadioStation) -> Unit = { station ->
+        coroutineScope.launch {
+            try {
+                val json = StationBackupJson.toJsonArray(listOf(station))
+                StationShare.share(context, json, shareStationTitle, station.name)
+            } catch (e: Exception) {
+                Toast.makeText(context, context.getString(R.string.export_error), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val importLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            coroutineScope.launch {
+                try {
+                    val json =
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
+                            ?: throw java.io.IOException("Cannot open file")
+                    val result = viewModel.importStationsJson(json)
+                    Toast
+                        .makeText(
+                            context,
+                            context.getString(R.string.import_result, result.imported, result.skipped),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, context.getString(R.string.import_error), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
     // Sync current playing station from service (single source of truth: ViewModel)
     LaunchedEffect(playbackService, allStations) {
@@ -341,17 +438,20 @@ fun MainScreen(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        background_gradient_start,
-                        background_gradient_mid,
-                        background_gradient_end
-                    )
-                )
-            )
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(
+                    brush =
+                        Brush.verticalGradient(
+                            colors =
+                                listOf(
+                                    background_gradient_start,
+                                    background_gradient_mid,
+                                    background_gradient_end,
+                                ),
+                        ),
+                ),
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -359,11 +459,11 @@ fun MainScreen(
             floatingActionButton = {
                 FloatingActionButton(
                     onClick = onAddStationClick,
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor = MaterialTheme.colorScheme.primary,
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = stringResource(R.string.add_station)
+                        contentDescription = stringResource(R.string.add_station),
                     )
                 }
             },
@@ -377,6 +477,7 @@ fun MainScreen(
                             playbackStatus = playbackStatus,
                             hasTimeshift = hasTimeshift,
                             isAtLive = isAtLive,
+                            trackTitle = if (isStationPlaying) trackTitle else null,
                             onPlayPauseClick = {
                                 if (isStationPlaying) onStopPlayback() else onPlayStationWithState(station)
                             },
@@ -387,76 +488,126 @@ fun MainScreen(
                                 isStarting = true
                                 playbackService?.seekToLive()
                             },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .windowInsetsPadding(WindowInsets.navigationBars)
-                                .padding(start = 12.dp, end = 12.dp, bottom = 24.dp)
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .windowInsetsPadding(WindowInsets.navigationBars)
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
                         )
                     }
                 }
-            }
+            },
         ) { paddingValues ->
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(paddingValues)
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(paddingValues),
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = stringResource(R.string.more_options),
+                                tint = text_secondary,
+                            )
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.export_stations)) },
+                                onClick = {
+                                    showMenu = false
+                                    onExportClick()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.import_stations)) },
+                                onClick = {
+                                    showMenu = false
+                                    importLauncher.launch(arrayOf("application/json"))
+                                },
+                            )
+                        }
+                    }
+                }
+
                 AnimatedVisibility(visible = viewModel.stations.value.size > 4) {
                     TextField(
                         value = searchQuery,
                         onValueChange = { viewModel.updateSearchQuery(it) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
                         placeholder = { Text(stringResource(R.string.search_stations)) },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = card_surface,
-                            unfocusedContainerColor = card_surface,
-                            focusedTextColor = text_secondary,
-                            unfocusedTextColor = text_secondary
-                        ),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                        colors =
+                            TextFieldDefaults.colors(
+                                focusedContainerColor = card_surface,
+                                unfocusedContainerColor = card_surface,
+                                focusedTextColor = text_secondary,
+                                unfocusedTextColor = text_secondary,
+                            ),
+                        shape =
+                            androidx.compose.foundation.shape
+                                .RoundedCornerShape(16.dp),
                     )
                 }
 
                 if (stations.isEmpty() && searchQuery.isBlank()) {
-                    Box(
+                    Column(
                         modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+                        // Weighted spacers (rather than Box centering) keep this truly centered
+                        // regardless of the bottom inset Scaffold reserves for the FAB.
+                        Spacer(modifier = Modifier.weight(1f))
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(96.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(card_surface_active),
+                            contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 text = "📻",
-                                style = MaterialTheme.typography.displayMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = text_secondary
-                            )
-                            Text(
-                                text = stringResource(R.string.no_stations),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = text_secondary,
-                                textAlign = TextAlign.Center
+                                style = MaterialTheme.typography.displayMedium,
                             )
                         }
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = text_secondary,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.no_stations),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = text_secondary,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 } else {
                     LazyColumn(
                         state = rememberLazyListState(),
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        // Scaffold reserves space for bottomBar but not for the floating action
+                        // button, which just overlays content - extra bottom padding here keeps
+                        // the last station's play button clear of the FAB when the list is long.
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         items(
                             items = stations,
-                            key = { it.id }
+                            key = { it.id },
                         ) { station ->
                             val isActive = currentPlayingStationId == station.id
                             val isStationPlaying = isActive && isPlaying
@@ -468,12 +619,15 @@ fun MainScreen(
                                 isPlaying = isStationPlaying,
                                 isStarting = isStationStarting,
                                 isStartError = isStationStartError,
+                                trackTitle = if (isStationPlaying) trackTitle else null,
                                 onPlayClick = { onPlayStationWithState(station) },
                                 onEditClick = { onStationEdit(station) },
                                 onDeleteClick = { onStationDelete(station) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .widthIn(max = 600.dp)
+                                onShareClick = { onStationShareClick(station) },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .widthIn(max = 600.dp),
                             )
                         }
                     }

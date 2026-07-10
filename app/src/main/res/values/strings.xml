@@ -44,4 +44,19 @@
     <string name="close">Close</string>
     <string name="rewind_5s">−5 s</string>
     <string name="live">Live</string>
+    <string name="sleep_timer">Sleep timer</string>
+    <string name="sleep_timer_off">Off</string>
+    <string name="sleep_timer_active">Sleep in %1$d:%2$02d</string>
+    <string name="sleep_timer_minutes">%1$d min</string>
+    <string name="sleep_timer_set_toast">Sleep timer set: %1$d min</string>
+    <string name="sleep_timer_cancelled_toast">Sleep timer cancelled</string>
+    <string name="more_options">More options</string>
+    <string name="export_stations">Export stations</string>
+    <string name="share_station">Share station</string>
+    <string name="import_stations">Import stations</string>
+    <string name="export_error">Export failed</string>
+    <string name="import_error">Import failed: file is not a valid stations backup</string>
+    <string name="import_result">Imported %1$d, skipped %2$d duplicates</string>
+    <string name="copy_track_title">Copy track title</string>
+    <string name="track_title_copied">Track title copied</string>
 </resources>

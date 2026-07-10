@@ -22,9 +22,9 @@ class LiveFileDataSource(
     private val file: File,
     private val currentLengthSupplier: () -> Long,
     private val blockTimeoutMs: Long = 5000L,
-    private val startPositionOverride: (() -> Long)? = null
-) : BaseDataSource(/* isNetwork= */ false) {
-
+    private val startPositionOverride: (() -> Long)? = null,
+    private val isRecordingSupplier: () -> Boolean = { true },
+) : BaseDataSource(false) { // isNetwork = false
     private var raf: RandomAccessFile? = null
     private var uri: Uri? = null
     private var opened = false
@@ -37,7 +37,7 @@ class LiveFileDataSource(
             if (!file.exists()) {
                 throw DataSourceException(
                     "Buffer file does not exist",
-                    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+                    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
                 )
             }
             val r = RandomAccessFile(file, "r")
@@ -55,7 +55,11 @@ class LiveFileDataSource(
     }
 
     @Throws(DataSourceException::class)
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         if (length == 0) return 0
         val r = raf ?: return C.RESULT_END_OF_INPUT
         val currentLen = currentLengthSupplier()
@@ -63,12 +67,15 @@ class LiveFileDataSource(
         if (pos >= currentLen) {
             val deadline = System.currentTimeMillis() + blockTimeoutMs
             while (System.currentTimeMillis() < deadline) {
-                Thread.sleep(Companion.blockPollMs)
+                Thread.sleep(Companion.BLOCK_POLL_MS)
                 val len = currentLengthSupplier()
                 if (pos < len) break
             }
             if (r.filePointer >= currentLengthSupplier()) {
-                return 0
+                // No new data arrived within the timeout. If the recorder has stopped for good
+                // (error, explicit stop, or max buffer size reached) there is nothing left to wait
+                // for, so signal end of input instead of stalling playback forever.
+                return if (isRecordingSupplier()) 0 else C.RESULT_END_OF_INPUT
             }
         }
         val available = currentLengthSupplier() - r.filePointer
@@ -81,7 +88,7 @@ class LiveFileDataSource(
         } catch (e: Exception) {
             throw DataSourceException(
                 e,
-                PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
             )
         }
     }
@@ -96,7 +103,7 @@ class LiveFileDataSource(
         } catch (e: Exception) {
             throw DataSourceException(
                 e,
-                PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
             )
         } finally {
             raf = null
@@ -111,18 +118,20 @@ class LiveFileDataSource(
         private val file: File,
         private val currentLengthSupplier: () -> Long,
         private val blockTimeoutMs: Long = 5000L,
-        private val startPositionOverride: (() -> Long)? = null
+        private val startPositionOverride: (() -> Long)? = null,
+        private val isRecordingSupplier: () -> Boolean = { true },
     ) : DataSource.Factory {
         override fun createDataSource(): DataSource =
             LiveFileDataSource(
                 file,
                 currentLengthSupplier,
                 blockTimeoutMs,
-                startPositionOverride = startPositionOverride
+                startPositionOverride = startPositionOverride,
+                isRecordingSupplier = isRecordingSupplier,
             )
     }
 
     companion object {
-        private const val blockPollMs = 100L
+        private const val BLOCK_POLL_MS = 100L
     }
 }

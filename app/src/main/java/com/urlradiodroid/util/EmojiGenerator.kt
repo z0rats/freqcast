@@ -7,34 +7,57 @@ import android.graphics.Typeface
 import androidx.core.graphics.drawable.toBitmap
 
 object EmojiGenerator {
-    private val radioEmojis = listOf(
-        "📻", "🎵", "🎶", "🎧", "🎤", "🎸", "🎹", "🥁", "🎺", "🎷",
-        "🎼", "🎯", "⭐", "🌟", "✨", "💫", "🔥", "💎", "🎪", "🎭"
-    )
+    private val radioEmojis =
+        listOf(
+            "📻",
+            "🎵",
+            "🎶",
+            "🎧",
+            "🎤",
+            "🎸",
+            "🎹",
+            "🥁",
+            "🎺",
+            "🎷",
+            "🎼",
+            "🎯",
+            "⭐",
+            "🌟",
+            "✨",
+            "💫",
+            "🔥",
+            "💎",
+            "🎪",
+            "🎭",
+        )
 
-    private val genreEmojis = mapOf(
-        "rock" to "🎸",
-        "pop" to "🎤",
-        "jazz" to "🎷",
-        "classic" to "🎹",
-        "classical" to "🎹",
-        "electronic" to "🎧",
-        "dance" to "💃",
-        "hip" to "🎧",
-        "rap" to "🎤",
-        "country" to "🤠",
-        "blues" to "🎸",
-        "metal" to "🤘",
-        "folk" to "🪕",
-        "reggae" to "🎵",
-        "latin" to "🌴",
-        "news" to "📰",
-        "talk" to "💬",
-        "sport" to "⚽",
-        "sports" to "⚽"
-    )
+    private val genreEmojis =
+        mapOf(
+            "rock" to "🎸",
+            "pop" to "🎤",
+            "jazz" to "🎷",
+            "classic" to "🎹",
+            "classical" to "🎹",
+            "electronic" to "🎧",
+            "dance" to "💃",
+            "hip" to "🎧",
+            "rap" to "🎤",
+            "country" to "🤠",
+            "blues" to "🎸",
+            "metal" to "🤘",
+            "folk" to "🪕",
+            "reggae" to "🎵",
+            "latin" to "🌴",
+            "news" to "📰",
+            "talk" to "💬",
+            "sport" to "⚽",
+            "sports" to "⚽",
+        )
 
-    fun getEmojiForStation(name: String, url: String = ""): String {
+    fun getEmojiForStation(
+        name: String,
+        url: String = "",
+    ): String {
         val lowerName = name.lowercase()
         val lowerUrl = url.lowercase()
 
@@ -65,14 +88,18 @@ object EmojiGenerator {
         return radioEmojis[hash]
     }
 
-    fun getEmojiBitmap(emoji: String, size: Int = 128): Bitmap {
+    fun getEmojiBitmap(
+        emoji: String,
+        size: Int = 128,
+    ): Bitmap {
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = size * 0.7f
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT
-        }
+        val paint =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = size * 0.7f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.DEFAULT
+            }
         val x = size / 2f
         val y = size / 2f - (paint.descent() + paint.ascent()) / 2f
         canvas.drawText(emoji, x, y, paint)

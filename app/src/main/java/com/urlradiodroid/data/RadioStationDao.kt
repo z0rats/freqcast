@@ -23,8 +23,14 @@ interface RadioStationDao {
     suspend fun deleteStation(id: Long)
 
     @Query("SELECT * FROM radio_stations WHERE name = :name AND id != :excludeId LIMIT 1")
-    suspend fun findStationByName(name: String, excludeId: Long = 0): RadioStation?
+    suspend fun findStationByName(
+        name: String,
+        excludeId: Long = 0,
+    ): RadioStation?
 
     @Query("SELECT * FROM radio_stations WHERE streamUrl = :url AND id != :excludeId LIMIT 1")
-    suspend fun findStationByUrl(url: String, excludeId: Long = 0): RadioStation?
+    suspend fun findStationByUrl(
+        url: String,
+        excludeId: Long = 0,
+    ): RadioStation?
 }

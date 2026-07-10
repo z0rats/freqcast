@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -33,52 +34,47 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.urlradiodroid.R
-import com.urlradiodroid.data.AppDatabase
-import com.urlradiodroid.data.RadioStation
+import com.urlradiodroid.data.RadioStationRepository
 import com.urlradiodroid.ui.theme.URLRadioDroidTheme
 import com.urlradiodroid.ui.theme.background_gradient_end
 import com.urlradiodroid.ui.theme.background_gradient_mid
 import com.urlradiodroid.ui.theme.background_gradient_start
+import com.urlradiodroid.ui.theme.card_border
 import com.urlradiodroid.ui.theme.card_surface
 import com.urlradiodroid.ui.theme.card_surface_active
-import com.urlradiodroid.ui.theme.text_primary
 import com.urlradiodroid.ui.theme.text_hint
-import kotlinx.coroutines.launch
+import com.urlradiodroid.ui.theme.text_primary
 import java.net.URL
 
 class AddStationActivity : ComponentActivity() {
-    private lateinit var database: AppDatabase
-    private var editingStationId: Long? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        database = AppDatabase.getDatabase(this)
-        editingStationId = intent.getLongExtra(EXTRA_STATION_ID, -1L).takeIf { it != -1L }
+        val repository = RadioStationRepository.create(this)
+        val editingStationId = intent.getLongExtra(EXTRA_STATION_ID, -1L).takeIf { it != -1L }
+        val viewModelFactory = AddStationViewModel.provideFactory(repository, editingStationId)
 
         setContent {
             URLRadioDroidTheme {
+                val viewModel: AddStationViewModel = viewModel(factory = viewModelFactory)
                 AddStationScreen(
-                    editingStationId = editingStationId,
-                    database = database,
+                    viewModel = viewModel,
                     onSaveSuccess = {
                         setResult(RESULT_OK)
                         finish()
                     },
-                    onBackClick = { finish() }
+                    onBackClick = { finish() },
                 )
             }
         }
@@ -105,39 +101,49 @@ class AddStationActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddStationScreen(
-    editingStationId: Long?,
-    database: AppDatabase,
+    viewModel: AddStationViewModel,
     onSaveSuccess: () -> Unit,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
 ) {
     val context = LocalContext.current
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var nameError by remember { mutableStateOf<String?>(null) }
-    var urlError by remember { mutableStateOf<String?>(null) }
+    val uiState by viewModel.uiState.collectAsState()
 
-    LaunchedEffect(editingStationId) {
-        editingStationId?.let { id ->
-            val station = database.radioStationDao().getStationById(id)
-            station?.let {
-                name = it.name
-                url = it.streamUrl
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is AddStationEvent.SaveSucceeded -> {
+                    val messageRes = if (event.wasEditing) R.string.station_updated else R.string.station_saved
+                    Toast.makeText(context, context.getString(messageRes), Toast.LENGTH_SHORT).show()
+                    onSaveSuccess()
+                }
+
+                is AddStationEvent.SaveFailed -> {
+                    Toast
+                        .makeText(
+                            context,
+                            context.getString(R.string.save_error, event.message ?: ""),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                }
             }
         }
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        background_gradient_start,
-                        background_gradient_mid,
-                        background_gradient_end
-                    )
-                )
-            )
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(
+                    brush =
+                        Brush.verticalGradient(
+                            colors =
+                                listOf(
+                                    background_gradient_start,
+                                    background_gradient_mid,
+                                    background_gradient_end,
+                                ),
+                        ),
+                ),
     ) {
         Scaffold(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -145,165 +151,116 @@ fun AddStationScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = if (editingStationId != null) {
-                                stringResource(R.string.edit_station)
-                            } else {
-                                stringResource(R.string.add_station)
-                            }
+                            text =
+                                if (uiState.isEditing) {
+                                    stringResource(R.string.edit_station)
+                                } else {
+                                    stringResource(R.string.add_station)
+                                },
                         )
                     },
                     navigationIcon = {
                         IconButton(onClick = onBackClick) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.back)
+                                contentDescription = stringResource(R.string.back),
                             )
                         }
                     },
-                    colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                        containerColor = card_surface,
-                        titleContentColor = text_primary,
-                        navigationIconContentColor = text_primary
-                    )
+                    colors =
+                        androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                            containerColor = card_surface,
+                            titleContentColor = text_primary,
+                            navigationIconContentColor = text_primary,
+                        ),
                 )
-            }
+            },
         ) { paddingValues ->
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .widthIn(max = 520.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 520.dp)
+                            .border(width = 1.dp, color = card_border, shape = RoundedCornerShape(24.dp)),
                     colors = CardDefaults.cardColors(containerColor = card_surface),
                     shape = RoundedCornerShape(24.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
+                        verticalArrangement =
+                            androidx.compose.foundation.layout.Arrangement
+                                .spacedBy(16.dp),
                     ) {
                         OutlinedTextField(
-                            value = name,
-                            onValueChange = {
-                                name = it
-                                nameError = null
-                            },
+                            value = uiState.name,
+                            onValueChange = viewModel::onNameChange,
                             label = { Text(stringResource(R.string.station_name)) },
                             modifier = Modifier.fillMaxWidth(),
-                            isError = nameError != null,
-                            supportingText = nameError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = card_surface_active,
-                                unfocusedContainerColor = card_surface_active,
-                                focusedTextColor = text_primary,
-                                unfocusedTextColor = text_primary,
-                                focusedLabelColor = text_hint,
-                                unfocusedLabelColor = text_hint,
-                                cursorColor = text_primary,
-                                focusedIndicatorColor = text_hint,
-                                unfocusedIndicatorColor = text_hint.copy(alpha = 0.5f),
-                                errorIndicatorColor = MaterialTheme.colorScheme.error
-                            ),
-                            shape = RoundedCornerShape(16.dp)
+                            isError = uiState.nameErrorRes != null,
+                            supportingText =
+                                uiState.nameErrorRes?.let {
+                                    { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
+                                },
+                            colors =
+                                TextFieldDefaults.colors(
+                                    focusedContainerColor = card_surface_active,
+                                    unfocusedContainerColor = card_surface_active,
+                                    focusedTextColor = text_primary,
+                                    unfocusedTextColor = text_primary,
+                                    focusedLabelColor = text_hint,
+                                    unfocusedLabelColor = text_hint,
+                                    cursorColor = text_primary,
+                                    focusedIndicatorColor = text_hint,
+                                    unfocusedIndicatorColor = text_hint.copy(alpha = 0.5f),
+                                    errorIndicatorColor = MaterialTheme.colorScheme.error,
+                                ),
+                            shape = RoundedCornerShape(16.dp),
                         )
 
                         OutlinedTextField(
-                            value = url,
-                            onValueChange = {
-                                url = it
-                                urlError = null
-                            },
+                            value = uiState.url,
+                            onValueChange = viewModel::onUrlChange,
                             label = { Text(stringResource(R.string.stream_url)) },
                             modifier = Modifier.fillMaxWidth(),
-                            isError = urlError != null,
-                            supportingText = urlError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = card_surface_active,
-                                unfocusedContainerColor = card_surface_active,
-                                focusedTextColor = text_primary,
-                                unfocusedTextColor = text_primary,
-                                focusedLabelColor = text_hint,
-                                unfocusedLabelColor = text_hint,
-                                cursorColor = text_primary,
-                                focusedIndicatorColor = text_hint,
-                                unfocusedIndicatorColor = text_hint.copy(alpha = 0.5f),
-                                errorIndicatorColor = MaterialTheme.colorScheme.error
-                            ),
-                            shape = RoundedCornerShape(16.dp)
+                            isError = uiState.urlErrorRes != null,
+                            supportingText =
+                                uiState.urlErrorRes?.let {
+                                    { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
+                                },
+                            colors =
+                                TextFieldDefaults.colors(
+                                    focusedContainerColor = card_surface_active,
+                                    unfocusedContainerColor = card_surface_active,
+                                    focusedTextColor = text_primary,
+                                    unfocusedTextColor = text_primary,
+                                    focusedLabelColor = text_hint,
+                                    unfocusedLabelColor = text_hint,
+                                    cursorColor = text_primary,
+                                    focusedIndicatorColor = text_hint,
+                                    unfocusedIndicatorColor = text_hint.copy(alpha = 0.5f),
+                                    errorIndicatorColor = MaterialTheme.colorScheme.error,
+                                ),
+                            shape = RoundedCornerShape(16.dp),
                         )
 
                         Button(
-                            onClick = {
-                                val nameTrimmed = name.trim()
-                                val urlTrimmed = url.trim()
-
-                                when {
-                                    nameTrimmed.isEmpty() -> {
-                                        nameError = context.getString(R.string.enter_name)
-                                    }
-                                    urlTrimmed.isEmpty() -> {
-                                        urlError = context.getString(R.string.enter_url)
-                                    }
-                                    !AddStationActivity.isValidUrl(urlTrimmed) -> {
-                                        urlError = context.getString(R.string.error_invalid_url)
-                                    }
-                                    else -> {
-                                        (context as? ComponentActivity)?.lifecycleScope?.launch {
-                                            try {
-                                                val excludeId = editingStationId ?: 0L
-                                                val existingByName = database.radioStationDao().findStationByName(nameTrimmed, excludeId)
-                                                val existingByUrl = database.radioStationDao().findStationByUrl(urlTrimmed, excludeId)
-
-                                                when {
-                                                    existingByName != null -> {
-                                                        nameError = context.getString(R.string.error_duplicate_name)
-                                                    }
-                                                    existingByUrl != null -> {
-                                                        urlError = context.getString(R.string.error_duplicate_url)
-                                                    }
-                                                    else -> {
-                                                        val station = if (editingStationId != null) {
-                                                            RadioStation(
-                                                                id = editingStationId,
-                                                                name = nameTrimmed,
-                                                                streamUrl = urlTrimmed,
-                                                                customIcon = null
-                                                            )
-                                                        } else {
-                                                            RadioStation(
-                                                                name = nameTrimmed,
-                                                                streamUrl = urlTrimmed,
-                                                                customIcon = null
-                                                            )
-                                                        }
-
-                                                        if (editingStationId != null) {
-                                                            database.radioStationDao().updateStation(station)
-                                                            Toast.makeText(context, context.getString(R.string.station_updated), Toast.LENGTH_SHORT).show()
-                                                        } else {
-                                                            database.radioStationDao().insertStation(station)
-                                                            Toast.makeText(context, context.getString(R.string.station_saved), Toast.LENGTH_SHORT).show()
-                                                        }
-                                                        onSaveSuccess()
-                                                    }
-                                                }
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, context.getString(R.string.save_error, e.message ?: ""), Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp)
+                            onClick = viewModel::save,
+                            enabled = !uiState.isSaving,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Text(stringResource(R.string.save))
                         }
