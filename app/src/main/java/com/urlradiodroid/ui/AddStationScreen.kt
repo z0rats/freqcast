@@ -5,8 +5,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -14,14 +16,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,15 +41,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.urlradiodroid.R
 import com.urlradiodroid.data.RadioStationRepository
+import com.urlradiodroid.ui.components.StationIconPickerDialog
+import com.urlradiodroid.ui.components.rememberStationIconBitmap
 import com.urlradiodroid.ui.theme.Spacing
 import com.urlradiodroid.ui.theme.URLRadioDroidTheme
 import com.urlradiodroid.ui.theme.background_gradient_end
@@ -54,6 +69,11 @@ import com.urlradiodroid.ui.theme.card_surface
 import com.urlradiodroid.ui.theme.card_surface_active
 import com.urlradiodroid.ui.theme.text_hint
 import com.urlradiodroid.ui.theme.text_primary
+import com.urlradiodroid.util.EmojiGenerator
+import com.urlradiodroid.util.IconStorage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URL
 
 class AddStationActivity : ComponentActivity() {
@@ -106,7 +126,9 @@ fun AddStationScreen(
     onBackClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsState()
+    var iconPickerOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -197,10 +219,61 @@ fun AddStationScreen(
                 ) {
                     Column(
                         modifier = Modifier.padding(Spacing.md),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement =
                             androidx.compose.foundation.layout.Arrangement
                                 .spacedBy(Spacing.md),
                     ) {
+                        Box(
+                            modifier = Modifier.size(96.dp),
+                        ) {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .align(Alignment.TopStart)
+                                        .size(88.dp)
+                                        .clip(CircleShape)
+                                        .background(card_surface_active)
+                                        .clickable { iconPickerOpen = true },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val iconBitmap = rememberStationIconBitmap(uiState.customIcon)
+                                if (iconBitmap != null) {
+                                    Image(
+                                        bitmap = iconBitmap.asImageBitmap(),
+                                        contentDescription = stringResource(R.string.station_icon),
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Text(
+                                        text =
+                                            uiState.customIcon?.takeUnless(IconStorage::isImagePath)
+                                                ?: EmojiGenerator.getEmojiForStation(uiState.name, uiState.url),
+                                        style = MaterialTheme.typography.displayMedium,
+                                    )
+                                }
+                            }
+                            // Sibling of the clipped circle above (not a child of it) so this badge isn't
+                            // itself cut off by the circle's own clip when it overhangs the circle's edge.
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = stringResource(R.string.station_icon),
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+
                         OutlinedTextField(
                             value = uiState.name,
                             onValueChange = viewModel::onNameChange,
@@ -262,11 +335,41 @@ fun AddStationScreen(
                                     .height(56.dp),
                             shape = MaterialTheme.shapes.medium,
                         ) {
-                            Text(stringResource(R.string.save))
+                            if (uiState.isSaving) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Text(stringResource(R.string.save))
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    if (iconPickerOpen) {
+        StationIconPickerDialog(
+            hasCustomIcon = uiState.customIcon != null,
+            onDismiss = { iconPickerOpen = false },
+            onEmojiSelected = { emoji ->
+                viewModel.onEmojiIconSelected(emoji)
+                iconPickerOpen = false
+            },
+            onImagePicked = { uri ->
+                coroutineScope.launch {
+                    val path = withContext(Dispatchers.IO) { IconStorage.saveImage(context, uri) }
+                    if (path != null) viewModel.onImageIconSelected(path)
+                    iconPickerOpen = false
+                }
+            },
+            onRemoveIcon = {
+                viewModel.onRemoveIcon()
+                iconPickerOpen = false
+            },
+        )
     }
 }

@@ -17,4 +17,5 @@ data class RadioStation(
     val name: String,
     val streamUrl: String,
     val customIcon: String? = null, // Emoji string or image file path
+    val isFavorite: Boolean = false,
 )

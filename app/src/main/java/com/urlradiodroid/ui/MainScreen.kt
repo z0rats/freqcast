@@ -40,6 +40,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +51,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -81,8 +88,11 @@ import com.urlradiodroid.ui.theme.URLRadioDroidTheme
 import com.urlradiodroid.ui.theme.background_gradient_end
 import com.urlradiodroid.ui.theme.background_gradient_mid
 import com.urlradiodroid.ui.theme.background_gradient_start
+import com.urlradiodroid.ui.theme.card_border
 import com.urlradiodroid.ui.theme.card_surface
 import com.urlradiodroid.ui.theme.card_surface_active
+import com.urlradiodroid.ui.theme.glass_accent
+import com.urlradiodroid.ui.theme.text_primary
 import com.urlradiodroid.ui.theme.text_secondary
 import com.urlradiodroid.util.StationShare
 import kotlinx.coroutines.launch
@@ -120,6 +130,15 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private val discoverStationsLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+        ) {
+            // DiscoverStationsActivity saves stations as the user browses rather than on a single
+            // confirm/result, so always reload rather than gating on a result code.
+            viewModelRef?.loadStations()
+        }
+
     private val requestNotificationPermissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestPermission(),
@@ -152,6 +171,9 @@ class MainActivity : ComponentActivity() {
                     onAddStationClick = {
                         addStationLauncher.launch(Intent(this, AddStationActivity::class.java))
                     },
+                    onDiscoverStationsClick = {
+                        discoverStationsLauncher.launch(Intent(this, DiscoverStationsActivity::class.java))
+                    },
                     onStationEdit = { station ->
                         val intent =
                             Intent(this, AddStationActivity::class.java).apply {
@@ -163,13 +185,11 @@ class MainActivity : ComponentActivity() {
                         viewModel.loadStations()
                     },
                     onStationDelete = { station ->
-                        showDeleteConfirmation(station) { stationToDelete ->
-                            if (viewModel.getCurrentPlayingStationId() == stationToDelete.id) {
-                                playbackServiceState.value?.stopPlayback()
-                                viewModel.updateCurrentPlayingStation(null)
-                            }
-                            viewModel.deleteStation(stationToDelete.id)
+                        if (viewModel.getCurrentPlayingStationId() == station.id) {
+                            playbackServiceState.value?.stopPlayback()
+                            viewModel.updateCurrentPlayingStation(null)
                         }
+                        viewModel.deleteStation(station)
                     },
                     onPlayStation = { station ->
                         playStation(station, viewModel)
@@ -259,20 +279,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun showDeleteConfirmation(
-        station: RadioStation,
-        onConfirm: (RadioStation) -> Unit,
-    ) {
-        androidx.appcompat.app.AlertDialog
-            .Builder(this)
-            .setTitle(getString(R.string.delete_station))
-            .setMessage(getString(R.string.delete_station_confirmation))
-            .setPositiveButton(getString(R.string.delete)) { _, _ ->
-                onConfirm(station)
-            }.setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
     private fun isNetworkAvailable(): Boolean {
         val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivityManager.activeNetwork ?: return false
@@ -287,6 +293,7 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     viewModel: MainViewModel,
     onAddStationClick: () -> Unit,
+    onDiscoverStationsClick: () -> Unit,
     onStationEdit: (RadioStation) -> Unit,
     onStationDelete: (RadioStation) -> Unit,
     onPlayStation: (RadioStation) -> Unit,
@@ -381,6 +388,27 @@ fun MainScreen(
     val coroutineScope = rememberCoroutineScope()
     var showMenu by remember { mutableStateOf(false) }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val stationDeletedMessage = stringResource(R.string.station_deleted)
+    val undoLabel = stringResource(R.string.undo)
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is MainScreenEvent.StationDeleted -> {
+                    val result =
+                        snackbarHostState.showSnackbar(
+                            message = stationDeletedMessage,
+                            actionLabel = undoLabel,
+                            duration = SnackbarDuration.Short,
+                        )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        viewModel.undoDelete(event.station)
+                    }
+                }
+            }
+        }
+    }
+
     val exportChooserTitle = stringResource(R.string.export_stations)
     val onExportClick: () -> Unit = {
         coroutineScope.launch {
@@ -457,6 +485,7 @@ fun MainScreen(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             floatingActionButton = {
                 FloatingActionButton(
                     onClick = onAddStationClick,
@@ -507,9 +536,31 @@ fun MainScreen(
                         .padding(paddingValues),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    AssistChip(
+                        onClick = onDiscoverStationsClick,
+                        label = { Text(stringResource(R.string.discover_stations)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.TravelExplore,
+                                contentDescription = null,
+                                tint = glass_accent,
+                            )
+                        },
+                        shape = MaterialTheme.shapes.medium,
+                        colors =
+                            AssistChipDefaults.assistChipColors(
+                                containerColor = card_surface,
+                                labelColor = text_primary,
+                            ),
+                        border = AssistChipDefaults.assistChipBorder(enabled = true, borderColor = card_border),
+                    )
                     Box {
                         IconButton(onClick = { showMenu = true }) {
                             Icon(
@@ -625,7 +676,10 @@ fun MainScreen(
                                 isStarting = isStationStarting,
                                 isStartError = isStationStartError,
                                 trackTitle = if (isStationPlaying) trackTitle else null,
-                                onPlayClick = { onPlayStationWithState(station) },
+                                onPlayClick = {
+                                    if (isStationPlaying) onStopPlayback() else onPlayStationWithState(station)
+                                },
+                                onFavoriteClick = { viewModel.toggleFavorite(station) },
                                 onEditClick = { onStationEdit(station) },
                                 onDeleteClick = { onStationDelete(station) },
                                 onShareClick = { onStationShareClick(station) },

@@ -32,6 +32,10 @@
             android:exported="false"
             android:parentActivityName=".ui.MainActivity" />
         <activity
+            android:name=".ui.DiscoverStationsActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.MainActivity" />
+        <activity
             android:name=".ui.PlaybackActivity"
             android:exported="false"
             android:parentActivityName=".ui.MainActivity" />

@@ -21,15 +21,16 @@
     <string name="back">Back</string>
     <string name="error_duplicate_name">Station with this name already exists</string>
     <string name="error_duplicate_url">Station with this URL already exists</string>
+    <string name="error_stream_unreachable">Could not connect to this stream. Check the URL and try again</string>
     <string name="station_updated">Station updated</string>
     <string name="edit_station">Edit station</string>
     <string name="edit">Edit</string>
     <string name="delete">Delete</string>
-    <string name="delete_station">Delete station</string>
-    <string name="delete_station_confirmation">Are you sure you want to delete this station?</string>
-    <string name="cancel">Cancel</string>
     <string name="station_deleted">Station deleted</string>
+    <string name="undo">Undo</string>
     <string name="search_stations">Search stations</string>
+    <string name="pin_station">Pin to top</string>
+    <string name="unpin_station">Unpin</string>
     <string name="station_icon">Station Icon</string>
     <string name="choose_emoji">Choose Emoji</string>
     <string name="upload_image">Upload Image</string>
@@ -59,4 +60,16 @@
     <string name="import_result">Imported %1$d, skipped %2$d duplicates</string>
     <string name="copy_track_title">Copy track title</string>
     <string name="track_title_copied">Track title copied</string>
+    <string name="discover_stations">Discover stations</string>
+    <string name="discover_search_mode_name">Name</string>
+    <string name="discover_search_mode_genre">Genre</string>
+    <string name="discover_search_mode_country">Country</string>
+    <string name="discover_search_hint_name">Search by station name…</string>
+    <string name="discover_search_hint_genre">Search by genre, e.g. jazz…</string>
+    <string name="discover_search_hint_country">Search by country…</string>
+    <string name="discover_search_error">Search failed. Check your connection and try again</string>
+    <string name="discover_empty_results">No stations found</string>
+    <string name="discover_prompt">Search the Radio Browser directory to find stations to add</string>
+    <string name="discover_add">Add</string>
+    <string name="discover_added">Added</string>
 </resources>

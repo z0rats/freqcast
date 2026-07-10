@@ -7,7 +7,7 @@ import androidx.room.Update
 
 @Dao
 interface RadioStationDao {
-    @Query("SELECT * FROM radio_stations ORDER BY id ASC")
+    @Query("SELECT * FROM radio_stations ORDER BY isFavorite DESC, id ASC")
     suspend fun getAllStations(): List<RadioStation>
 
     @Query("SELECT * FROM radio_stations WHERE id = :id")
@@ -21,6 +21,12 @@ interface RadioStationDao {
 
     @Query("DELETE FROM radio_stations WHERE id = :id")
     suspend fun deleteStation(id: Long)
+
+    @Query("UPDATE radio_stations SET isFavorite = :isFavorite WHERE id = :id")
+    suspend fun setFavorite(
+        id: Long,
+        isFavorite: Boolean,
+    )
 
     @Query("SELECT * FROM radio_stations WHERE name = :name AND id != :excludeId LIMIT 1")
     suspend fun findStationByName(

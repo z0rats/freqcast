@@ -18,10 +18,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -39,7 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -56,6 +61,7 @@ import com.urlradiodroid.ui.theme.glass_accent
 import com.urlradiodroid.ui.theme.text_hint
 import com.urlradiodroid.ui.theme.text_primary
 import com.urlradiodroid.util.EmojiGenerator
+import com.urlradiodroid.util.IconStorage
 
 @Composable
 fun StationItem(
@@ -66,6 +72,7 @@ fun StationItem(
     isStartError: Boolean = false,
     trackTitle: String? = null,
     onPlayClick: () -> Unit,
+    onFavoriteClick: () -> Unit,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onShareClick: () -> Unit,
@@ -134,6 +141,14 @@ fun StationItem(
                     dragOffset = 0f
                 } else {
                     onPlayClick()
+                }
+            },
+            onFavoriteClick = {
+                if (isSwipeRevealed) {
+                    isSwipeRevealed = false
+                    dragOffset = 0f
+                } else {
+                    onFavoriteClick()
                 }
             },
             onCardClick = {
@@ -257,6 +272,7 @@ private fun StationCard(
     isStartError: Boolean,
     trackTitle: String?,
     onPlayClick: () -> Unit,
+    onFavoriteClick: () -> Unit,
     onCardClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -288,13 +304,23 @@ private fun StationCard(
             horizontalArrangement = Arrangement.spacedBy(Spacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text =
-                    station.customIcon
-                        ?: EmojiGenerator.getEmojiForStation(station.name, station.streamUrl),
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.size(36.dp),
-            )
+            val iconBitmap = rememberStationIconBitmap(station.customIcon)
+            if (iconBitmap != null) {
+                Image(
+                    bitmap = iconBitmap.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp).clip(CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Text(
+                    text =
+                        station.customIcon?.takeUnless(IconStorage::isImagePath)
+                            ?: EmojiGenerator.getEmojiForStation(station.name, station.streamUrl),
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.size(36.dp),
+                )
+            }
 
             Column(
                 modifier = Modifier.weight(1f),
@@ -331,11 +357,32 @@ private fun StationCard(
                 }
             }
 
+            FavoriteIcon(
+                isFavorite = station.isFavorite,
+                onClick = onFavoriteClick,
+            )
+
             PlayPauseIcon(
                 isPlaying = isPlaying,
                 onClick = onPlayClick,
             )
         }
+    }
+}
+
+@Composable
+private fun FavoriteIcon(
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    IconButton(onClick = onClick, modifier = modifier.size(36.dp)) {
+        Icon(
+            imageVector = if (isFavorite) Icons.Default.Star else Icons.Outlined.StarBorder,
+            contentDescription =
+                stringResource(if (isFavorite) R.string.unpin_station else R.string.pin_station),
+            tint = if (isFavorite) glass_accent else text_hint,
+        )
     }
 }
 

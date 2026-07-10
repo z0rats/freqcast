@@ -6,11 +6,20 @@ import androidx.lifecycle.viewModelScope
 import com.urlradiodroid.data.ImportResult
 import com.urlradiodroid.data.RadioStation
 import com.urlradiodroid.data.RadioStationRepository
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+
+sealed interface MainScreenEvent {
+    data class StationDeleted(
+        val station: RadioStation,
+    ) : MainScreenEvent
+}
 
 class MainViewModel(
     private val repository: RadioStationRepository,
@@ -23,6 +32,9 @@ class MainViewModel(
 
     private val _currentPlayingStationId = MutableStateFlow<Long?>(null)
     val currentPlayingStationId: StateFlow<Long?> = _currentPlayingStationId.asStateFlow()
+
+    private val eventChannel = Channel<MainScreenEvent>(Channel.BUFFERED)
+    val events: Flow<MainScreenEvent> = eventChannel.receiveAsFlow()
 
     val filteredStations =
         combine(_stations, _searchQuery) { stations, query ->
@@ -57,9 +69,26 @@ class MainViewModel(
 
     fun getCurrentPlayingStationId(): Long? = _currentPlayingStationId.value
 
-    fun deleteStation(stationId: Long) {
+    /** Deletes immediately, but keeps [station] around so [undoDelete] can restore it. */
+    fun deleteStation(station: RadioStation) {
         viewModelScope.launch {
-            repository.deleteStation(stationId)
+            repository.deleteStation(station.id)
+            loadStations()
+            eventChannel.send(MainScreenEvent.StationDeleted(station))
+        }
+    }
+
+    /** Re-inserts [station] with its original id, restoring its position in the list. */
+    fun undoDelete(station: RadioStation) {
+        viewModelScope.launch {
+            repository.insertStation(station)
+            loadStations()
+        }
+    }
+
+    fun toggleFavorite(station: RadioStation) {
+        viewModelScope.launch {
+            repository.setFavorite(station.id, !station.isFavorite)
             loadStations()
         }
     }

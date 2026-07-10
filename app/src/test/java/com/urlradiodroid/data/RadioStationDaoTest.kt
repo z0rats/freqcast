@@ -89,6 +89,33 @@ class RadioStationDaoTest {
         }
 
     @Test
+    fun `test getAllStations orders favorites before non-favorites, each by id ascending`() =
+        runTest {
+            val id1 = dao.insertStation(RadioStation(name = "First", streamUrl = "http://example.com/1"))
+            val id2 = dao.insertStation(RadioStation(name = "Second", streamUrl = "http://example.com/2"))
+            val id3 = dao.insertStation(RadioStation(name = "Third", streamUrl = "http://example.com/3"))
+            dao.setFavorite(id3, true)
+
+            val stations = dao.getAllStations()
+
+            assertEquals(listOf(id3, id1, id2), stations.map { it.id })
+            assertEquals(true, stations[0].isFavorite)
+        }
+
+    @Test
+    fun `test setFavorite toggles isFavorite`() =
+        runTest {
+            val id = dao.insertStation(RadioStation(name = "Station", streamUrl = "http://example.com/s"))
+            assertEquals(false, dao.getStationById(id)?.isFavorite)
+
+            dao.setFavorite(id, true)
+            assertEquals(true, dao.getStationById(id)?.isFavorite)
+
+            dao.setFavorite(id, false)
+            assertEquals(false, dao.getStationById(id)?.isFavorite)
+        }
+
+    @Test
     fun `test findStationByName returns station when exists`() =
         runTest {
             dao.insertStation(RadioStation(name = "Unique Name", streamUrl = "http://example.com/u"))

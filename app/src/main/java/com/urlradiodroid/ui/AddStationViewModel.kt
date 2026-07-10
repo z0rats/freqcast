@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.urlradiodroid.R
 import com.urlradiodroid.data.RadioStation
 import com.urlradiodroid.data.RadioStationRepository
+import com.urlradiodroid.util.IconStorage
+import com.urlradiodroid.util.StreamValidator
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
 data class AddStationUiState(
     val name: String = "",
     val url: String = "",
+    val customIcon: String? = null,
     val nameErrorRes: Int? = null,
     val urlErrorRes: Int? = null,
     val isSaving: Boolean = false,
@@ -36,6 +39,7 @@ sealed interface AddStationEvent {
 class AddStationViewModel(
     private val repository: RadioStationRepository,
     private val editingStationId: Long?,
+    private val streamValidator: StreamValidator = StreamValidator(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AddStationUiState(isEditing = editingStationId != null))
     val uiState: StateFlow<AddStationUiState> = _uiState.asStateFlow()
@@ -43,11 +47,20 @@ class AddStationViewModel(
     private val eventChannel = Channel<AddStationEvent>(Channel.BUFFERED)
     val events: Flow<AddStationEvent> = eventChannel.receiveAsFlow()
 
+    /** The icon the station had in the DB before this edit session, for cleanup once a replacement is saved. */
+    private var originalCustomIcon: String? = null
+
     init {
         editingStationId?.let { id ->
             viewModelScope.launch {
                 repository.getStationById(id)?.let { station ->
-                    _uiState.value = _uiState.value.copy(name = station.name, url = station.streamUrl)
+                    originalCustomIcon = station.customIcon
+                    _uiState.value =
+                        _uiState.value.copy(
+                            name = station.name,
+                            url = station.streamUrl,
+                            customIcon = station.customIcon,
+                        )
                 }
             }
         }
@@ -59,6 +72,18 @@ class AddStationViewModel(
 
     fun onUrlChange(value: String) {
         _uiState.value = _uiState.value.copy(url = value, urlErrorRes = null)
+    }
+
+    fun onEmojiIconSelected(emoji: String) {
+        _uiState.value = _uiState.value.copy(customIcon = emoji)
+    }
+
+    fun onImageIconSelected(path: String) {
+        _uiState.value = _uiState.value.copy(customIcon = path)
+    }
+
+    fun onRemoveIcon() {
+        _uiState.value = _uiState.value.copy(customIcon = null)
     }
 
     fun save() {
@@ -100,18 +125,32 @@ class AddStationViewModel(
                             _uiState.value.copy(isSaving = false, urlErrorRes = R.string.error_duplicate_url)
                     }
 
+                    !streamValidator.isReachable(urlTrimmed) -> {
+                        _uiState.value =
+                            _uiState.value.copy(isSaving = false, urlErrorRes = R.string.error_stream_unreachable)
+                    }
+
                     else -> {
                         val id = editingStationId
+                        val finalIcon = _uiState.value.customIcon
                         val station =
                             if (id != null) {
-                                RadioStation(id = id, name = nameTrimmed, streamUrl = urlTrimmed, customIcon = null)
+                                RadioStation(
+                                    id = id,
+                                    name = nameTrimmed,
+                                    streamUrl = urlTrimmed,
+                                    customIcon = finalIcon,
+                                )
                             } else {
-                                RadioStation(name = nameTrimmed, streamUrl = urlTrimmed, customIcon = null)
+                                RadioStation(name = nameTrimmed, streamUrl = urlTrimmed, customIcon = finalIcon)
                             }
                         if (id != null) {
                             repository.updateStation(station)
                         } else {
                             repository.insertStation(station)
+                        }
+                        if (originalCustomIcon != null && originalCustomIcon != finalIcon) {
+                            IconStorage.delete(originalCustomIcon)
                         }
                         _uiState.value = _uiState.value.copy(isSaving = false)
                         eventChannel.send(AddStationEvent.SaveSucceeded(wasEditing = id != null))

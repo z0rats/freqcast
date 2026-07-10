@@ -74,4 +74,16 @@ class RadioStationTest {
             )
         assertEquals("🎵", station.customIcon)
     }
+
+    @Test
+    fun `test RadioStation defaults isFavorite to false`() {
+        val station = RadioStation(name = "Not Favorite", streamUrl = "http://example.com/nf")
+        assertEquals(false, station.isFavorite)
+    }
+
+    @Test
+    fun `test RadioStation with isFavorite true`() {
+        val station = RadioStation(name = "Favorite", streamUrl = "http://example.com/f", isFavorite = true)
+        assertEquals(true, station.isFavorite)
+    }
 }

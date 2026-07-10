@@ -7,6 +7,9 @@ import android.graphics.Typeface
 import androidx.core.graphics.drawable.toBitmap
 
 object EmojiGenerator {
+    /** Curated emoji shown as picker choices in the station icon picker. */
+    val pickerEmojis get() = radioEmojis
+
     private val radioEmojis =
         listOf(
             "📻",

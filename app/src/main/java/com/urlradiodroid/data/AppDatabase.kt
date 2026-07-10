@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RadioStation::class], version = 3, exportSchema = true)
+@Database(entities = [RadioStation::class], version = 4, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun radioStationDao(): RadioStationDao
 
@@ -39,6 +39,16 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        /** Adds the favorites/pinning flag; existing rows default to not-favorite. */
+        val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE radio_stations ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0",
+                    )
+                }
+            }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -50,7 +60,7 @@ abstract class AppDatabase : RoomDatabase() {
                             context.applicationContext,
                             AppDatabase::class.java,
                             "radio_database",
-                        ).addMigrations(MIGRATION_2_3)
+                        ).addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                         // Safety net only for schema jumps with no explicit migration
                         // (e.g. pre-1.0 installs skipping straight to a future version).
                         .fallbackToDestructiveMigrationFrom(dropAllTables = true, 1)

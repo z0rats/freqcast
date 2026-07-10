@@ -7,6 +7,7 @@ import com.urlradiodroid.data.RadioStationRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
@@ -69,6 +70,14 @@ class MainViewModelTest {
     private suspend fun TestScope.waitForStationsEmpty(viewModel: MainViewModel) {
         withTimeout(5000L) {
             while (viewModel.stations.value.isNotEmpty()) {
+                advanceUntilIdle()
+            }
+        }
+    }
+
+    private suspend fun TestScope.waitUntil(condition: () -> Boolean) {
+        withTimeout(5000L) {
+            while (!condition()) {
                 advanceUntilIdle()
             }
         }
@@ -218,6 +227,53 @@ class MainViewModelTest {
         }
 
     @Test
+    fun `toggleFavorite pins a station and reorders it to the top`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            database.radioStationDao().insertStation(RadioStation(name = "First", streamUrl = "http://example.com/1"))
+            val second =
+                database.radioStationDao().insertStation(
+                    RadioStation(name = "Second", streamUrl = "http://example.com/2"),
+                )
+            viewModel.loadStations()
+            waitForStationsCount(viewModel, 2)
+
+            viewModel.toggleFavorite(viewModel.stations.value.first { it.id == second })
+            waitUntil {
+                viewModel.stations.value
+                    .firstOrNull()
+                    ?.isFavorite == true
+            }
+
+            val list = viewModel.stations.value
+            assertEquals("Second", list[0].name)
+        }
+
+    @Test
+    fun `toggleFavorite on an already-favorite station unpins it`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            val id =
+                database.radioStationDao().insertStation(
+                    RadioStation(name = "Station", streamUrl = "http://example.com/s"),
+                )
+            database.radioStationDao().setFavorite(id, true)
+            viewModel.loadStations()
+            waitForStationsCount(viewModel, 1)
+
+            viewModel.toggleFavorite(viewModel.stations.value[0])
+            waitUntil {
+                viewModel.stations.value
+                    .firstOrNull()
+                    ?.isFavorite == false
+            }
+
+            assertEquals(false, viewModel.stations.value[0].isFavorite)
+        }
+
+    @Test
     fun `provideFactory creates MainViewModel with repository`() =
         runTest {
             database.radioStationDao().insertStation(
@@ -243,8 +299,52 @@ class MainViewModelTest {
                 )
             viewModel.loadStations()
             waitForStationsCount(viewModel, 1)
-            viewModel.deleteStation(id)
+            viewModel.deleteStation(viewModel.stations.value.first { it.id == id })
             waitForStationsEmpty(viewModel)
             assertEquals(0, viewModel.stations.value.size)
+        }
+
+    @Test
+    fun `deleteStation emits StationDeleted event with the deleted station`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            database.radioStationDao().insertStation(
+                RadioStation(name = "To Delete", streamUrl = "http://example.com/del"),
+            )
+            viewModel.loadStations()
+            waitForStationsCount(viewModel, 1)
+            val station = viewModel.stations.value[0]
+
+            val events = mutableListOf<MainScreenEvent>()
+            val collectJob = launch { viewModel.events.collect { events.add(it) } }
+            viewModel.deleteStation(station)
+            waitUntil { events.isNotEmpty() }
+            collectJob.cancel()
+
+            val event = events.single() as MainScreenEvent.StationDeleted
+            assertEquals(station.id, event.station.id)
+            assertEquals("To Delete", event.station.name)
+        }
+
+    @Test
+    fun `undoDelete restores the station with its original id and position`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            database.radioStationDao().insertStation(RadioStation(name = "First", streamUrl = "http://example.com/1"))
+            database.radioStationDao().insertStation(RadioStation(name = "Second", streamUrl = "http://example.com/2"))
+            viewModel.loadStations()
+            waitForStationsCount(viewModel, 2)
+            val toDelete = viewModel.stations.value.first { it.name == "First" }
+
+            viewModel.deleteStation(toDelete)
+            waitForStationsCount(viewModel, 1)
+
+            viewModel.undoDelete(toDelete)
+            waitForStationsCount(viewModel, 2)
+
+            val restored = viewModel.stations.value.first { it.name == "First" }
+            assertEquals(toDelete.id, restored.id)
         }
 }

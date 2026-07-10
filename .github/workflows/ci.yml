@@ -55,12 +55,24 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --no-daemon
 
+      - name: Verify screenshot tests
+        run: ./gradlew verifyRoborazziDebug --no-daemon
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: app/build/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload screenshot diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roborazzi-screenshot-diffs
+          path: app/build/outputs/roborazzi/
           retention-days: 7
           if-no-files-found: ignore
 

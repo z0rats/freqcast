@@ -5,6 +5,7 @@ import kotlinx.coroutines.test.runTest
 import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -45,11 +46,13 @@ class RadioStationRepositoryBackupTest {
         }
 
     @Test
-    fun `exportStationsToJson serializes name, streamUrl and customIcon`() =
+    fun `exportStationsToJson serializes name, streamUrl, customIcon and isFavorite`() =
         runTest {
-            repository.insertStation(
-                RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", customIcon = "🎸"),
-            )
+            val id =
+                repository.insertStation(
+                    RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", customIcon = "🎸"),
+                )
+            repository.setFavorite(id, true)
             repository.insertStation(RadioStation(name = "Jazz Radio", streamUrl = "http://example.com/jazz"))
 
             val array = JSONArray(repository.exportStationsToJson())
@@ -58,7 +61,29 @@ class RadioStationRepositoryBackupTest {
             assertEquals("Rock FM", array.getJSONObject(0).getString("name"))
             assertEquals("http://example.com/rock", array.getJSONObject(0).getString("streamUrl"))
             assertEquals("🎸", array.getJSONObject(0).getString("customIcon"))
+            assertTrue(array.getJSONObject(0).getBoolean("isFavorite"))
             assertTrue(array.getJSONObject(1).isNull("customIcon"))
+            assertFalse(array.getJSONObject(1).getBoolean("isFavorite"))
+        }
+
+    @Test
+    fun `importStationsFromJson reads isFavorite when present`() =
+        runTest {
+            val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock", "isFavorite": true}]"""
+
+            repository.importStationsFromJson(json)
+
+            assertEquals(true, repository.getAllStations()[0].isFavorite)
+        }
+
+    @Test
+    fun `importStationsFromJson defaults isFavorite to false for older backups without the field`() =
+        runTest {
+            val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock"}]"""
+
+            repository.importStationsFromJson(json)
+
+            assertEquals(false, repository.getAllStations()[0].isFavorite)
         }
 
     @Test

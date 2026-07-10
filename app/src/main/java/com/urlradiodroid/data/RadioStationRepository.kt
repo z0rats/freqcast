@@ -23,6 +23,11 @@ class RadioStationRepository(
 
     suspend fun deleteStation(id: Long) = dao.deleteStation(id)
 
+    suspend fun setFavorite(
+        id: Long,
+        isFavorite: Boolean,
+    ) = dao.setFavorite(id, isFavorite)
+
     suspend fun isNameTaken(
         name: String,
         excludeId: Long = 0,
@@ -70,7 +75,8 @@ class RadioStationRepository(
                 } else {
                     obj.optString("customIcon").ifBlank { null }
                 }
-            insertStation(RadioStation(name = name, streamUrl = url, customIcon = icon))
+            val isFavorite = obj.optBoolean("isFavorite", false)
+            insertStation(RadioStation(name = name, streamUrl = url, customIcon = icon, isFavorite = isFavorite))
             imported++
         }
         return ImportResult(imported, skipped, failed)

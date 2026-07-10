@@ -304,6 +304,9 @@ class RadioPlaybackService : MediaSessionService() {
                 .setCallback(MediaSessionCallback())
                 .setSessionActivity(sessionActivity)
                 .build()
+        // Links the notification's MediaStyle to this session's platform token so the system
+        // recognizes it as a media notification and renders lock screen media controls.
+        notificationManager?.setMediaSessionToken(mediaSession!!.platformToken)
     }
 
     private fun setupNotificationManager() {

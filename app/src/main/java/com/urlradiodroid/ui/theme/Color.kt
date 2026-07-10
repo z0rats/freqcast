@@ -2,33 +2,8 @@ package com.urlradiodroid.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Material Design 3 Light Theme Colors - warm amber/terracotta "retro radio" palette (+15% brightness)
-val md_theme_light_primary = Color(0xFFD07A23)
-val md_theme_light_onPrimary = Color(0xFFFFFFFF)
-val md_theme_light_primaryContainer = Color(0xFFFFDDB3)
-val md_theme_light_onPrimaryContainer = Color(0xFF3D2400)
-
-val md_theme_light_secondary = Color(0xFFC55946)
-val md_theme_light_onSecondary = Color(0xFFFFFFFF)
-val md_theme_light_secondaryContainer = Color(0xFFFFDAD1)
-val md_theme_light_onSecondaryContainer = Color(0xFF3D0E04)
-
-val md_theme_light_tertiary = Color(0xFFA17D24)
-val md_theme_light_onTertiary = Color(0xFFFFFFFF)
-val md_theme_light_tertiaryContainer = Color(0xFFFFE08C)
-val md_theme_light_onTertiaryContainer = Color(0xFF2B1E00)
-
-val md_theme_light_error = Color(0xFFBA1A1A)
-val md_theme_light_onError = Color(0xFFFFFFFF)
-val md_theme_light_errorContainer = Color(0xFFFFDAD6)
-val md_theme_light_onErrorContainer = Color(0xFF410002)
-
-val md_theme_light_surface = Color(0xFFFFFBF7)
-val md_theme_light_onSurface = Color(0xFF1F1B16)
-val md_theme_light_surfaceVariant = Color(0xFFFFEFDE)
-val md_theme_light_onSurfaceVariant = Color(0xFF4F4539)
-
 // Material Design 3 Dark Theme Colors - warm amber/terracotta "retro radio" palette (+15% brightness)
+// (app is always-dark by design; there is no light variant)
 val md_theme_dark_primary = Color(0xFFFFB870)
 val md_theme_dark_onPrimary = Color(0xFF4A2800)
 val md_theme_dark_primaryContainer = Color(0xFF7B4811)

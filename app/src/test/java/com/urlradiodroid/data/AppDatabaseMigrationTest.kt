@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,6 +45,36 @@ internal interface LegacyRadioStationDao {
 @Database(entities = [LegacyRadioStation::class], version = 2, exportSchema = false)
 internal abstract class LegacyV2Database : RoomDatabase() {
     abstract fun radioStationDao(): LegacyRadioStationDao
+}
+
+// A standalone snapshot of the `radio_stations` table as it existed at schema version 3 (unique
+// indices on name/streamUrl, no isFavorite column) - see
+// app/schemas/com.urlradiodroid.data.AppDatabase/3.json. Same rationale as LegacyRadioStation:
+// the real RadioStation entity already carries isFavorite, which would defeat this migration test.
+@Entity(
+    tableName = "radio_stations",
+    indices = [
+        androidx.room.Index(value = ["name"], unique = true),
+        androidx.room.Index(value = ["streamUrl"], unique = true),
+    ],
+)
+internal data class LegacyV3RadioStation(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val name: String,
+    val streamUrl: String,
+    val customIcon: String? = null,
+)
+
+@Dao
+internal interface LegacyV3RadioStationDao {
+    @Insert
+    suspend fun insertStation(station: LegacyV3RadioStation): Long
+}
+
+@Database(entities = [LegacyV3RadioStation::class], version = 3, exportSchema = false)
+internal abstract class LegacyV3Database : RoomDatabase() {
+    abstract fun radioStationDao(): LegacyV3RadioStationDao
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -79,13 +110,14 @@ class AppDatabaseMigrationTest {
             )
             legacyDb.close()
 
-            // Reopen the same file through the real AppDatabase + migration, deliberately without
+            // Reopen the same file through the real AppDatabase + migrations, deliberately without
             // fallbackToDestructiveMigration, so Room strictly validates the post-migration schema
-            // against what AppDatabase actually expects - if MIGRATION_2_3 is wrong, this throws.
+            // against what AppDatabase actually expects - if a migration is wrong, this throws.
+            // Both migrations must be registered since AppDatabase is now on version 4.
             val migratedDb =
                 Room
                     .databaseBuilder(context, AppDatabase::class.java, dbName)
-                    .addMigrations(AppDatabase.MIGRATION_2_3)
+                    .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
                     .allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -109,6 +141,38 @@ class AppDatabaseMigrationTest {
                     )
                 }
             }
+
+            migratedDb.close()
+        }
+
+    @Test
+    fun `migration 3 to 4 adds isFavorite defaulting to false and preserves existing data`() =
+        runTest {
+            val legacyDb =
+                Room
+                    .databaseBuilder(context, LegacyV3Database::class.java, dbName)
+                    .allowMainThreadQueries()
+                    .build()
+            legacyDb.radioStationDao().insertStation(
+                LegacyV3RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock"),
+            )
+            legacyDb.close()
+
+            val migratedDb =
+                Room
+                    .databaseBuilder(context, AppDatabase::class.java, dbName)
+                    .addMigrations(AppDatabase.MIGRATION_3_4)
+                    .allowMainThreadQueries()
+                    .build()
+            val stations = migratedDb.radioStationDao().getAllStations()
+
+            assertEquals(1, stations.size)
+            assertEquals("Rock FM", stations[0].name)
+            assertEquals("http://example.com/rock", stations[0].streamUrl)
+            assertFalse(stations[0].isFavorite)
+
+            migratedDb.radioStationDao().setFavorite(stations[0].id, true)
+            assertTrue(migratedDb.radioStationDao().getStationById(stations[0].id)?.isFavorite == true)
 
             migratedDb.close()
         }

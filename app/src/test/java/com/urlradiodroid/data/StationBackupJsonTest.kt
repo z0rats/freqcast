@@ -13,14 +13,21 @@ import org.robolectric.annotation.Config
 @Config(sdk = [29])
 class StationBackupJsonTest {
     @Test
-    fun `toJsonObject serializes name, streamUrl and customIcon`() {
-        val station = RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", customIcon = "🎸")
+    fun `toJsonObject serializes name, streamUrl, customIcon and isFavorite`() {
+        val station =
+            RadioStation(
+                name = "Rock FM",
+                streamUrl = "http://example.com/rock",
+                customIcon = "🎸",
+                isFavorite = true,
+            )
 
         val obj = StationBackupJson.toJsonObject(station)
 
         assertEquals("Rock FM", obj.getString("name"))
         assertEquals("http://example.com/rock", obj.getString("streamUrl"))
         assertEquals("🎸", obj.getString("customIcon"))
+        assertTrue(obj.getBoolean("isFavorite"))
     }
 
     @Test
