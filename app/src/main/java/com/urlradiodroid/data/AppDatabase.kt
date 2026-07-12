@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RadioStation::class], version = 4, exportSchema = true)
+@Database(entities = [RadioStation::class], version = 5, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun radioStationDao(): RadioStationDao
 
@@ -49,6 +49,16 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        /** Adds the optional genre/tag; existing rows default to none. */
+        val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE radio_stations ADD COLUMN genre TEXT DEFAULT NULL",
+                    )
+                }
+            }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -60,7 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
                             context.applicationContext,
                             AppDatabase::class.java,
                             "radio_database",
-                        ).addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                        ).addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                         // Safety net only for schema jumps with no explicit migration
                         // (e.g. pre-1.0 installs skipping straight to a future version).
                         .fallbackToDestructiveMigrationFrom(dropAllTables = true, 1)

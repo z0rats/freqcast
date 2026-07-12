@@ -44,7 +44,8 @@ class MainViewModel(
                 val queryLower = query.lowercase().trim()
                 stations.filter { station ->
                     station.name.lowercase().contains(queryLower) ||
-                        station.streamUrl.lowercase() == queryLower
+                        station.streamUrl.lowercase() == queryLower ||
+                        station.genre?.lowercase()?.contains(queryLower) == true
                 }
             }
         }

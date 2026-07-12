@@ -4,6 +4,7 @@
     <string name="add_station">Add</string>
     <string name="station_name">Station Name</string>
     <string name="stream_url">Stream URL</string>
+    <string name="station_genre">Genre (optional)</string>
     <string name="save">Save</string>
     <string name="play">Play</string>
     <string name="stop">Stop</string>

@@ -126,6 +126,64 @@ class AddStationViewModelTest {
         }
 
     @Test
+    fun `editing a station loads its existing genre`() =
+        runTest {
+            val id =
+                repository.insertStation(
+                    RadioStation(name = "Jazz FM", streamUrl = "http://example.com", genre = "jazz,smooth"),
+                )
+            val viewModel = createViewModel(testScheduler, editingStationId = id)
+
+            awaitTrue { viewModel.uiState.value.genre == "jazz,smooth" }
+        }
+
+    @Test
+    fun `saving a new station persists the entered genre`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onNameChange("New FM")
+            viewModel.onUrlChange(server.url("/stream").toString())
+            viewModel.onGenreChange("rock")
+
+            viewModel.save()
+
+            // isSaving starts false, so polling !isSaving alone would race ahead of the save
+            // (see the class doc); waiting for the true->false transition avoids that. Can't poll
+            // the DB row directly either: a suspend call inside the poll condition would itself
+            // suspend on Room's real executor thread, and since nothing else drives the virtual
+            // scheduler forward while we're suspended, save()'s own coroutine never progresses -
+            // a deadlock only `withTimeout` breaks out of.
+            awaitTrue { viewModel.uiState.value.isSaving }
+            awaitTrue { !viewModel.uiState.value.isSaving }
+            assertEquals("rock", database.radioStationDao().getAllStations()[0].genre)
+        }
+
+    @Test
+    fun `editing a favorited station keeps it favorited after save`() =
+        runTest {
+            val id =
+                repository.insertStation(
+                    RadioStation(
+                        name = "Jazz FM",
+                        streamUrl = server.url("/stream").toString(),
+                        isFavorite = true,
+                    ),
+                )
+            val viewModel = createViewModel(testScheduler, editingStationId = id)
+            // Wait for init's Room load to populate isFavorite before saving, same reasoning as the
+            // icon-replacement test above (Room's suspend calls hop off the virtual test scheduler).
+            awaitTrue { viewModel.uiState.value.isFavorite }
+
+            viewModel.onGenreChange("smooth jazz")
+            viewModel.save()
+
+            // See the true->false isSaving reasoning in the test above.
+            awaitTrue { viewModel.uiState.value.isSaving }
+            awaitTrue { !viewModel.uiState.value.isSaving }
+            assertEquals(true, repository.getStationById(id)?.isFavorite)
+        }
+
+    @Test
     fun `saving with a replaced image icon deletes the old icon file`() =
         runTest {
             val iconsDir = File(RuntimeEnvironment.getApplication().filesDir, "station_icons").apply { mkdirs() }

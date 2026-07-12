@@ -150,6 +150,22 @@ class DiscoverStationsViewModelTest {
         }
 
     @Test
+    fun `addStation persists the directory's tags as the station's genre`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            val station = RadioBrowserStation("u1", "New FM", "http://example.com/new", "US", "rock,pop", 0)
+
+            viewModel.addStation(station)
+            awaitTrue {
+                viewModel.uiState.value.addedUrls
+                    .contains(station.url)
+            }
+
+            assertEquals("rock,pop", database.radioStationDao().getAllStations()[0].genre)
+        }
+
+    @Test
     fun `addStation with a url already in the library marks it added without inserting again`() =
         runTest {
             database.radioStationDao().insertStation(

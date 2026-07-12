@@ -20,10 +20,13 @@ data class AddStationUiState(
     val name: String = "",
     val url: String = "",
     val customIcon: String? = null,
+    val genre: String = "",
     val nameErrorRes: Int? = null,
     val urlErrorRes: Int? = null,
     val isSaving: Boolean = false,
     val isEditing: Boolean = false,
+    /** Carried through unedited from the loaded station (this form has no favorite toggle) so save() doesn't clear it. */
+    val isFavorite: Boolean = false,
 )
 
 sealed interface AddStationEvent {
@@ -60,6 +63,8 @@ class AddStationViewModel(
                             name = station.name,
                             url = station.streamUrl,
                             customIcon = station.customIcon,
+                            genre = station.genre.orEmpty(),
+                            isFavorite = station.isFavorite,
                         )
                 }
             }
@@ -72,6 +77,10 @@ class AddStationViewModel(
 
     fun onUrlChange(value: String) {
         _uiState.value = _uiState.value.copy(url = value, urlErrorRes = null)
+    }
+
+    fun onGenreChange(value: String) {
+        _uiState.value = _uiState.value.copy(genre = value)
     }
 
     fun onEmojiIconSelected(emoji: String) {
@@ -133,6 +142,10 @@ class AddStationViewModel(
                     else -> {
                         val id = editingStationId
                         val finalIcon = _uiState.value.customIcon
+                        val finalGenre =
+                            _uiState.value.genre
+                                .trim()
+                                .ifBlank { null }
                         val station =
                             if (id != null) {
                                 RadioStation(
@@ -140,9 +153,16 @@ class AddStationViewModel(
                                     name = nameTrimmed,
                                     streamUrl = urlTrimmed,
                                     customIcon = finalIcon,
+                                    isFavorite = _uiState.value.isFavorite,
+                                    genre = finalGenre,
                                 )
                             } else {
-                                RadioStation(name = nameTrimmed, streamUrl = urlTrimmed, customIcon = finalIcon)
+                                RadioStation(
+                                    name = nameTrimmed,
+                                    streamUrl = urlTrimmed,
+                                    customIcon = finalIcon,
+                                    genre = finalGenre,
+                                )
                             }
                         if (id != null) {
                             repository.updateStation(station)

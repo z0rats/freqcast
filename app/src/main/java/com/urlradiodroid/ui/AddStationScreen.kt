@@ -326,6 +326,27 @@ fun AddStationScreen(
                             shape = MaterialTheme.shapes.medium,
                         )
 
+                        OutlinedTextField(
+                            value = uiState.genre,
+                            onValueChange = viewModel::onGenreChange,
+                            label = { Text(stringResource(R.string.station_genre)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors =
+                                TextFieldDefaults.colors(
+                                    focusedContainerColor = card_surface_active,
+                                    unfocusedContainerColor = card_surface_active,
+                                    focusedTextColor = text_primary,
+                                    unfocusedTextColor = text_primary,
+                                    focusedLabelColor = text_hint,
+                                    unfocusedLabelColor = text_hint,
+                                    cursorColor = text_primary,
+                                    focusedIndicatorColor = text_hint,
+                                    unfocusedIndicatorColor = text_hint.copy(alpha = 0.5f),
+                                ),
+                            shape = MaterialTheme.shapes.medium,
+                        )
+
                         Button(
                             onClick = viewModel::save,
                             enabled = !uiState.isSaving,

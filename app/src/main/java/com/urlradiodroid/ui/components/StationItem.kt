@@ -347,7 +347,7 @@ private fun StationCard(
                                 isActive && isPlaying && trackTitle != null -> trackTitle
                                 isActive && isPlaying -> stringResource(R.string.playing)
                                 isActive && isStarting -> stringResource(R.string.starting)
-                                else -> station.streamUrl
+                                else -> station.genre?.takeIf { it.isNotBlank() } ?: station.streamUrl
                             },
                         style = MaterialTheme.typography.bodySmall,
                         color = text_hint,

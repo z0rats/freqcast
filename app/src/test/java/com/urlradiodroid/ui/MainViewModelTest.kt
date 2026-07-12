@@ -174,6 +174,25 @@ class MainViewModelTest {
         }
 
     @Test
+    fun `filteredStations filters by genre`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            database.radioStationDao().insertStation(
+                RadioStation(name = "Station A", streamUrl = "http://example.com/rock", genre = "rock,pop"),
+            )
+            database.radioStationDao().insertStation(
+                RadioStation(name = "Station B", streamUrl = "http://example.com/jazz", genre = "jazz"),
+            )
+            viewModel.loadStations()
+            waitForStationsCount(viewModel, 2)
+            viewModel.updateSearchQuery("rock")
+            val result = viewModel.filteredStations.first()
+            assertEquals(1, result.size)
+            assertEquals("Station A", result[0].name)
+        }
+
+    @Test
     fun `filteredStations returns all when search is whitespace only`() =
         runTest {
             val viewModel = createViewModel(testScheduler)

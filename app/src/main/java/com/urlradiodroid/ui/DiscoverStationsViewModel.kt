@@ -105,7 +105,14 @@ class DiscoverStationsViewModel(
                 suffix++
             }
             try {
-                repository.insertStation(RadioStation(name = name, streamUrl = station.url, customIcon = null))
+                repository.insertStation(
+                    RadioStation(
+                        name = name,
+                        streamUrl = station.url,
+                        customIcon = null,
+                        genre = station.tags.takeIf { it.isNotBlank() },
+                    ),
+                )
                 _uiState.value = _uiState.value.copy(addedUrls = _uiState.value.addedUrls + station.url)
             } catch (e: Exception) {
                 // Defense-in-depth unique constraints (see AppDatabase) can still race with the

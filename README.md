@@ -17,6 +17,7 @@ A minimalist Android application for listening to internet radio via direct stre
 - **🔎 Discover stations**: search the [Radio Browser](https://api.radio-browser.info/) public directory by name, genre, or country and add results straight to your library, no need to hunt down stream URLs yourself
 - 📜 View list of saved stations with search (when more than 4 stations)
 - **⭐ Favorites / pinning**: tap the star on any station to pin it to the top of the list; pinned stations stay sorted above the rest
+- **🏷️ Genres/tags**: stations added via Discover pick up the directory's tags automatically; manually-added stations can have one too; search matches it alongside name and URL
 - **📱 App Shortcuts**: long-press the launcher icon for one-tap play of your last-played and favorite station, no need to open the app first
 - ▶️ Play streams using ExoPlayer
 - 🔇 Background playback support with media notifications

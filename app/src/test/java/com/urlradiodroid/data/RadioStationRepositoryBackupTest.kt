@@ -46,11 +46,16 @@ class RadioStationRepositoryBackupTest {
         }
 
     @Test
-    fun `exportStationsToJson serializes name, streamUrl, customIcon and isFavorite`() =
+    fun `exportStationsToJson serializes name, streamUrl, customIcon, isFavorite and genre`() =
         runTest {
             val id =
                 repository.insertStation(
-                    RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", customIcon = "🎸"),
+                    RadioStation(
+                        name = "Rock FM",
+                        streamUrl = "http://example.com/rock",
+                        customIcon = "🎸",
+                        genre = "rock,classic rock",
+                    ),
                 )
             repository.setFavorite(id, true)
             repository.insertStation(RadioStation(name = "Jazz Radio", streamUrl = "http://example.com/jazz"))
@@ -62,28 +67,35 @@ class RadioStationRepositoryBackupTest {
             assertEquals("http://example.com/rock", array.getJSONObject(0).getString("streamUrl"))
             assertEquals("🎸", array.getJSONObject(0).getString("customIcon"))
             assertTrue(array.getJSONObject(0).getBoolean("isFavorite"))
+            assertEquals("rock,classic rock", array.getJSONObject(0).getString("genre"))
             assertTrue(array.getJSONObject(1).isNull("customIcon"))
             assertFalse(array.getJSONObject(1).getBoolean("isFavorite"))
+            assertTrue(array.getJSONObject(1).isNull("genre"))
         }
 
     @Test
-    fun `importStationsFromJson reads isFavorite when present`() =
+    fun `importStationsFromJson reads isFavorite and genre when present`() =
         runTest {
-            val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock", "isFavorite": true}]"""
+            val json =
+                """
+                [{"name": "Rock FM", "streamUrl": "http://example.com/rock", "isFavorite": true, "genre": "rock"}]
+                """.trimIndent()
 
             repository.importStationsFromJson(json)
 
             assertEquals(true, repository.getAllStations()[0].isFavorite)
+            assertEquals("rock", repository.getAllStations()[0].genre)
         }
 
     @Test
-    fun `importStationsFromJson defaults isFavorite to false for older backups without the field`() =
+    fun `importStationsFromJson defaults isFavorite to false and genre to null for older backups without the fields`() =
         runTest {
             val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock"}]"""
 
             repository.importStationsFromJson(json)
 
             assertEquals(false, repository.getAllStations()[0].isFavorite)
+            assertNull(repository.getAllStations()[0].genre)
         }
 
     @Test
@@ -156,7 +168,12 @@ class RadioStationRepositoryBackupTest {
     fun `export then import into a fresh database round-trips all fields`() =
         runTest {
             repository.insertStation(
-                RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", customIcon = "🎸"),
+                RadioStation(
+                    name = "Rock FM",
+                    streamUrl = "http://example.com/rock",
+                    customIcon = "🎸",
+                    genre = "rock",
+                ),
             )
             repository.insertStation(RadioStation(name = "Jazz Radio", streamUrl = "http://example.com/jazz"))
             val json = repository.exportStationsToJson()
@@ -177,8 +194,10 @@ class RadioStationRepositoryBackupTest {
             assertEquals("Rock FM", imported[0].name)
             assertEquals("http://example.com/rock", imported[0].streamUrl)
             assertEquals("🎸", imported[0].customIcon)
+            assertEquals("rock", imported[0].genre)
             assertEquals("Jazz Radio", imported[1].name)
             assertNull(imported[1].customIcon)
+            assertNull(imported[1].genre)
             freshDatabase.close()
         }
 }

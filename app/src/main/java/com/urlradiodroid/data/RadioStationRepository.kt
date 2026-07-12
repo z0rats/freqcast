@@ -38,7 +38,7 @@ class RadioStationRepository(
         excludeId: Long = 0,
     ): Boolean = dao.findStationByUrl(url, excludeId) != null
 
-    /** Serializes all stations to a JSON array of `{name, streamUrl, customIcon}` objects. */
+    /** Serializes all stations to a JSON array of `{name, streamUrl, customIcon, isFavorite, genre}` objects. */
     suspend fun exportStationsToJson(): String = StationBackupJson.toJsonArray(dao.getAllStations())
 
     /**
@@ -76,7 +76,15 @@ class RadioStationRepository(
                     obj.optString("customIcon").ifBlank { null }
                 }
             val isFavorite = obj.optBoolean("isFavorite", false)
-            insertStation(RadioStation(name = name, streamUrl = url, customIcon = icon, isFavorite = isFavorite))
+            val genre =
+                if (!obj.has("genre") || obj.isNull("genre")) {
+                    null
+                } else {
+                    obj.optString("genre").ifBlank { null }
+                }
+            insertStation(
+                RadioStation(name = name, streamUrl = url, customIcon = icon, isFavorite = isFavorite, genre = genre),
+            )
             imported++
         }
         return ImportResult(imported, skipped, failed)

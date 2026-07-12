@@ -77,6 +77,37 @@ internal abstract class LegacyV3Database : RoomDatabase() {
     abstract fun radioStationDao(): LegacyV3RadioStationDao
 }
 
+// A standalone snapshot of the `radio_stations` table as it existed at schema version 4 (adds
+// isFavorite, no genre column) - see app/schemas/com.urlradiodroid.data.AppDatabase/4.json. Same
+// rationale as the other Legacy* entities: the real RadioStation entity already carries genre,
+// which would defeat this migration test.
+@Entity(
+    tableName = "radio_stations",
+    indices = [
+        androidx.room.Index(value = ["name"], unique = true),
+        androidx.room.Index(value = ["streamUrl"], unique = true),
+    ],
+)
+internal data class LegacyV4RadioStation(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val name: String,
+    val streamUrl: String,
+    val customIcon: String? = null,
+    val isFavorite: Boolean = false,
+)
+
+@Dao
+internal interface LegacyV4RadioStationDao {
+    @Insert
+    suspend fun insertStation(station: LegacyV4RadioStation): Long
+}
+
+@Database(entities = [LegacyV4RadioStation::class], version = 4, exportSchema = false)
+internal abstract class LegacyV4Database : RoomDatabase() {
+    abstract fun radioStationDao(): LegacyV4RadioStationDao
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class AppDatabaseMigrationTest {
@@ -113,11 +144,11 @@ class AppDatabaseMigrationTest {
             // Reopen the same file through the real AppDatabase + migrations, deliberately without
             // fallbackToDestructiveMigration, so Room strictly validates the post-migration schema
             // against what AppDatabase actually expects - if a migration is wrong, this throws.
-            // Both migrations must be registered since AppDatabase is now on version 4.
+            // All three migrations must be registered since AppDatabase is now on version 5.
             val migratedDb =
                 Room
                     .databaseBuilder(context, AppDatabase::class.java, dbName)
-                    .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+                    .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
                     .allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -161,7 +192,7 @@ class AppDatabaseMigrationTest {
             val migratedDb =
                 Room
                     .databaseBuilder(context, AppDatabase::class.java, dbName)
-                    .addMigrations(AppDatabase.MIGRATION_3_4)
+                    .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
                     .allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -173,6 +204,38 @@ class AppDatabaseMigrationTest {
 
             migratedDb.radioStationDao().setFavorite(stations[0].id, true)
             assertTrue(migratedDb.radioStationDao().getStationById(stations[0].id)?.isFavorite == true)
+
+            migratedDb.close()
+        }
+
+    @Test
+    fun `migration 4 to 5 adds a nullable genre and preserves existing data`() =
+        runTest {
+            val legacyDb =
+                Room
+                    .databaseBuilder(context, LegacyV4Database::class.java, dbName)
+                    .allowMainThreadQueries()
+                    .build()
+            legacyDb.radioStationDao().insertStation(
+                LegacyV4RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", isFavorite = true),
+            )
+            legacyDb.close()
+
+            val migratedDb =
+                Room
+                    .databaseBuilder(context, AppDatabase::class.java, dbName)
+                    .addMigrations(AppDatabase.MIGRATION_4_5)
+                    .allowMainThreadQueries()
+                    .build()
+            val stations = migratedDb.radioStationDao().getAllStations()
+
+            assertEquals(1, stations.size)
+            assertEquals("Rock FM", stations[0].name)
+            assertTrue(stations[0].isFavorite)
+            assertEquals(null, stations[0].genre)
+
+            migratedDb.radioStationDao().updateStation(stations[0].copy(genre = "Rock"))
+            assertEquals("Rock", migratedDb.radioStationDao().getStationById(stations[0].id)?.genre)
 
             migratedDb.close()
         }
