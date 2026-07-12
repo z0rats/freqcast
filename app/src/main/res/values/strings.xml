@@ -81,4 +81,9 @@
     <string name="alarm_no_stations">Add a station first to set a wake-up alarm</string>
     <string name="alarm_enabled_toast">Alarm set for %1$s</string>
     <string name="alarm_disabled_toast">Alarm turned off</string>
+    <string name="widget_description">Play/pause and switch stations from the home screen</string>
+    <string name="widget_no_station">No station yet</string>
+    <string name="widget_tap_to_browse">Tap to open the app</string>
+    <string name="widget_previous_station">Previous station</string>
+    <string name="widget_next_station">Next station</string>
 </resources>

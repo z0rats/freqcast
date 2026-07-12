@@ -31,6 +31,8 @@ A minimalist Android application for listening to internet radio via direct stre
 - **🎶 Live track title**: shows the current track (from ICY/Shoutcast metadata, when the stream provides it) in the mini player and playback screen, with a one-tap copy-to-clipboard button
 - **😴 Sleep timer**: stop playback automatically after 15/30/45/60 minutes, with a live countdown shown on the playback screen
 - **⏰ Wake-up alarm**: set a daily alarm (time + station) from the overflow menu; fires via the system alarm clock even if the app isn't running, and reschedules itself for the next day automatically
+- **🏠 Home screen widget**: play/pause, station name, and next/prev buttons right from the home screen, no need to open the app
+- **🚗 Android Auto**: your station list shows up as a browsable/playable list on the car head unit; tap a station to start it playing
 - 💾 Local data storage using Room Database, with unique name/URL constraints enforced at the DB level and safe migrations (no data loss on upgrade)
 - **📤 Export / share / import stations**: back up all your stations to a JSON file (favorite status included) or share it to another app, share a single station straight from its list item, and import a backup (e.g. after reinstalling or switching devices)
 - 🎨 Modern UI with Jetpack Compose (liquid glass style)
@@ -143,19 +145,26 @@ app/src/main/
 │   │   │   ├── LiveFileDataSource.kt    # Media3 DataSource: read buffer, block at EOF
 │   │   │   ├── TimeshiftController.kt   # Buffer file lifecycle + seek math for rewind/live
 │   │   │   ├── PlaybackStateStore.kt    # Persists last station so playback can resume after process death
-│   │   │   └── AlarmStateStore.kt       # Persists the wake-up alarm (enabled, time, station)
+│   │   │   ├── AlarmStateStore.kt       # Persists the wake-up alarm (enabled, time, station)
+│   │   │   └── WidgetStateStore.kt      # Persists station/isPlaying so the home screen widget can render it
 │   │   ├── components/
 │   │   │   ├── NowPlayingBottomBar.kt  # Mini player: play/pause, rewind 5s, live, track title
 │   │   │   ├── StationItem.kt          # Station list item (favorite toggle, swipe to edit/share/delete)
 │   │   │   └── EqualizerBars.kt        # Animated "now playing" bars indicator
 │   │   └── theme/                   # Compose theme (colors, typography)
+│   ├── widget/
+│   │   ├── RadioWidget.kt           # Glance home screen widget composable
+│   │   ├── RadioWidgetReceiver.kt   # GlanceAppWidgetReceiver, registered in the manifest
+│   │   └── WidgetActions.kt         # Toggle/next/prev button ActionCallbacks
 │   └── util/
 │       ├── EmojiGenerator.kt
 │       ├── StreamValidator.kt       # HEAD/GET reachability probe before a station is saved
 │       ├── AppShortcuts.kt          # Long-press launcher icon: last-played/favorite station shortcuts
+│       ├── StationNavigator.kt      # Pure next/prev station selection for the widget's skip buttons
 │       └── StationShare.kt          # Share JSON backup via Intent.ACTION_SEND (FileProvider)
 └── res/
     ├── values/                      # Strings, colors, themes
+    ├── xml/                         # automotive_app_desc.xml, radio_widget_info.xml
     └── drawable/                    # Icons
 ```
 
@@ -173,6 +182,7 @@ Main project dependencies:
 - `androidx.media3:media3-ui:1.10.1`
 - `androidx.media3:media3-session:1.10.1`
 - `androidx.media3:media3-datasource:1.10.1` (custom DataSource for timeshift)
+- `androidx.glance:glance-appwidget:1.1.1` (home screen widget)
 - `com.squareup.okhttp3:okhttp:5.4.0` (stream recording for timeshift buffer, ICY metadata)
 
 ## 🧪 Testing

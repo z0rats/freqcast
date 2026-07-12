@@ -17,6 +17,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.glance.appwidget.updateAll
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -29,18 +30,32 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.LibraryParams
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
 import androidx.media3.ui.PlayerNotificationManager
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.urlradiodroid.R
+import com.urlradiodroid.data.RadioStation
+import com.urlradiodroid.data.RadioStationRepository
 import com.urlradiodroid.ui.playback.PlaybackStateStore
 import com.urlradiodroid.ui.playback.TimeshiftController
+import com.urlradiodroid.ui.playback.WidgetStateStore
 import com.urlradiodroid.util.EmojiGenerator
+import com.urlradiodroid.widget.RadioWidget
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.guava.future
+import kotlinx.coroutines.launch
 
 /** Snapshot of playback state exposed reactively so the UI doesn't need to poll the service. */
 data class PlaybackSnapshot(
@@ -54,14 +69,20 @@ data class PlaybackSnapshot(
 )
 
 @UnstableApi
-class RadioPlaybackService : MediaSessionService() {
-    private var mediaSession: MediaSession? = null
+class RadioPlaybackService : MediaLibraryService() {
+    private var mediaSession: MediaLibrarySession? = null
     private var player: ExoPlayer? = null
     private var notificationManager: PlayerNotificationManager? = null
     private var stationName: String? = null
 
     private lateinit var timeshift: TimeshiftController
     private lateinit var playbackStateStore: PlaybackStateStore
+    private lateinit var repository: RadioStationRepository
+
+    /** Refreshed on every browse request; lets [MediaLibrarySessionCallback] resolve a tapped station without a DB hit. */
+    private var cachedStations: List<RadioStation> = emptyList()
+
+    private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
     /** Current stream URL; kept so we can restart playback when network is restored. */
     private var currentStreamUrl: String? = null
@@ -83,9 +104,10 @@ class RadioPlaybackService : MediaSessionService() {
     val playbackSnapshot: StateFlow<PlaybackSnapshot> = _playbackSnapshot.asStateFlow()
 
     private fun refreshSnapshot() {
+        val isPlaying = player?.isPlaying ?: false
         _playbackSnapshot.value =
             PlaybackSnapshot(
-                isPlaying = player?.isPlaying ?: false,
+                isPlaying = isPlaying,
                 isBuffering = player?.playbackState == Player.STATE_BUFFERING,
                 currentMediaId = player?.currentMediaItem?.mediaId,
                 hasTimeshift = timeshift.hasTimeshift(),
@@ -93,6 +115,14 @@ class RadioPlaybackService : MediaSessionService() {
                 trackTitle = timeshift.currentTrackTitle(),
                 sleepTimerEndAtMs = sleepTimerEndAtMs,
             )
+        updateWidget(isPlaying)
+    }
+
+    /** Pushes the latest station/playing state to the home screen widget (see `widget/RadioWidget`). */
+    private fun updateWidget(isPlaying: Boolean) {
+        val streamUrl = currentStreamUrl ?: player?.currentMediaItem?.mediaId
+        WidgetStateStore(this).save(stationName = stationName, streamUrl = streamUrl, isPlaying = isPlaying)
+        serviceScope.launch { RadioWidget().updateAll(this@RadioPlaybackService) }
     }
 
     /** Stops playback automatically after [minutes]; replaces any previously scheduled timer. */
@@ -118,16 +148,26 @@ class RadioPlaybackService : MediaSessionService() {
     }
 
     override fun onBind(intent: Intent?): IBinder {
-        super.onBind(intent)
-        return binder
+        // MediaLibraryService.onBind() returns the real session binder when the incoming intent's
+        // action matches its media-session interface (external clients: Android Auto, Assistant,
+        // legacy MediaBrowserServiceCompat clients) and null for anything else — including our own
+        // Activities' plain explicit-component bind (no action set), which is when we want to hand
+        // out LocalBinder instead. Discarding the super binder unconditionally (as this used to do)
+        // would hand Auto/Assistant our unrelated LocalBinder and break their connection outright.
+        return super.onBind(intent) ?: binder
     }
 
     override fun onCreate() {
         super.onCreate()
         timeshift = TimeshiftController(cacheDir)
         playbackStateStore = PlaybackStateStore(this)
+        repository = RadioStationRepository.create(this)
         createNotificationChannel()
         initializePlayer()
+        // Built immediately (not lazily on first startPlayback) so a MediaLibrarySession always
+        // exists for onGetSession() to return — Android Auto needs to browse the station list even
+        // before any playback has ever started in this process.
+        buildMediaSession(streamUrl = null)
         setupNotificationManager()
     }
 
@@ -136,6 +176,11 @@ class RadioPlaybackService : MediaSessionService() {
         flags: Int,
         startId: Int,
     ): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopPlayback()
+            return START_NOT_STICKY
+        }
+
         val streamUrl = intent?.getStringExtra(EXTRA_STREAM_URL)
 
         if (streamUrl != null) {
@@ -157,9 +202,10 @@ class RadioPlaybackService : MediaSessionService() {
         return START_STICKY
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaSession
 
     override fun onDestroy() {
+        serviceScope.cancel()
         releasePlayer()
         super.onDestroy()
     }
@@ -284,24 +330,38 @@ class RadioPlaybackService : MediaSessionService() {
         // MediaSession is created in startPlayback() when we have station info for lock screen session activity
     }
 
-    private fun buildMediaSession(streamUrl: String) {
+    /**
+     * Builds (or rebuilds) the [MediaLibrarySession]. [streamUrl] is null only for the initial
+     * onCreate() build, before any station has ever played in this process — the session's
+     * activity-open intent then carries no station extras and relies on [PlaybackActivity] reading
+     * the live station from the bound service once it connects.
+     *
+     * Only called from top-level entry points (onCreate, startPlayback), never from within the
+     * session's own [MediaLibrarySessionCallback] — media3 does not support a session releasing
+     * itself mid-callback-dispatch, which is why browse-tree-initiated playback goes through
+     * [applyPlayback] directly instead of routing back through here.
+     */
+    private fun buildMediaSession(streamUrl: String?) {
         val p = player ?: return
         mediaSession?.release()
+        val openIntent =
+            Intent(this, PlaybackActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                if (streamUrl != null) {
+                    putExtra(PlaybackActivity.EXTRA_STATION_NAME, stationName)
+                    putExtra(PlaybackActivity.EXTRA_STREAM_URL, streamUrl)
+                }
+            }
         val sessionActivity =
             PendingIntent.getActivity(
                 this,
                 0,
-                Intent(this, PlaybackActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    putExtra(PlaybackActivity.EXTRA_STATION_NAME, stationName)
-                    putExtra(PlaybackActivity.EXTRA_STREAM_URL, streamUrl)
-                },
+                openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         mediaSession =
-            MediaSession
-                .Builder(this, p)
-                .setCallback(MediaSessionCallback())
+            MediaLibrarySession
+                .Builder(this, p, MediaLibrarySessionCallback())
                 .setSessionActivity(sessionActivity)
                 .build()
         // Links the notification's MediaStyle to this session's platform token so the system
@@ -386,8 +446,23 @@ class RadioPlaybackService : MediaSessionService() {
         streamUrl: String,
         isRetry: Boolean = false,
     ) {
+        buildMediaSession(streamUrl)
+        applyPlayback(streamUrl, isRetry)
+    }
+
+    /**
+     * Drives the player/notification/network-retry/timeshift pipeline for [streamUrl]. Split out
+     * from [startPlayback] so [MediaLibrarySessionCallback.onAddMediaItems] (Android Auto tapping a
+     * station in the browse tree) can start playback without rebuilding the session it's currently
+     * being called from — see [buildMediaSession]'s doc for why that matters. [stationName] must
+     * already be set by the caller before calling this.
+     */
+    private fun applyPlayback(
+        streamUrl: String,
+        isRetry: Boolean = false,
+    ) {
         val exoPlayer = player ?: return
-        Log.d(TAG, "startPlayback: isHls=${isHlsUrl(streamUrl)}, url=${streamUrl.take(60)}, isRetry=$isRetry")
+        Log.d(TAG, "applyPlayback: isHls=${isHlsUrl(streamUrl)}, url=${streamUrl.take(60)}, isRetry=$isRetry")
         currentStreamUrl = streamUrl
         pendingRetry = false
         playbackStateStore.save(stationName, streamUrl)
@@ -399,8 +474,6 @@ class RadioPlaybackService : MediaSessionService() {
 
         // Start foreground immediately so notification and lock screen controls appear right away
         startForegroundWithNotification(createConnectingNotification())
-
-        buildMediaSession(streamUrl)
 
         val isHls = isHlsUrl(streamUrl)
         val mediaItemBuilder =
@@ -671,12 +744,116 @@ class RadioPlaybackService : MediaSessionService() {
         refreshSnapshot()
     }
 
-    private inner class MediaSessionCallback : MediaSession.Callback {
+    /** Root of the Android Auto / Assistant browse tree: a flat list of all stations. */
+    private fun browseRootItem(): MediaItem =
+        MediaItem
+            .Builder()
+            .setMediaId(BROWSE_ROOT_ID)
+            .setMediaMetadata(
+                MediaMetadata
+                    .Builder()
+                    .setTitle(getString(R.string.app_name))
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setFolderType(MediaMetadata.FOLDER_TYPE_MIXED)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS)
+                    .build(),
+            ).build()
+
+    private fun RadioStation.toBrowsableMediaItem(): MediaItem =
+        MediaItem
+            .Builder()
+            .setMediaId(streamUrl)
+            .setUri(streamUrl)
+            .setMediaMetadata(
+                MediaMetadata
+                    .Builder()
+                    .setTitle(name)
+                    .setArtist(getString(R.string.app_name))
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
+                    .build(),
+            ).build()
+
+    /**
+     * Loads the current station list into [cachedStations] and returns it as browsable media
+     * items for the Android Auto / Assistant browse tree. Kept `internal` (not private), same as
+     * [isHlsUrl]/[retryDelayMs] above, so tests can exercise the real browse-tree contents without
+     * going through a full [MediaLibrarySession]/[MediaSession.ControllerInfo] Binder round trip —
+     * media3's own team tests that round trip with instrumentation, not Robolectric, which this
+     * project deliberately doesn't have (see Testing in CLAUDE.md).
+     */
+    internal suspend fun loadBrowsableStations(): List<MediaItem> {
+        val stations = repository.getAllStations()
+        cachedStations = stations
+        return stations.map { it.toBrowsableMediaItem() }
+    }
+
+    /**
+     * Starts playback of the cached station whose stream URL is [mediaId], as if it had been
+     * tapped in the Android Auto / Assistant browse tree. Returns false without side effects if
+     * [mediaId] isn't a station from the most recent [loadBrowsableStations] call.
+     */
+    internal fun playFromBrowseTree(mediaId: String): Boolean {
+        val station = cachedStations.find { it.streamUrl == mediaId } ?: return false
+        stationName = station.name
+        applyPlayback(station.streamUrl)
+        return true
+    }
+
+    private inner class MediaLibrarySessionCallback : MediaLibrarySession.Callback {
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<MediaItem>> =
+            Futures.immediateFuture(LibraryResult.ofItem(browseRootItem(), params))
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            if (parentId != BROWSE_ROOT_ID) {
+                return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+            }
+            return serviceScope.future { LibraryResult.ofItemList(loadBrowsableStations(), params) }
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String,
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            if (mediaId == BROWSE_ROOT_ID) {
+                return Futures.immediateFuture(LibraryResult.ofItem(browseRootItem(), null))
+            }
+            val station = cachedStations.find { it.streamUrl == mediaId }
+            return if (station != null) {
+                Futures.immediateFuture(LibraryResult.ofItem(station.toBrowsableMediaItem(), null))
+            } else {
+                Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+            }
+        }
+
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
+            // A tap on a station in the Android Auto / Assistant browse tree: play it through our
+            // own pipeline (HLS/timeshift handling, notification, retry) instead of letting media3
+            // hand the bare item straight to the player, and don't touch the session itself (see
+            // buildMediaSession's doc).
+            val mediaId = mediaItems.firstOrNull()?.mediaId
+            if (mediaId != null && playFromBrowseTree(mediaId)) {
+                return Futures.immediateFuture(mutableListOf())
+            }
+
             val updatedItems =
                 mediaItems.map { item ->
                     item
@@ -697,6 +874,8 @@ class RadioPlaybackService : MediaSessionService() {
         private const val TAG = "RadioPlayback"
         const val EXTRA_STATION_NAME = "station_name"
         const val EXTRA_STREAM_URL = "stream_url"
+        const val ACTION_STOP = "com.urlradiodroid.action.STOP"
+        private const val BROWSE_ROOT_ID = "root"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "radio_playback_channel"
         private const val MAX_RETRY_COUNT = 5

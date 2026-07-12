@@ -103,6 +103,8 @@ dependencies {
     implementation libs.guava
     implementation libs.okhttp
     implementation libs.kotlinx.coroutines.android
+    // Bridges suspend station-list loads to the ListenableFuture MediaLibrarySession.Callback expects.
+    implementation libs.kotlinx.coroutines.guava
 
     // Jetpack Compose
     implementation platform(libs.androidx.compose.bom)
@@ -121,6 +123,9 @@ dependencies {
     // the listed classes/methods at install time instead of interpreting/JITting them on first run).
     implementation libs.androidx.profileinstaller
 
+    // Home screen widget (Glance: Compose-style API for RemoteViews-backed App Widgets).
+    implementation libs.androidx.glance.appwidget
+
     testImplementation libs.junit
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.androidx.room.testing
@@ -129,6 +134,7 @@ dependencies {
     testImplementation libs.mockito.kotlin
     testImplementation libs.robolectric
     testImplementation libs.okhttp.mockwebserver
+    testImplementation libs.androidx.glance.appwidget.testing
 
     // Screenshot testing (Roborazzi over Robolectric's native-graphics mode)
     testImplementation libs.roborazzi
