@@ -13,12 +13,15 @@ A minimalist Android application for listening to internet radio via direct stre
 ## ✨ Features
 
 - 📍 Add radio stations with name and stream URL
-- **🖼️ Custom station icons**: pick an emoji or upload your own image for any station, shown in the list and mini player
-- **🔎 Discover stations**: search the [Radio Browser](https://api.radio-browser.info/) public directory by name, genre, or country and add results straight to your library, no need to hunt down stream URLs yourself
+- **🖼️ Custom station icons**: pick an emoji or upload your own image for any station, shown in the list and mini player; Discover-added stations auto-fetch the station's real logo when the directory has one
+- **🔎 Discover stations**: search the [Radio Browser](https://api.radio-browser.info/) public directory by name, genre, country, or language and add results straight to your library, no need to hunt down stream URLs yourself; results show country flag, codec/bitrate, vote count, and a homepage link, and flag stations whose HTTPS certificate failed validation
+- **📍 "Near me" search**: find stations near you using your device's coarse location — sent only for that one search, never stored, with an in-app explanation before the system permission prompt
 - 📜 View list of saved stations with search (when more than 4 stations)
 - **⭐ Favorites / pinning**: tap the star on any station to pin it to the top of the list; pinned stations stay sorted above the rest
 - **🏷️ Genres/tags**: stations added via Discover pick up the directory's tags automatically; manually-added stations can have one too; search matches it alongside name and URL
 - **📱 App Shortcuts**: long-press the launcher icon for one-tap play of your last-played and favorite station, no need to open the app first
+- **⚙️ Settings screen**: export/import your stations and toggle a metered-connection playback warning
+- **🌐 Localization**: available in English, Russian, Spanish, and Simplified Chinese
 - ▶️ Play streams using ExoPlayer
 - 🔇 Background playback support with media notifications
 - **🎯 Unified player and list state**: the bottom mini player and the active list item always show the same station and play/pause state
@@ -279,6 +282,8 @@ The application requests the following permissions:
 - `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MEDIA_PLAYBACK` - for background playback
 - `POST_NOTIFICATIONS` - for media notifications (Android 13+)
 - `WAKE_LOCK` - keeps the network alive while playing with the screen off (background listening is the app's whole point)
+- `RECEIVE_BOOT_COMPLETED` - reschedules the wake-up alarm after a reboot (AlarmManager alarms are cleared on reboot)
+- `ACCESS_COARSE_LOCATION` - only requested when you use Discover's "Near me" search; your location is sent for that one search and never stored
 
 ## 📄 License
 
