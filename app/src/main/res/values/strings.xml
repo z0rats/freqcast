@@ -92,6 +92,7 @@
     <string name="alarm_no_stations">Add a station first to set a wake-up alarm</string>
     <string name="alarm_enabled_toast">Alarm set for %1$s</string>
     <string name="alarm_disabled_toast">Alarm turned off</string>
+    <string name="alarm_permission_needed">Allow \"Alarms &amp; reminders\" for this app to set the wake-up alarm</string>
     <string name="settings">Settings</string>
     <string name="settings_metered_warning">Mobile data warning</string>
     <string name="settings_metered_warning_description">Ask for confirmation before playing on a metered connection</string>

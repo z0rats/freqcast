@@ -283,6 +283,7 @@ The application requests the following permissions:
 - `POST_NOTIFICATIONS` - for media notifications (Android 13+)
 - `WAKE_LOCK` - keeps the network alive while playing with the screen off (background listening is the app's whole point)
 - `RECEIVE_BOOT_COMPLETED` - reschedules the wake-up alarm after a reboot (AlarmManager alarms are cleared on reboot)
+- `SCHEDULE_EXACT_ALARM` - needed for the wake-up alarm to fire at the exact time you set; on some devices you may need to grant "Alarms & reminders" access from Settings (the app will prompt you if so)
 - `ACCESS_COARSE_LOCATION` - only requested when you use Discover's "Near me" search; your location is sent for that one search and never stored
 
 ## 📄 License

@@ -92,6 +92,7 @@
     <string name="alarm_no_stations">Añade primero una emisora para configurar una alarma</string>
     <string name="alarm_enabled_toast">Alarma configurada para las %1$s</string>
     <string name="alarm_disabled_toast">Alarma desactivada</string>
+    <string name="alarm_permission_needed">Permite \"Alarmas y recordatorios\" para esta app para poder configurar la alarma</string>
     <string name="settings">Ajustes</string>
     <string name="settings_metered_warning">Aviso de datos móviles</string>
     <string name="settings_metered_warning_description">Pedir confirmación antes de reproducir con una conexión medida</string>

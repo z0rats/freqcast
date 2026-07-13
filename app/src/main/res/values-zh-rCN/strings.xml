@@ -92,6 +92,7 @@
     <string name="alarm_no_stations">请先添加一个电台以设置起床闹钟</string>
     <string name="alarm_enabled_toast">闹钟已设置为 %1$s</string>
     <string name="alarm_disabled_toast">闹钟已关闭</string>
+    <string name="alarm_permission_needed">请为本应用开启"闹钟和提醒"权限以设置起床闹钟</string>
     <string name="settings">设置</string>
     <string name="settings_metered_warning">移动数据提醒</string>
     <string name="settings_metered_warning_description">在按流量计费的网络下播放前先询问确认</string>

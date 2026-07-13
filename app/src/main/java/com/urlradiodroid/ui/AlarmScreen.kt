@@ -1,6 +1,10 @@
 package com.urlradiodroid.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -240,16 +244,33 @@ fun AlarmScreen(
                         ),
                     )
                     if (enabled && station != null) {
-                        AlarmScheduler.schedule(context, hour, minute)
-                        Toast
-                            .makeText(
-                                context,
-                                context.getString(
-                                    R.string.alarm_enabled_toast,
-                                    String.format("%02d:%02d", hour, minute),
-                                ),
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                        val scheduled = AlarmScheduler.schedule(context, hour, minute)
+                        if (scheduled) {
+                            Toast
+                                .makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.alarm_enabled_toast,
+                                        String.format("%02d:%02d", hour, minute),
+                                    ),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                        } else {
+                            Toast
+                                .makeText(
+                                    context,
+                                    context.getString(R.string.alarm_permission_needed),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                        Uri.parse("package:${context.packageName}"),
+                                    ),
+                                )
+                            }
+                        }
                     } else {
                         AlarmScheduler.cancel(context)
                         Toast

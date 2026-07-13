@@ -1,10 +1,24 @@
 package com.urlradiodroid.ui
 
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowAlarmManager
 import java.util.Calendar
 
-/** Covers [AlarmScheduler.nextTriggerMillis]'s pure "today or tomorrow" decision. */
+/**
+ * Covers [AlarmScheduler.nextTriggerMillis]'s pure "today or tomorrow" decision, plus
+ * [AlarmScheduler.schedule]'s exact-alarm permission gate (added after `setAlarmClock()` was
+ * observed throwing `SecurityException` on some devices despite the documented alarm-clock
+ * exemption — see that function's doc comment).
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [29])
 class AlarmSchedulerTest {
     private fun calendarAt(
         hour: Int,
@@ -45,5 +59,33 @@ class AlarmSchedulerTest {
         val result = AlarmScheduler.nextTriggerMillis(7, 30, now.timeInMillis)
 
         assertEquals(expected.timeInMillis, result)
+    }
+
+    @Config(sdk = [31])
+    @Test
+    fun `schedule succeeds when exact-alarm permission is granted`() {
+        ShadowAlarmManager.setCanScheduleExactAlarms(true)
+
+        val result = AlarmScheduler.schedule(ApplicationProvider.getApplicationContext(), 7, 30)
+
+        assertTrue(result)
+    }
+
+    @Config(sdk = [31])
+    @Test
+    fun `schedule returns false instead of crashing when exact-alarm permission is missing`() {
+        ShadowAlarmManager.setCanScheduleExactAlarms(false)
+
+        val result = AlarmScheduler.schedule(ApplicationProvider.getApplicationContext(), 7, 30)
+
+        assertFalse(result)
+    }
+
+    @Config(sdk = [29])
+    @Test
+    fun `schedule succeeds on API levels below the exact-alarm permission model`() {
+        val result = AlarmScheduler.schedule(ApplicationProvider.getApplicationContext(), 7, 30)
+
+        assertTrue(result)
     }
 }

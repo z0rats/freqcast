@@ -92,6 +92,7 @@
     <string name="alarm_no_stations">Сначала добавьте станцию, чтобы установить будильник</string>
     <string name="alarm_enabled_toast">Будильник установлен на %1$s</string>
     <string name="alarm_disabled_toast">Будильник выключен</string>
+    <string name="alarm_permission_needed">Разрешите приложению «Будильники и напоминания», чтобы установить будильник</string>
     <string name="settings">Настройки</string>
     <string name="settings_metered_warning">Предупреждение о мобильном интернете</string>
     <string name="settings_metered_warning_description">Спрашивать подтверждение перед воспроизведением при лимитном соединении</string>
