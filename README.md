@@ -1,4 +1,4 @@
-# 📻 URL Radio Droid
+# 📻 Freqcast — Internet Radio
 
 A minimalist Android application for listening to internet radio via direct streaming links (HTTP/HTTPS).
 
