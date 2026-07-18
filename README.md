@@ -295,6 +295,10 @@ The application requests the following permissions:
 - `SCHEDULE_EXACT_ALARM` - needed for wake-up alarms to fire at the exact time you set; on some devices you may need to grant "Alarms & reminders" access from Settings (the app will prompt you if so)
 - `ACCESS_COARSE_LOCATION` - only requested when you use Discover's "Near me" search; your location is sent for that one search and never stored
 
+## 💖 Support
+
+If you'd like to support development, see [FUNDING.md](FUNDING.md) (Boosty / crypto).
+
 ## 📄 License
 
 Project created for personal use.
