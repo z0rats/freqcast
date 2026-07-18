@@ -1,0 +1,32 @@
+name: Record Screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  record:
+    name: Record Roborazzi Screenshots
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 24
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '24'
+          cache: 'gradle'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Record screenshots
+        run: ./gradlew recordRoborazziDebug --no-daemon
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: roborazzi-screenshots
+          path: app/src/test/screenshots/
