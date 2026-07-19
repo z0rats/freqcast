@@ -3,8 +3,9 @@ agp = "9.2.1"
 ksp = "2.3.9"
 ktlintGradle = "14.2.0"
 ktlint = "1.8.0"
-kotlinComposeCompiler = "2.4.0"
-roborazzi = "1.68.0"
+kotlinComposeCompiler = "2.4.10"
+roborazzi = "1.69.0"
+kover = "0.9.9"
 
 coreKtx = "1.19.0"
 appcompat = "1.7.1"
@@ -93,3 +94,4 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
 kotlin-compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlinComposeCompiler" }
 roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }

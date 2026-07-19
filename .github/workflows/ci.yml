@@ -58,6 +58,16 @@ jobs:
       - name: Verify screenshot tests
         run: ./gradlew verifyRoborazziDebug --no-daemon
 
+      - name: Generate coverage report
+        run: ./gradlew koverXmlReportDebug --no-daemon
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: app/build/reports/kover/reportDebug.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

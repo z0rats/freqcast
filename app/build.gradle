@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.ktlint)
     alias(libs.plugins.kotlin.compose.compiler)
     alias(libs.plugins.roborazzi)
+    alias(libs.plugins.kover)
 }
 
 android {
@@ -63,6 +64,22 @@ ksp {
 roborazzi {
     // Committed to git as the baseline for `verifyRoborazziDebug` in CI (build/ is gitignored).
     outputDir.set(file("src/test/screenshots"))
+}
+
+kover {
+    reports {
+        filters {
+            excludes {
+                classes("com.urlradiodroid.BuildConfig", "com.urlradiodroid.R", "com.urlradiodroid.R\$*")
+            }
+        }
+        variant("debug") {
+            xml {
+                // Consumed by CI's Codecov upload step.
+                xmlFile = layout.buildDirectory.file("reports/kover/reportDebug.xml")
+            }
+        }
+    }
 }
 
 ktlint {

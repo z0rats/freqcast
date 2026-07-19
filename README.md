@@ -1,5 +1,7 @@
 # 📻 Freqcast — Internet Radio
 
+[![codecov](https://codecov.io/gh/z0rats/url-radio-droid/branch/master/graph/badge.svg)](https://codecov.io/gh/z0rats/url-radio-droid)
+
 A minimalist Android application for listening to internet radio via direct streaming links (HTTP/HTTPS).
 
 ## 📸 Screenshots
@@ -254,6 +256,15 @@ After an intentional visual change, re-record the baseline and review the diff b
 ./gradlew recordRoborazziDebug
 ```
 
+### Coverage
+
+Unit test coverage is measured with [Kover](https://github.com/Kotlin/kotlinx-kover) and uploaded to [Codecov](https://codecov.io/gh/z0rats/url-radio-droid) on every push/PR to `master`/`main`. To generate a local HTML report:
+
+```bash
+./gradlew koverHtmlReportDebug
+# open app/build/reports/kover/htmlDebug/index.html
+```
+
 ## ✅ Code Quality
 
 ### Kotlin Linting (ktlint)
@@ -276,7 +287,7 @@ Auto-fix code style issues:
 
 GitHub Actions workflow automatically runs on every push and pull request:
 
-- **Tests**: Runs all unit tests
+- **Tests**: Runs all unit tests, verifies Roborazzi screenshots, and uploads coverage to Codecov
 - **Lint**: Checks Kotlin code style with ktlint
 - **Build**: Builds the debug APK
 
