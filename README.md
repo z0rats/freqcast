@@ -2,7 +2,17 @@
 
 [![codecov](https://codecov.io/gh/z0rats/freqcast/branch/master/graph/badge.svg)](https://codecov.io/gh/z0rats/freqcast)
 
-A minimalist Android app for listening to internet radio streams (HTTP/HTTPS, incl. HLS `.m3u8`), built with Kotlin, Jetpack Compose, and Media3/ExoPlayer.
+A modern open-source Android internet radio player that finds streams from station websites.
+
+I built Freqcast because I couldn't find a radio app that stayed simple. Most alternatives either include ads, depend on proprietary station catalogs, or make adding custom stations harder than it should be.
+
+Freqcast is fully local, requires no account, and works with standard HTTP/HTTPS streams and HLS. The goal is simple: if a station has a public stream, you should be able to listen to it without fighting the app.
+
+### ✨ What makes it different?
+
+Most radio apps expect you to manually find the actual stream URL.
+
+Freqcast lets you paste the station's website instead. It first checks Radio Browser, then scans the website itself, discovers a playable stream, verifies that it works, and adds it to your library. In many cases, you never have to hunt for a .mp3, .aac, or .m3u8 URL yourself.
 
 <p align="center">
   <img src="docs/screenshots/1.jpg" alt="App main screen" width="220" />
@@ -12,17 +22,24 @@ A minimalist Android app for listening to internet radio streams (HTTP/HTTPS, in
 
 ## ✨ Features
 
-- 🔎 **Discover stations** — search the [Radio Browser](https://api.radio-browser.info/) directory by name, genre, country, language, or "near me" 📍, and add results straight to your library (with icon, genre, and HLS flag auto-filled)
-- ➕ **Add any station by pasting its website** — no need to dig up the raw stream URL: paste a station's homepage and the app finds the playable stream for you (checks the Radio Browser directory first, then falls back to scanning the page itself), with a live reachability check before saving. A direct stream URL still works too, exactly as before
-- 📜 Station list with search, drag-to-reorder ✋, swipe to edit/share/delete (with undo ↩️), and custom emoji/image icons 🖼️
-- 🔁 **Background playback** via a media notification, with auto-resume after the system kills the app and capped-retry reconnect on network loss
-- ⏪ **Timeshift** — rewind 5s or jump to live for single-URL streams (not for HLS)
-- 🎶 Live track title from ICY metadata, with one-tap copy-to-clipboard 📋
-- 😴 **Sleep timer** and ⏰ **wake-up alarms** (multiple daily alarms, each with its own time + station)
-- 🏠 **Home screen widget** and 🚗 **Android Auto** support
-- 📤 **Export / import** your station list as JSON, or import an OPML/M3U/PLS playlist
-- 📱 Two-pane layout on tablets/foldables, landscape-optimized playback screen
-- 🌐 Localized: English, Russian, Spanish, Simplified Chinese
+- ➕ **Paste a station website instead of hunting for a stream URL** — Freqcast automatically discovers and verifies the playable stream whenever possible
+- 🔎 **Discover stations** — search the Radio Browser directory by name, genre, country, language, or "near me", and add results straight to your library
+- 🔁 Background playback with automatic reconnect
+- ⏪ Timeshift for compatible streams
+- 🎶 Live ICY metadata
+- 😴 Sleep timer and multiple wake-up alarms
+- 🏠 Home screen widget and Android Auto
+- 📤 Import/export station lists (JSON, OPML, M3U, PLS)
+- 📱 Tablet and foldable layouts
+- 🌐 Localized into English, Russian, Spanish and Simplified Chinese
+
+## Why Freqcast?
+
+Internet radio is one of those technologies that has quietly survived for decades, but the Android ecosystem around it has become surprisingly fragmented.
+
+I wanted a player that simply plays internet radio well, stores everything locally, supports modern Android APIs, and makes adding stations effortless—even when all you have is the station's homepage.
+
+Freqcast started as that personal project and gradually evolved into a fully featured open-source player.
 
 ## 📲 Install on your phone
 
@@ -32,31 +49,31 @@ Requires **Android 10 (API 29)** or higher.
 
 ## 🔨 Set up for development
 
-1. 🧬 Clone the repo and open it in Android Studio (or use `./gradlew` directly — the wrapper is committed)
+1. 🧬 Clone the repo and open it in Android Studio (or use ./gradlew directly — the wrapper is committed)
 2. ☕ Requires **JDK 24** and **Gradle 9.0+** (bundled via the wrapper)
-3. 🏗️ Build: `./gradlew build`, or `./gradlew installDebug` to install on a connected device/emulator
-4. 🧰 `make` wraps common tasks: `make format`, `make lint`, `make test`, `make build`, `make check`, `make run`
+3. 🏗️ Build: ./gradlew build, or ./gradlew installDebug to install on a connected device/emulator
+4. 🧰 make wraps common tasks: make format, make lint, make test, make build, make check, make run
 
 ### 🧪 Testing & coverage
 
 ```bash
-./gradlew test                  # unit tests
-./gradlew verifyRoborazziDebug  # screenshot (pixel-diff) tests — also run in CI
-./gradlew koverHtmlReportDebug  # local coverage report -> app/build/reports/kover/htmlDebug/index.html
+./gradlew test
+./gradlew verifyRoborazziDebug
+./gradlew koverHtmlReportDebug
 ```
 
-📊 Coverage is uploaded to [Codecov](https://codecov.io/gh/z0rats/freqcast) on every push/PR (informational, not a merge gate). CI (`.github/workflows/ci.yml`) also runs `ktlintCheck` ✅ and builds the debug APK 🏗️ on every push/PR; `release.yml` builds and signs 🔏 a release APK on version tags.
+📊 Coverage is uploaded to [Codecov](https://codecov.io/gh/z0rats/freqcast) on every push/PR (informational, not a merge gate). CI (.github/workflows/ci.yml) also runs ktlintCheck ✅ and builds the debug APK 🏗️ on every push/PR; release.yml builds and signs 🔏 a release APK on version tags.
 
 ## 🔐 Permissions
 
 | Permission | Why |
 |---|---|
-| `INTERNET`, `ACCESS_NETWORK_STATE` | 🌐 stream playback, connectivity checks |
-| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | 🔁 background playback |
-| `POST_NOTIFICATIONS` | 🔔 media notification (Android 13+) |
-| `WAKE_LOCK` | 🔋 keep the network alive while playing with the screen off |
-| `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM` | ⏰ wake-up alarms survive reboot and fire at the exact time |
-| `ACCESS_COARSE_LOCATION` | 📍 only used for Discover's "near me" search; sent for that one search, never stored |
+| INTERNET, ACCESS_NETWORK_STATE | 🌐 stream playback, connectivity checks |
+| FOREGROUND_SERVICE, FOREGROUND_SERVICE_MEDIA_PLAYBACK | 🔁 background playback |
+| POST_NOTIFICATIONS | 🔔 media notification (Android 13+) |
+| WAKE_LOCK | 🔋 keep the network alive while playing with the screen off |
+| RECEIVE_BOOT_COMPLETED, SCHEDULE_EXACT_ALARM | ⏰ wake-up alarms survive reboot and fire at the exact time |
+| ACCESS_COARSE_LOCATION | 📍 only used for Discover's "near me" search; sent for that one search, never stored |
 
 ## 💖 Support
 
