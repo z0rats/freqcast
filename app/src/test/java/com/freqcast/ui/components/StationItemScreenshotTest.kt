@@ -30,7 +30,7 @@ import org.robolectric.annotation.GraphicsMode
 class StationItemScreenshotTest {
     // Tolerates the antialiasing drift between recording and verification environments
     // (e.g. a Compose-compiler/Roborazzi version bump) without masking a real visual
-    // regression - see CLAUDE.md's Testing section.
+    // regression - see AGENTS.md's Testing section.
     private val roborazziOptions =
         RoborazziOptions(
             compareOptions = RoborazziOptions.CompareOptions(changeThreshold = 0.01f),

@@ -12,7 +12,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -63,7 +62,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -79,11 +77,10 @@ import com.freqcast.data.RadioBrowserStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
-import com.freqcast.ui.theme.background_gradient_end
-import com.freqcast.ui.theme.background_gradient_mid
 import com.freqcast.ui.theme.background_gradient_start
 import com.freqcast.ui.theme.card_border
 import com.freqcast.ui.theme.card_surface
+import com.freqcast.ui.theme.freqcastGradientBackground
 import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
@@ -184,20 +181,7 @@ fun DiscoverStationsScreen(
     }
 
     Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(
-                    brush =
-                        Brush.verticalGradient(
-                            colors =
-                                listOf(
-                                    background_gradient_start,
-                                    background_gradient_mid,
-                                    background_gradient_end,
-                                ),
-                        ),
-                ),
+        modifier = Modifier.fillMaxSize().freqcastGradientBackground(),
     ) {
         Scaffold(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,

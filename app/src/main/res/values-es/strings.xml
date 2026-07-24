@@ -2,10 +2,14 @@
 <resources>
     <string name="app_name">Freqcast</string>
     <string name="add_station">Añadir</string>
-    <string name="station_name">Nombre de la emisora</string>
+    <string name="station_name">Nombre de la emisora (opcional)</string>
     <string name="stream_url">URL del flujo o del sitio web</string>
-    <string name="station_genre">Género (opcional)</string>
+    <string name="station_description">Descripción (opcional)</string>
     <string name="save">Guardar</string>
+    <string name="stage_checking_url">Comprobando el enlace…</string>
+    <string name="stage_searching_directory">Buscando en el directorio de emisoras…</string>
+    <string name="stage_scanning_page">Buscando un flujo en la página…</string>
+    <string name="stage_downloading_icon">Descargando el icono de la emisora…</string>
     <string name="play">Reproducir</string>
     <string name="stop">Detener</string>
     <string name="volume">Volumen</string>
@@ -16,7 +20,6 @@
     <string name="error_network">Error de red</string>
     <string name="error_playback">Error de reproducción</string>
     <string name="error_live_window">La posición del flujo está detrás del directo, saltando al punto en vivo</string>
-    <string name="enter_name">Introduce el nombre</string>
     <string name="enter_url">Introduce la URL</string>
     <string name="station_saved">Emisora guardada</string>
     <string name="save_error">Error al guardar: %1$s</string>
@@ -45,6 +48,10 @@
     <string name="connection_failed">Error de conexión</string>
     <string name="close">Cerrar</string>
     <string name="rewind_5s">−5 s</string>
+    <string name="rewind_seconds">Retroceder %1$d segundos</string>
+    <string name="go_live">Ir en directo</string>
+    <string name="behind_live">%1$d:%2$02d por detrás del directo</string>
+    <string name="timeshift_slider">Posición de reproducción</string>
     <string name="live">En directo</string>
     <string name="sleep_timer">Temporizador de apagado</string>
     <string name="sleep_timer_off">Desactivado</string>
@@ -52,6 +59,10 @@
     <string name="sleep_timer_minutes">%1$d min</string>
     <string name="sleep_timer_set_toast">Temporizador establecido: %1$d min</string>
     <string name="sleep_timer_cancelled_toast">Temporizador cancelado</string>
+    <string name="export_clip">Exportar clip</string>
+    <string name="export_clip_last_minutes">Últimos %1$d min</string>
+    <string name="export_clip_not_enough_buffer">Aún no hay suficiente búfer</string>
+    <string name="export_clip_failed_toast">No se pudo exportar el clip</string>
     <string name="more_options">Más opciones</string>
     <string name="export_stations">Exportar emisoras</string>
     <string name="share_station">Compartir emisora</string>
@@ -103,6 +114,9 @@
     <string name="settings">Ajustes</string>
     <string name="settings_metered_warning">Aviso de datos móviles</string>
     <string name="settings_metered_warning_description">Pedir confirmación antes de reproducir con una conexión medida</string>
+    <string name="settings_timeshift_buffer_size">Tamaño del búfer de rebobinado</string>
+    <string name="settings_timeshift_buffer_size_description">Cuánto audio mantener almacenado para poder rebobinar emisoras en directo</string>
+    <string name="settings_timeshift_buffer_size_value">%1$d MB (~%2$d min)</string>
     <string name="metered_connection_dialog_title">Conexión de datos móviles</string>
     <string name="metered_connection_dialog_message">Estás en una conexión medida. Reproducir esta emisora puede consumir tus datos móviles.</string>
     <string name="metered_connection_continue">Reproducir de todos modos</string>

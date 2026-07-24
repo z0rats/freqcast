@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Android app (Kotlin, Jetpack Compose) for playing internet radio streams (HTTP/HTTPS, incl. HLS `.m3u8`) via ExoPlayer/Media3, with local station storage in Room and background playback.
 
@@ -96,6 +96,7 @@ Android app (Kotlin, Jetpack Compose) for playing internet radio streams (HTTP/H
 
 ## Testing
 
+- **Never launch or drive an emulator/physical device yourself** (`adb`, `input tap`, `screencap`, booting an AVD) to verify a change. Connected devices may be the user's real phone with personal apps — blind taps can background the app and land in something unrelated. Verify with `./gradlew test`/`ktlintCheck`/compile, and describe what to visually check for the user to confirm themselves.
 - Unit tests only (`app/src/test`, no `androidTest`); CI's `test` job runs `./gradlew test`. Room DB tests and anything needing a `Context` use Robolectric (`@Config(sdk = [29])`).
 - Coverage: Kover (`app/build.gradle`'s `kover {}` block), reporting only the `debug` variant — `./gradlew koverXmlReportDebug`/`koverHtmlReportDebug` (default output paths, not overridden except `xmlFile`). CI's `test` job uploads the XML to Codecov (`codecov/codecov-action@v5`, needs a `CODECOV_TOKEN` repo secret) with `fail_ci_if_error: false`, so a Codecov outage never reds out the pipeline — coverage is informational, not a merge gate (no `koverVerify`/minimum-bound rule configured).
 - `StreamRecorder`/`TimeshiftController`/`StreamValidator`/`RadioBrowserApi` tests use a local `MockWebServer` (all four construct their own `OkHttpClient`, not injected). Any test touching `org.json` needs `RobolectricTestRunner` even without a `Context` — the plain Android stub jar throws `RuntimeException: not mocked` on real `org.json` calls.

@@ -24,7 +24,7 @@ import org.robolectric.annotation.Config
  * Goes through [RadioPlaybackService.loadBrowsableStations]/[RadioPlaybackService.playFromBrowseTree]
  * directly rather than a full [androidx.media3.session.MediaBrowser] Binder round trip: media3's own
  * team tests that round trip with instrumentation, not Robolectric, which this project deliberately
- * doesn't have (see Testing in CLAUDE.md) — these two `internal` methods are the seam, same idea as
+ * doesn't have (see Testing in AGENTS.md) — these two `internal` methods are the seam, same idea as
  * [RadioPlaybackService.isHlsUrl]/[RadioPlaybackService.retryDelayMs] just above them in the class.
  *
  * A single test method on purpose: [AppDatabase.getDatabase] caches its Room instance in a

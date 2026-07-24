@@ -44,7 +44,7 @@ class MainViewModel(
                 stations.filter { station ->
                     station.name.lowercase().contains(queryLower) ||
                         station.streamUrl.lowercase() == queryLower ||
-                        station.genre?.lowercase()?.contains(queryLower) == true
+                        station.description?.lowercase()?.contains(queryLower) == true
                 }
             }
         }
@@ -112,9 +112,6 @@ class MainViewModel(
 
     companion object {
         fun provideFactory(repository: RadioStationRepository): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T = MainViewModel(repository) as T
-            }
+            viewModelFactory { MainViewModel(repository) }
     }
 }

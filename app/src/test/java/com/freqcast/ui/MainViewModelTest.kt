@@ -179,15 +179,15 @@ class MainViewModelTest {
         }
 
     @Test
-    fun `filteredStations filters by genre`() =
+    fun `filteredStations filters by description`() =
         runTest {
             val viewModel = createViewModel(testScheduler)
             advanceUntilIdle()
             database.radioStationDao().insertStation(
-                RadioStation(name = "Station A", streamUrl = "http://example.com/rock", genre = "rock,pop"),
+                RadioStation(name = "Station A", streamUrl = "http://example.com/rock", description = "rock,pop"),
             )
             database.radioStationDao().insertStation(
-                RadioStation(name = "Station B", streamUrl = "http://example.com/jazz", genre = "jazz"),
+                RadioStation(name = "Station B", streamUrl = "http://example.com/jazz", description = "jazz"),
             )
             viewModel.loadStations()
             waitForStationsCount(viewModel, 2)
@@ -292,7 +292,7 @@ class MainViewModelTest {
             // for the actual write - advanceUntilIdle() alone can't wait for that, so poll with
             // real time between attempts. Calling the suspend read directly here (not from inside
             // a synchronous poll lambda, unlike waitUntil/waitForStationsCount above) is safe -
-            // see CLAUDE.md's deadlock warning on that specific anti-pattern.
+            // see AGENTS.md's deadlock warning on that specific anti-pattern.
             var names = emptyList<String>()
             val deadline = System.currentTimeMillis() + 5000
             while (names != listOf("Second", "First") && System.currentTimeMillis() < deadline) {

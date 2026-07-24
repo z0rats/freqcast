@@ -50,12 +50,24 @@ object IconStorage {
      * [com.freqcast.data.RadioBrowserApi.downloadFavicon]) into app-private storage; returns
      * its absolute path, or null on failure. Shares [persistDownscaled] with [saveImage] — the
      * only difference is where the source bytes came from (a picker `Uri` vs. already-downloaded
-     * bytes).
+     * bytes). A `.ico` favicon (still the default on plenty of sites' plain `<link rel="icon">`)
+     * is routed through [IcoDecoder] first, since [BitmapFactory] can't decode that container
+     * format at all — everything else goes straight through the same file-based decode as
+     * [saveImage].
      */
     fun saveImageBytes(
         context: Context,
         bytes: ByteArray,
     ): String? {
+        if (isIco(bytes)) {
+            return try {
+                IcoDecoder.decode(bytes)?.let { persistBitmap(context, it) }
+            } catch (e: Exception) {
+                // Same broad-catch rationale as below: malformed bytes from an external host we
+                // don't control should just mean "no icon", not a crash.
+                null
+            }
+        }
         val tempFile = File.createTempFile("icon_src", null, context.cacheDir)
         return try {
             tempFile.outputStream().use { it.write(bytes) }
@@ -69,20 +81,51 @@ object IconStorage {
         }
     }
 
+    /** The `.ico` magic bytes: reserved=0, type=1 (icon), as a little-endian `ICONDIR` header. */
+    private fun isIco(bytes: ByteArray): Boolean =
+        bytes.size >= 4 &&
+            bytes[0] == 0.toByte() &&
+            bytes[1] == 0.toByte() &&
+            bytes[2] == 1.toByte() &&
+            bytes[3] == 0.toByte()
+
     /** Decodes [tempFile], downscales it, and writes it as a JPEG under [ICONS_DIR]; returns its absolute path, or null on failure. */
     private fun persistDownscaled(
         context: Context,
         tempFile: File,
     ): String? {
         val bitmap = decodeSampledBitmap(tempFile) ?: return null
+        return persistBitmap(context, bitmap)
+    }
+
+    /**
+     * Downscales [bitmap] if needed and writes it as a JPEG under [ICONS_DIR]; returns its
+     * absolute path. Shared by [persistDownscaled] (whose [decodeSampledBitmap] already downscaled
+     * during decode, so this is a no-op there) and [saveImageBytes]' `.ico` path, whose
+     * [IcoDecoder] output is decoded at full size and hasn't been downscaled yet.
+     */
+    private fun persistBitmap(
+        context: Context,
+        bitmap: Bitmap,
+    ): String {
+        val scaled = downscaleIfNeeded(bitmap)
         val dir = File(context.filesDir, ICONS_DIR).apply { mkdirs() }
         val file = File(dir, "${UUID.randomUUID()}.jpg")
-        return try {
-            file.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out) }
-            file.absolutePath
+        try {
+            file.outputStream().use { out -> scaled.compress(Bitmap.CompressFormat.JPEG, 85, out) }
         } finally {
-            bitmap.recycle()
+            if (scaled !== bitmap) bitmap.recycle()
+            scaled.recycle()
         }
+        return file.absolutePath
+    }
+
+    private fun downscaleIfNeeded(bitmap: Bitmap): Bitmap {
+        if (bitmap.width <= MAX_DIMENSION_PX && bitmap.height <= MAX_DIMENSION_PX) return bitmap
+        val scale = MAX_DIMENSION_PX.toFloat() / maxOf(bitmap.width, bitmap.height)
+        val newWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
+        val newHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
     }
 
     /** Deletes a previously saved icon file. No-op for anything that isn't one of our own files (e.g. an emoji string). */

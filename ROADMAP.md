@@ -2,8 +2,7 @@
 
 ## Usefulness (highest impact)
 
-- ~~**Localization (i18n)**~~ — done: Russian, Spanish and Simplified Chinese added (`res/values-ru/`, `res/values-es/`, `res/values-zh-rCN/`). Adding another language is just a new `values-<lang>/strings.xml` with the same keys — see CLAUDE.md's Localization section for the process to keep them in sync going forward.
-
+- ~~**Localization (i18n)**~~ — done: Russian, Spanish and Simplified Chinese added (`res/values-ru/`, `res/values-es/`, `res/values-zh-rCN/`). Adding another language is just a new `values-<lang>/strings.xml` with the same keys — see AGENTS.md's Localization section for the process to keep them in sync going forward.
 
 ## Technical
 

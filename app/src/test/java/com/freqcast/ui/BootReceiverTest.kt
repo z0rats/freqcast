@@ -20,7 +20,7 @@ import org.robolectric.shadows.ShadowAlarmManager
 
 /**
  * [AlarmRepository.create] resolves the real [com.freqcast.data.AppDatabase] singleton
- * (`BootReceiver`/`ActionCallback`s have no injection seam for a test DB — see CLAUDE.md's Testing
+ * (`BootReceiver`/`ActionCallback`s have no injection seam for a test DB — see AGENTS.md's Testing
  * section), which is cached for the process lifetime and so persists across `@Test` methods in this
  * class. [setup] defensively clears any alarms left over from a previous test.
  */

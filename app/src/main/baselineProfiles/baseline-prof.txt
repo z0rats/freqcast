@@ -1,4 +1,4 @@
-# Baseline Profile: hand-curated (no macrobenchmark module in this project — see CLAUDE.md
+# Baseline Profile: hand-curated (no macrobenchmark module in this project — see AGENTS.md
 # Testing section for why instrumentation tests aren't used here). Marks the app's own code for
 # ahead-of-time compilation by ART at install time via androidx.profileinstaller, covering the
 # cold-start path (MainActivity → MainScreen/MainViewModel → Room/repository → theme) instead of

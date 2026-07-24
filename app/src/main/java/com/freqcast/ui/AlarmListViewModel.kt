@@ -65,11 +65,6 @@ class AlarmListViewModel(
         fun provideFactory(
             repository: AlarmRepository,
             legacyStore: AlarmStateStore,
-        ): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    AlarmListViewModel(repository, legacyStore) as T
-            }
+        ): ViewModelProvider.Factory = viewModelFactory { AlarmListViewModel(repository, legacyStore) }
     }
 }

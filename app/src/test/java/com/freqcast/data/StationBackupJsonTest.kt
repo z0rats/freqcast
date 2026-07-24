@@ -13,13 +13,13 @@ import org.robolectric.annotation.Config
 @Config(sdk = [29])
 class StationBackupJsonTest {
     @Test
-    fun `toJsonObject serializes name, streamUrl, customIcon, genre, isHls and radioBrowserUuid`() {
+    fun `toJsonObject serializes name, streamUrl, customIcon, description, isHls and radioBrowserUuid`() {
         val station =
             RadioStation(
                 name = "Rock FM",
                 streamUrl = "http://example.com/rock",
                 customIcon = "🎸",
-                genre = "rock",
+                description = "rock",
                 isHls = true,
                 radioBrowserUuid = "uuid-1",
             )
@@ -29,19 +29,19 @@ class StationBackupJsonTest {
         assertEquals("Rock FM", obj.getString("name"))
         assertEquals("http://example.com/rock", obj.getString("streamUrl"))
         assertEquals("🎸", obj.getString("customIcon"))
-        assertEquals("rock", obj.getString("genre"))
+        assertEquals("rock", obj.getString("description"))
         assertTrue(obj.getBoolean("isHls"))
         assertEquals("uuid-1", obj.getString("radioBrowserUuid"))
     }
 
     @Test
-    fun `toJsonObject serializes a null customIcon, genre and radioBrowserUuid as JSON null`() {
+    fun `toJsonObject serializes a null customIcon, description and radioBrowserUuid as JSON null`() {
         val station = RadioStation(name = "Jazz Radio", streamUrl = "http://example.com/jazz")
 
         val obj = StationBackupJson.toJsonObject(station)
 
         assertTrue(obj.isNull("customIcon"))
-        assertTrue(obj.isNull("genre"))
+        assertTrue(obj.isNull("description"))
         assertTrue(obj.isNull("radioBrowserUuid"))
     }
 

@@ -72,7 +72,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -93,18 +92,17 @@ import com.freqcast.ui.components.rememberDragDropState
 import com.freqcast.ui.playback.SettingsStore
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
-import com.freqcast.ui.theme.background_gradient_end
-import com.freqcast.ui.theme.background_gradient_mid
-import com.freqcast.ui.theme.background_gradient_start
 import com.freqcast.ui.theme.card_border
 import com.freqcast.ui.theme.card_surface
 import com.freqcast.ui.theme.card_surface_active
+import com.freqcast.ui.theme.freqcastGradientBackground
 import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.isWideScreen
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.ui.theme.text_secondary
 import com.freqcast.util.AppShortcuts
 import com.freqcast.util.StationShare
+import com.freqcast.util.isNetworkAvailable
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -279,7 +277,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (!isNetworkAvailable()) {
+        if (!isNetworkAvailable(this)) {
             android.widget.Toast
                 .makeText(
                     this,
@@ -302,14 +300,6 @@ class MainActivity : ComponentActivity() {
                 bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
             }
         }
-    }
-
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 }
 
@@ -356,6 +346,7 @@ fun MainScreen(
     var startError by remember { mutableStateOf(false) }
     var hasTimeshift by remember { mutableStateOf(false) }
     var isAtLive by remember { mutableStateOf(true) }
+    var offsetFromLiveMs by remember { mutableStateOf(0L) }
     var isBufferingCurrentStation by remember { mutableStateOf(false) }
     var trackTitle by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentPlayingStationId) {
@@ -396,6 +387,19 @@ fun MainScreen(
                 isStarting = false
                 startError = false
             }
+        }
+    }
+    // playbackSnapshot only fires on discrete events, but the offset grows every second while
+    // rewound, so it needs its own ticker rather than piggybacking on the collector above.
+    LaunchedEffect(playbackService, hasTimeshift) {
+        val svc = playbackService
+        if (svc == null || !hasTimeshift) {
+            offsetFromLiveMs = 0L
+            return@LaunchedEffect
+        }
+        while (true) {
+            offsetFromLiveMs = svc.offsetFromLiveMs()
+            kotlinx.coroutines.delay(1_000)
         }
     }
 
@@ -478,20 +482,7 @@ fun MainScreen(
     }
 
     Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(
-                    brush =
-                        Brush.verticalGradient(
-                            colors =
-                                listOf(
-                                    background_gradient_start,
-                                    background_gradient_mid,
-                                    background_gradient_end,
-                                ),
-                        ),
-                ),
+        modifier = Modifier.fillMaxSize().freqcastGradientBackground(),
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -522,12 +513,13 @@ fun MainScreen(
                             hasTimeshift = hasTimeshift,
                             isAtLive = isAtLive,
                             trackTitle = if (isStationPlaying) trackTitle else null,
+                            offsetFromLiveMs = offsetFromLiveMs,
                             onPlayPauseClick = {
                                 if (isStationPlaying) onStopPlayback() else onPlayStationWithState(station)
                             },
                             onCardClick = { onNowPlayingClick(station) },
                             onSwitchStation = onPlayStationWithState,
-                            onRewind5s = { playbackService?.seekBackward(5000L) },
+                            onRewind5s = { playbackService?.seekBackward(RadioPlaybackService.TIMESHIFT_SEEK_BACK_MS) },
                             onReturnToLive = {
                                 isStarting = true
                                 playbackService?.seekToLive()

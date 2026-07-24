@@ -9,7 +9,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,7 +49,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -61,11 +59,9 @@ import com.freqcast.data.AlarmRepository
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
-import com.freqcast.ui.theme.background_gradient_end
-import com.freqcast.ui.theme.background_gradient_mid
-import com.freqcast.ui.theme.background_gradient_start
 import com.freqcast.ui.theme.card_border
 import com.freqcast.ui.theme.card_surface
+import com.freqcast.ui.theme.freqcastGradientBackground
 import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
@@ -187,11 +183,8 @@ fun AlarmEditScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(background_gradient_start, background_gradient_mid, background_gradient_end),
-                        ),
-                    ).padding(paddingValues)
+                    .freqcastGradientBackground()
+                    .padding(paddingValues)
                     .padding(Spacing.md),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
             horizontalAlignment = Alignment.CenterHorizontally,

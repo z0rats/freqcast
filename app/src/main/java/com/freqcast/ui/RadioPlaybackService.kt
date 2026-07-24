@@ -20,6 +20,7 @@ import androidx.core.app.NotificationCompat
 import androidx.glance.appwidget.updateAll
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
@@ -41,11 +42,17 @@ import com.freqcast.R
 import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.ui.playback.ClipFormat
 import com.freqcast.ui.playback.PlaybackStateStore
+import com.freqcast.ui.playback.RadioBrowseTree
+import com.freqcast.ui.playback.SettingsStore
+import com.freqcast.ui.playback.SleepTimerController
 import com.freqcast.ui.playback.TimeshiftController
 import com.freqcast.ui.playback.WidgetStateStore
 import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.IconStorage
+import com.freqcast.util.STREAM_USER_AGENT
+import com.freqcast.util.isNetworkAvailable
 import com.freqcast.widget.RadioWidget
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -59,6 +66,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
+import java.io.File
 
 /** Snapshot of playback state exposed reactively so the UI doesn't need to poll the service. */
 data class PlaybackSnapshot(
@@ -75,6 +83,15 @@ data class PlaybackSnapshot(
 class RadioPlaybackService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
     private var player: ExoPlayer? = null
+
+    /**
+     * Wraps [player] so seek commands issued from outside the app (notification, lock screen,
+     * headset buttons, Android Auto) route through [seekBackward]/[seekToLive] instead of
+     * [ExoPlayer]'s own `seekBack()`/`seekForward()`, which don't work reliably against the
+     * growing timeshift buffer file (see [TimeshiftController.seekBackward]'s doc). Handed to both
+     * [mediaSession] and [notificationManager] so every entry point behaves the same way.
+     */
+    private var sessionPlayer: Player? = null
     private var notificationManager: PlayerNotificationManager? = null
     private var stationName: String? = null
 
@@ -91,10 +108,8 @@ class RadioPlaybackService : MediaLibraryService() {
     private lateinit var timeshift: TimeshiftController
     private lateinit var playbackStateStore: PlaybackStateStore
     private lateinit var repository: RadioStationRepository
+    private lateinit var browseTree: RadioBrowseTree
     private val radioBrowserApi = RadioBrowserApi()
-
-    /** Refreshed on every browse request; lets [MediaLibrarySessionCallback] resolve a tapped station without a DB hit. */
-    private var cachedStations: List<RadioStation> = emptyList()
 
     private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
@@ -111,10 +126,8 @@ class RadioPlaybackService : MediaLibraryService() {
     /** Consecutive automatic reconnect attempts for the current stream; reset on manual start or successful load. */
     private var retryCount = 0
 
-    private var sleepTimerRunnable: Runnable? = null
-    private var sleepTimerEndAtMs: Long? = null
-
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val sleepTimer = SleepTimerController(mainHandler) { stopPlayback() }
     private val binder = LocalBinder()
 
     private val _playbackSnapshot = MutableStateFlow(PlaybackSnapshot())
@@ -130,7 +143,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 hasTimeshift = timeshift.hasTimeshift(),
                 isAtLive = timeshift.isAtLive(),
                 trackTitle = timeshift.currentTrackTitle(),
-                sleepTimerEndAtMs = sleepTimerEndAtMs,
+                sleepTimerEndAtMs = sleepTimer.endAtMsOrNull(),
             )
         updateWidget(isPlaying)
     }
@@ -144,19 +157,12 @@ class RadioPlaybackService : MediaLibraryService() {
 
     /** Stops playback automatically after [minutes]; replaces any previously scheduled timer. */
     fun setSleepTimer(minutes: Int) {
-        cancelSleepTimer()
-        val durationMs = minutes * 60_000L
-        val runnable = Runnable { stopPlayback() }
-        sleepTimerRunnable = runnable
-        sleepTimerEndAtMs = System.currentTimeMillis() + durationMs
-        mainHandler.postDelayed(runnable, durationMs)
+        sleepTimer.start(minutes)
         refreshSnapshot()
     }
 
     fun cancelSleepTimer() {
-        sleepTimerRunnable?.let { mainHandler.removeCallbacks(it) }
-        sleepTimerRunnable = null
-        sleepTimerEndAtMs = null
+        sleepTimer.cancel()
         refreshSnapshot()
     }
 
@@ -179,6 +185,7 @@ class RadioPlaybackService : MediaLibraryService() {
         timeshift = TimeshiftController(cacheDir)
         playbackStateStore = PlaybackStateStore(this)
         repository = RadioStationRepository.create(this)
+        browseTree = RadioBrowseTree(repository, getString(R.string.app_name))
         createNotificationChannel()
         initializePlayer()
         // Built immediately (not lazily on first startPlayback) so a MediaLibrarySession always
@@ -357,8 +364,31 @@ class RadioPlaybackService : MediaLibraryService() {
                         },
                     )
                 }
+        sessionPlayer = TimeshiftSeekPlayer(player!!)
 
         // MediaSession is created in startPlayback() when we have station info for lock screen session activity
+    }
+
+    /**
+     * [PendingIntent] that reopens [PlaybackActivity], carrying [stationName]/[streamUrl] extras
+     * together when [streamUrl] is known - shared by the session's own activity-open intent
+     * ([buildMediaSession]) and its notification's tap target, which need identical extras.
+     */
+    private fun playbackActivityPendingIntent(streamUrl: String?): PendingIntent {
+        val intent =
+            Intent(this, PlaybackActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                if (streamUrl != null) {
+                    putExtra(PlaybackActivity.EXTRA_STATION_NAME, stationName)
+                    putExtra(PlaybackActivity.EXTRA_STREAM_URL, streamUrl)
+                }
+            }
+        return PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     /**
@@ -373,23 +403,9 @@ class RadioPlaybackService : MediaLibraryService() {
      * [applyPlayback] directly instead of routing back through here.
      */
     private fun buildMediaSession(streamUrl: String?) {
-        val p = player ?: return
+        val p = sessionPlayer ?: return
         mediaSession?.release()
-        val openIntent =
-            Intent(this, PlaybackActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                if (streamUrl != null) {
-                    putExtra(PlaybackActivity.EXTRA_STATION_NAME, stationName)
-                    putExtra(PlaybackActivity.EXTRA_STREAM_URL, streamUrl)
-                }
-            }
-        val sessionActivity =
-            PendingIntent.getActivity(
-                this,
-                0,
-                openIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
+        val sessionActivity = playbackActivityPendingIntent(streamUrl)
         mediaSession =
             MediaLibrarySession
                 .Builder(this, p, MediaLibrarySessionCallback())
@@ -401,7 +417,7 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun setupNotificationManager() {
-        val exoPlayer = player ?: return
+        val notificationPlayer = sessionPlayer ?: return
 
         notificationManager =
             PlayerNotificationManager
@@ -437,21 +453,8 @@ class RadioPlaybackService : MediaLibraryService() {
                             return EmojiGenerator.getEmojiBitmap(emoji, 128)
                         }
 
-                        override fun createCurrentContentIntent(player: Player): PendingIntent? {
-                            val openIntent =
-                                Intent(this@RadioPlaybackService, PlaybackActivity::class.java).apply {
-                                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                                    putExtra(PlaybackActivity.EXTRA_STATION_NAME, stationName)
-                                    putExtra(PlaybackActivity.EXTRA_STREAM_URL, player.currentMediaItem?.mediaId)
-                                }
-
-                            return PendingIntent.getActivity(
-                                this@RadioPlaybackService,
-                                0,
-                                openIntent,
-                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                            )
-                        }
+                        override fun createCurrentContentIntent(player: Player): PendingIntent? =
+                            playbackActivityPendingIntent(player.currentMediaItem?.mediaId)
                     },
                 ).setNotificationListener(
                     object : PlayerNotificationManager.NotificationListener {
@@ -474,7 +477,7 @@ class RadioPlaybackService : MediaLibraryService() {
                     },
                 ).build()
                 .apply {
-                    setPlayer(exoPlayer)
+                    setPlayer(notificationPlayer)
                 }
     }
 
@@ -542,6 +545,7 @@ class RadioPlaybackService : MediaLibraryService() {
                     .Factory()
                     .setConnectTimeoutMs(8_000)
                     .setReadTimeoutMs(8_000)
+                    .setUserAgent(STREAM_USER_AGENT)
             val hlsMediaSource =
                 HlsMediaSource
                     .Factory(dataSourceFactory)
@@ -554,6 +558,7 @@ class RadioPlaybackService : MediaLibraryService() {
             val dataSourceFactory =
                 timeshift.start(
                     streamUrl = streamUrl,
+                    maxBufferBytes = SettingsStore(this).timeshiftBufferSizeMb * 1024L * 1024L,
                     onError = {
                         mainHandler.post {
                             markConnectionError()
@@ -628,7 +633,7 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun tryResumePlaybackAfterNetworkRestored() {
-        if (!isNetworkValidated()) return
+        if (!isNetworkAvailable(this)) return
         val url = currentStreamUrl ?: player?.currentMediaItem?.mediaId ?: return
         val p = player ?: return
         // Retry when we had set pendingRetry (network error) or player is in IDLE (e.g. connection lost).
@@ -653,14 +658,6 @@ class RadioPlaybackService : MediaLibraryService() {
     internal fun retryDelayMs(attempt: Int): Long {
         val delay = BASE_RETRY_DELAY_MS * (1L shl (attempt - 1).coerceIn(0, 4))
         return delay.coerceAtMost(MAX_RETRY_DELAY_MS)
-    }
-
-    private fun isNetworkValidated(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = cm.activeNetwork ?: return false
-        val capabilities = cm.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     /** [knownHls] (the directory's own `hls` flag, when known) takes precedence over the URL heuristic. */
@@ -696,6 +693,24 @@ class RadioPlaybackService : MediaLibraryService() {
 
     fun seekToLive() = applyTimeshiftSeek(timeshift.seekToLive())
 
+    fun seekToOffsetFromLive(offsetMs: Long) = applyTimeshiftSeek(timeshift.seekToOffsetFromLive(offsetMs))
+
+    /** Total duration currently held in the timeshift buffer, in ms. 0 if not recording. */
+    fun bufferedDurationMs(): Long = timeshift.bufferedDurationMs()
+
+    /** How far behind the live edge playback currently sits, in ms. 0 when at live. */
+    fun offsetFromLiveMs(): Long = timeshift.offsetFromLiveMs()
+
+    /** MP3/AAC or null - see [TimeshiftController.currentClipFormat]. Drives clip-export's UI gating. */
+    fun currentClipFormat(): ClipFormat? = timeshift.currentClipFormat()
+
+    /** Exports the last [durationMs] of the timeshift buffer to [destination] - see [TimeshiftController.exportClip]. */
+    fun exportClip(
+        durationMs: Long,
+        destination: File,
+        onResult: (Boolean) -> Unit,
+    ) = timeshift.exportClip(durationMs, destination, onResult)
+
     /** Rebuilds the media source from a timeshift seek's buffer-file [dataSourceFactory] and resumes playback. */
     private fun applyTimeshiftSeek(dataSourceFactory: DataSource.Factory?) {
         val p = player ?: return
@@ -714,6 +729,34 @@ class RadioPlaybackService : MediaLibraryService() {
     fun isAtLive(): Boolean = timeshift.isAtLive()
 
     fun hasTimeshift(): Boolean = timeshift.hasTimeshift()
+
+    /**
+     * Forces `COMMAND_SEEK_BACK`/`COMMAND_SEEK_FORWARD` on so external surfaces (notification,
+     * lock screen, headset buttons, Android Auto) always offer rewind/return-to-live controls, and
+     * routes both through [seekBackward]/[seekToLive] instead of the wrapped player's own seek —
+     * see [sessionPlayer]'s doc for why the latter doesn't work against the timeshift buffer.
+     */
+    private inner class TimeshiftSeekPlayer(
+        player: ExoPlayer,
+    ) : ForwardingPlayer(player) {
+        override fun isCommandAvailable(command: Int): Boolean =
+            when (command) {
+                Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD -> true
+                else -> super.isCommandAvailable(command)
+            }
+
+        override fun getAvailableCommands(): Player.Commands =
+            super
+                .getAvailableCommands()
+                .buildUpon()
+                .add(Player.COMMAND_SEEK_BACK)
+                .add(Player.COMMAND_SEEK_FORWARD)
+                .build()
+
+        override fun seekBack() = seekBackward(TIMESHIFT_SEEK_BACK_MS)
+
+        override fun seekForward() = seekToLive()
+    }
 
     private fun handlePlayerError(error: PlaybackException) {
         when (error.errorCode) {
@@ -777,56 +820,21 @@ class RadioPlaybackService : MediaLibraryService() {
             it.release()
             player = null
         }
+        sessionPlayer = null
         mediaSession = null
         notificationManager = null
         refreshSnapshot()
     }
 
-    /** Root of the Android Auto / Assistant browse tree: a flat list of all stations. */
-    private fun browseRootItem(): MediaItem =
-        MediaItem
-            .Builder()
-            .setMediaId(BROWSE_ROOT_ID)
-            .setMediaMetadata(
-                MediaMetadata
-                    .Builder()
-                    .setTitle(getString(R.string.app_name))
-                    .setIsBrowsable(true)
-                    .setIsPlayable(false)
-                    .setFolderType(MediaMetadata.FOLDER_TYPE_MIXED)
-                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS)
-                    .build(),
-            ).build()
-
-    private fun RadioStation.toBrowsableMediaItem(): MediaItem =
-        MediaItem
-            .Builder()
-            .setMediaId(streamUrl)
-            .setUri(streamUrl)
-            .setMediaMetadata(
-                MediaMetadata
-                    .Builder()
-                    .setTitle(name)
-                    .setArtist(getString(R.string.app_name))
-                    .setIsBrowsable(false)
-                    .setIsPlayable(true)
-                    .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
-                    .build(),
-            ).build()
-
     /**
-     * Loads the current station list into [cachedStations] and returns it as browsable media
-     * items for the Android Auto / Assistant browse tree. Kept `internal` (not private), same as
-     * [isHlsUrl]/[retryDelayMs] above, so tests can exercise the real browse-tree contents without
-     * going through a full [MediaLibrarySession]/[MediaSession.ControllerInfo] Binder round trip —
-     * media3's own team tests that round trip with instrumentation, not Robolectric, which this
-     * project deliberately doesn't have (see Testing in CLAUDE.md).
+     * Loads the current station list and returns it as browsable media items for the Android Auto
+     * / Assistant browse tree. Kept `internal` (not private), same as [isHlsUrl]/[retryDelayMs]
+     * above, so tests can exercise the real browse-tree contents without going through a full
+     * [MediaLibrarySession]/[MediaSession.ControllerInfo] Binder round trip — media3's own team
+     * tests that round trip with instrumentation, not Robolectric, which this project deliberately
+     * doesn't have (see Testing in AGENTS.md).
      */
-    internal suspend fun loadBrowsableStations(): List<MediaItem> {
-        val stations = repository.getAllStations()
-        cachedStations = stations
-        return stations.map { it.toBrowsableMediaItem() }
-    }
+    internal suspend fun loadBrowsableStations(): List<MediaItem> = browseTree.loadStations()
 
     /**
      * Starts playback of the cached station whose stream URL is [mediaId], as if it had been
@@ -834,7 +842,7 @@ class RadioPlaybackService : MediaLibraryService() {
      * [mediaId] isn't a station from the most recent [loadBrowsableStations] call.
      */
     internal fun playFromBrowseTree(mediaId: String): Boolean {
-        val station = cachedStations.find { it.streamUrl == mediaId } ?: return false
+        val station = browseTree.findStation(mediaId) ?: return false
         stationName = station.name
         currentCustomIcon = station.customIcon
         applyPlayback(station.streamUrl, knownHls = station.isHls)
@@ -848,7 +856,7 @@ class RadioPlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> =
-            Futures.immediateFuture(LibraryResult.ofItem(browseRootItem(), params))
+            Futures.immediateFuture(LibraryResult.ofItem(browseTree.rootItem, params))
 
         override fun onGetChildren(
             session: MediaLibrarySession,
@@ -858,7 +866,7 @@ class RadioPlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            if (parentId != BROWSE_ROOT_ID) {
+            if (!browseTree.isRoot(parentId)) {
                 return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
             }
             return serviceScope.future { LibraryResult.ofItemList(loadBrowsableStations(), params) }
@@ -869,12 +877,12 @@ class RadioPlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            if (mediaId == BROWSE_ROOT_ID) {
-                return Futures.immediateFuture(LibraryResult.ofItem(browseRootItem(), null))
+            if (browseTree.isRoot(mediaId)) {
+                return Futures.immediateFuture(LibraryResult.ofItem(browseTree.rootItem, null))
             }
-            val station = cachedStations.find { it.streamUrl == mediaId }
-            return if (station != null) {
-                Futures.immediateFuture(LibraryResult.ofItem(station.toBrowsableMediaItem(), null))
+            val item = browseTree.mediaItemFor(mediaId)
+            return if (item != null) {
+                Futures.immediateFuture(LibraryResult.ofItem(item, null))
             } else {
                 Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
             }
@@ -915,7 +923,9 @@ class RadioPlaybackService : MediaLibraryService() {
         const val EXTRA_STATION_NAME = "station_name"
         const val EXTRA_STREAM_URL = "stream_url"
         const val ACTION_STOP = "com.freqcast.action.STOP"
-        private const val BROWSE_ROOT_ID = "root"
+
+        /** Rewind amount for both the in-app button and the [TimeshiftSeekPlayer]-routed system seek controls. */
+        const val TIMESHIFT_SEEK_BACK_MS = 5000L
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "radio_playback_channel"
         private const val MAX_RETRY_COUNT = 5

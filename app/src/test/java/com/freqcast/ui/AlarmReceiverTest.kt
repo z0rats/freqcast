@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
 /**
  * [AlarmRepository.create] resolves the real [com.freqcast.data.AppDatabase] singleton, which
  * is cached for the process lifetime and so persists across `@Test` methods in this class (see
- * CLAUDE.md's Testing section) — [setup] defensively clears leftover alarms from a previous test.
+ * AGENTS.md's Testing section) — [setup] defensively clears leftover alarms from a previous test.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])

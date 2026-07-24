@@ -45,6 +45,8 @@ import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
@@ -58,6 +60,7 @@ import com.freqcast.ui.theme.card_surface_active
 import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
+import com.freqcast.util.formatOffsetFromLive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -77,6 +80,7 @@ fun NowPlayingBottomBar(
     onReturnToLive: () -> Unit,
     modifier: Modifier = Modifier,
     trackTitle: String? = null,
+    offsetFromLiveMs: Long = 0L,
 ) {
     if (station == null) return
 
@@ -197,6 +201,7 @@ fun NowPlayingBottomBar(
                                     hasTimeshift = hasTimeshift,
                                     isAtLive = isAtLive,
                                     trackTitle = trackTitle,
+                                    offsetFromLiveMs = offsetFromLiveMs,
                                     onPlayPauseClick = onPlayPauseClick,
                                     onRewind5s = onRewind5s,
                                     onReturnToLive = onReturnToLive,
@@ -272,6 +277,7 @@ private fun MiniPlayerCardFull(
     onRewind5s: () -> Unit,
     onReturnToLive: () -> Unit,
     trackTitle: String? = null,
+    offsetFromLiveMs: Long = 0L,
 ) {
     val isPlaying = playbackStatus == PlaybackStatus.PLAYING
     Card(
@@ -385,12 +391,29 @@ private fun MiniPlayerCardFull(
                                 ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.FiberManualRecord,
-                            contentDescription = stringResource(R.string.live),
-                            modifier = Modifier.size(16.dp),
-                            tint = if (isAtLive) glass_accent else text_hint,
-                        )
+                        if (isAtLive) {
+                            Icon(
+                                imageVector = Icons.Default.FiberManualRecord,
+                                contentDescription = stringResource(R.string.live),
+                                modifier = Modifier.size(16.dp),
+                                tint = glass_accent,
+                            )
+                        } else {
+                            val totalSeconds = (offsetFromLiveMs / 1000).coerceAtLeast(0)
+                            val description =
+                                stringResource(
+                                    R.string.behind_live,
+                                    (totalSeconds / 60).toInt(),
+                                    (totalSeconds % 60).toInt(),
+                                )
+                            Text(
+                                text = formatOffsetFromLive(offsetFromLiveMs),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = text_primary,
+                                maxLines = 1,
+                                modifier = Modifier.semantics { contentDescription = description },
+                            )
+                        }
                     }
                 }
             }

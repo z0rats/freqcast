@@ -17,7 +17,7 @@ import com.freqcast.ui.playback.PlaybackStateStore
  * replaced the old top-favorite shortcut once favorites/pinning was removed in favor of
  * drag-to-reorder. Both shortcuts always show the auto-generated emoji, not
  * [RadioStation.customIcon] — same scope boundary as the notification's large icon and
- * PlaybackScreen (see CLAUDE.md), since the last-played entry only has a name/URL from
+ * PlaybackScreen (see AGENTS.md), since the last-played entry only has a name/URL from
  * [PlaybackStateStore], not a full [RadioStation] to read a custom icon off of.
  */
 object AppShortcuts {

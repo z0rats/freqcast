@@ -1,5 +1,6 @@
 package com.freqcast.ui
 
+import android.graphics.Bitmap
 import androidx.room.Room
 import com.freqcast.R
 import com.freqcast.data.AppDatabase
@@ -20,6 +21,7 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -30,14 +32,20 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
  * [StreamValidator] hops onto the real `Dispatchers.IO` for its MockWebServer round-trip, off the
  * virtual test scheduler — so, like [MainViewModelTest], assertions after [AddStationViewModel.save]
  * use [awaitTrue] (a real-time poll) rather than a single [advanceUntilIdle].
+ * Native graphics (not the legacy Robolectric shadow) so the favicon-download tests' real PNG
+ * bytes decode back through [com.freqcast.util.IconStorage.saveImageBytes], same rationale as
+ * `DiscoverStationsViewModelTest`.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class AddStationViewModelTest {
@@ -79,9 +87,21 @@ class AddStationViewModelTest {
         return AddStationViewModel(
             repository,
             editingStationId,
+            RuntimeEnvironment.getApplication(),
             streamValidator,
             stationUrlResolver ?: StationUrlResolver(streamValidator = streamValidator),
         )
+    }
+
+    private fun pngBytesFor(
+        width: Int,
+        height: Int,
+    ): ByteArray {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        return ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.toByteArray()
+        }
     }
 
     private suspend fun TestScope.awaitTrue(
@@ -139,24 +159,24 @@ class AddStationViewModelTest {
         }
 
     @Test
-    fun `editing a station loads its existing genre`() =
+    fun `editing a station loads its existing description`() =
         runTest {
             val id =
                 repository.insertStation(
-                    RadioStation(name = "Jazz FM", streamUrl = "http://example.com", genre = "jazz,smooth"),
+                    RadioStation(name = "Jazz FM", streamUrl = "http://example.com", description = "jazz,smooth"),
                 )
             val viewModel = createViewModel(testScheduler, editingStationId = id)
 
-            awaitTrue { viewModel.uiState.value.genre == "jazz,smooth" }
+            awaitTrue { viewModel.uiState.value.description == "jazz,smooth" }
         }
 
     @Test
-    fun `saving a new station persists the entered genre`() =
+    fun `saving a new station persists the entered description`() =
         runTest {
             val viewModel = createViewModel(testScheduler)
             viewModel.onNameChange("New FM")
             viewModel.onUrlChange(server.url("/stream").toString())
-            viewModel.onGenreChange("rock")
+            viewModel.onDescriptionChange("rock")
 
             viewModel.save()
 
@@ -168,7 +188,7 @@ class AddStationViewModelTest {
             // a deadlock only `withTimeout` breaks out of.
             awaitTrue { viewModel.uiState.value.isSaving }
             awaitTrue { !viewModel.uiState.value.isSaving }
-            assertEquals("rock", database.radioStationDao().getAllStations()[0].genre)
+            assertEquals("rock", database.radioStationDao().getAllStations()[0].description)
         }
 
     @Test
@@ -207,6 +227,153 @@ class AddStationViewModelTest {
             } finally {
                 homepageServer.shutdown()
             }
+        }
+
+    @Test
+    fun `saving a direct stream url shows the checking-url stage while probing`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onNameChange("New FM")
+            viewModel.onUrlChange(server.url("/stream").toString())
+
+            viewModel.save()
+
+            awaitTrue { viewModel.uiState.value.savingStageRes == R.string.stage_checking_url }
+            awaitTrue { !viewModel.uiState.value.isSaving }
+            assertNull(viewModel.uiState.value.savingStageRes)
+        }
+
+    @Test
+    fun `saving a homepage url shows the page-scan stage while resolving`() =
+        runTest {
+            val homepageServer = MockWebServer()
+            homepageServer.start()
+            try {
+                homepageServer.enqueue(MockResponse().setHeader("Content-Type", "text/html"))
+                homepageServer.enqueue(
+                    MockResponse()
+                        .setHeader("Content-Type", "text/html")
+                        .setBody(
+                            """<html><body><audio src="${homepageServer.url("/stream.mp3")}"></audio></body></html>""",
+                        ),
+                )
+                homepageServer.enqueue(MockResponse().setResponseCode(200))
+
+                val viewModel = createViewModel(testScheduler)
+                viewModel.onNameChange("New FM")
+                viewModel.onUrlChange(homepageServer.url("/").toString())
+
+                viewModel.save()
+
+                awaitTrue { viewModel.uiState.value.savingStageRes == R.string.stage_scanning_page }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertNull(viewModel.uiState.value.savingStageRes)
+            } finally {
+                homepageServer.shutdown()
+            }
+        }
+
+    @Test
+    fun `pasting a homepage url with no scheme still resolves and saves the stream`() =
+        runTest {
+            val homepageServer = MockWebServer()
+            homepageServer.start()
+            try {
+                homepageServer.enqueue(MockResponse().setHeader("Content-Type", "text/html"))
+                homepageServer.enqueue(
+                    MockResponse()
+                        .setHeader("Content-Type", "text/html")
+                        .setBody(
+                            """<html><body><audio src="${homepageServer.url("/stream.mp3")}"></audio></body></html>""",
+                        ),
+                )
+                homepageServer.enqueue(MockResponse().setResponseCode(200))
+
+                val viewModel = createViewModel(testScheduler)
+                viewModel.onNameChange("New FM")
+                // No "http://" prefix - what a non-technical user pastes most often.
+                viewModel.onUrlChange(homepageServer.url("/").toString().removePrefix("http://"))
+
+                viewModel.save()
+
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertEquals(
+                    homepageServer.url("/stream.mp3").toString(),
+                    database.radioStationDao().getAllStations()[0].streamUrl,
+                )
+            } finally {
+                homepageServer.shutdown()
+            }
+        }
+
+    @Test
+    fun `saving with a blank name derives one from the resolved homepage's title`() =
+        runTest {
+            val homepageServer = MockWebServer()
+            homepageServer.start()
+            try {
+                homepageServer.enqueue(MockResponse().setHeader("Content-Type", "text/html"))
+                homepageServer.enqueue(
+                    MockResponse()
+                        .setHeader("Content-Type", "text/html")
+                        .setBody(
+                            """<html><head><title>My Cool Radio</title></head>
+                            <body><audio src="${homepageServer.url("/stream.mp3")}"></audio></body></html>""",
+                        ),
+                )
+                homepageServer.enqueue(MockResponse().setResponseCode(200))
+
+                val viewModel = createViewModel(testScheduler)
+                viewModel.onUrlChange(homepageServer.url("/").toString())
+
+                viewModel.save()
+
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertEquals("My Cool Radio", database.radioStationDao().getAllStations()[0].name)
+            } finally {
+                homepageServer.shutdown()
+            }
+        }
+
+    @Test
+    fun `saving with a blank name falls back to the stream's own host when nothing better is known`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onUrlChange(server.url("/stream").toString())
+
+            viewModel.save()
+
+            awaitTrue { viewModel.uiState.value.isSaving }
+            awaitTrue { !viewModel.uiState.value.isSaving }
+            assertEquals("Localhost", database.radioStationDao().getAllStations()[0].name)
+        }
+
+    @Test
+    fun `saving with a blank name that collides with an existing station gets suffixed`() =
+        runTest {
+            repository.insertStation(RadioStation(name = "Localhost", streamUrl = "http://example.com/other"))
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onUrlChange(server.url("/stream").toString())
+
+            viewModel.save()
+
+            awaitTrue { viewModel.uiState.value.isSaving }
+            awaitTrue { !viewModel.uiState.value.isSaving }
+            assertEquals(
+                "Localhost (2)",
+                database
+                    .radioStationDao()
+                    .getAllStations()
+                    .first {
+                        it.streamUrl ==
+                            server
+                                .url(
+                                    "/stream",
+                                ).toString()
+                    }.name,
+            )
         }
 
     @Test
@@ -253,7 +420,7 @@ class AddStationViewModelTest {
             // icon-replacement test above (Room's suspend calls hop off the virtual test scheduler).
             awaitTrue { viewModel.uiState.value.sortOrder == originalSortOrder }
 
-            viewModel.onGenreChange("smooth jazz")
+            viewModel.onDescriptionChange("smooth jazz")
             viewModel.save()
 
             // See the true->false isSaving reasoning in the test above.
@@ -287,5 +454,111 @@ class AddStationViewModelTest {
             viewModel.save()
 
             awaitTrue { !oldIconFile.exists() }
+        }
+
+    @Test
+    fun `saving a resolved homepage downloads its favicon and sets it as customIcon`() =
+        runTest {
+            val homepageServer = MockWebServer()
+            homepageServer.start()
+            try {
+                homepageServer.enqueue(MockResponse().setHeader("Content-Type", "text/html"))
+                homepageServer.enqueue(
+                    MockResponse()
+                        .setHeader("Content-Type", "text/html")
+                        .setBody(
+                            """
+                            <html><head><link rel="icon" href="/favicon.png"></head>
+                            <body><audio src="${homepageServer.url("/stream.mp3")}"></audio></body></html>
+                            """.trimIndent(),
+                        ),
+                )
+                homepageServer.enqueue(MockResponse().setResponseCode(200))
+                homepageServer.enqueue(MockResponse().setBody(Buffer().write(pngBytesFor(64, 64))))
+
+                val viewModel = createViewModel(testScheduler)
+                viewModel.onNameChange("New FM")
+                viewModel.onUrlChange(homepageServer.url("/").toString())
+
+                viewModel.save()
+
+                // The favicon is now downloaded and decoded before the station is ever written
+                // (see AddStationViewModel.save's doc on why it's no longer a fire-and-forget
+                // patch), so by the time isSaving flips back to false the row already has it -
+                // no separate real-time poll needed here beyond what awaitTrue already does.
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                val customIcon = database.radioStationDao().getAllStations()[0].customIcon
+                assertTrue(customIcon != null && File(customIcon).exists())
+            } finally {
+                homepageServer.shutdown()
+            }
+        }
+
+    @Test
+    fun `saving a resolved homepage with no favicon link leaves customIcon null`() =
+        runTest {
+            val homepageServer = MockWebServer()
+            homepageServer.start()
+            try {
+                homepageServer.enqueue(MockResponse().setHeader("Content-Type", "text/html"))
+                homepageServer.enqueue(
+                    MockResponse()
+                        .setHeader("Content-Type", "text/html")
+                        .setBody(
+                            """<html><body><audio src="${homepageServer.url("/stream.mp3")}"></audio></body></html>""",
+                        ),
+                )
+                homepageServer.enqueue(MockResponse().setResponseCode(200))
+
+                val viewModel = createViewModel(testScheduler)
+                viewModel.onNameChange("New FM")
+                viewModel.onUrlChange(homepageServer.url("/").toString())
+
+                viewModel.save()
+
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertNull(database.radioStationDao().getAllStations()[0].customIcon)
+            } finally {
+                homepageServer.shutdown()
+            }
+        }
+
+    @Test
+    fun `saving with a manually picked emoji does not overwrite it with a discovered favicon`() =
+        runTest {
+            val homepageServer = MockWebServer()
+            homepageServer.start()
+            try {
+                homepageServer.enqueue(MockResponse().setHeader("Content-Type", "text/html"))
+                homepageServer.enqueue(
+                    MockResponse()
+                        .setHeader("Content-Type", "text/html")
+                        .setBody(
+                            """
+                            <html><head><link rel="icon" href="/favicon.png"></head>
+                            <body><audio src="${homepageServer.url("/stream.mp3")}"></audio></body></html>
+                            """.trimIndent(),
+                        ),
+                )
+                homepageServer.enqueue(MockResponse().setResponseCode(200))
+
+                val viewModel = createViewModel(testScheduler)
+                viewModel.onNameChange("New FM")
+                viewModel.onUrlChange(homepageServer.url("/").toString())
+                viewModel.onEmojiIconSelected("🎷")
+
+                viewModel.save()
+
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertEquals("🎷", database.radioStationDao().getAllStations()[0].customIcon)
+                // No favicon request should ever have been fired in this case, so the request
+                // count stays exactly at the 3 the main resolve flow made (HEAD, GET, HEAD).
+                assertEquals(3, homepageServer.requestCount)
+            } finally {
+                homepageServer.shutdown()
+            }
         }
 }

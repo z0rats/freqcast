@@ -109,7 +109,7 @@ class LocationProviderTest {
             // getCurrentLocation() hops onto a real dispatcher for this path (its own
             // requestSingleUpdate registration + the shadow's callback delivery are real,
             // Looper-based work, not virtual-scheduler-driven) — same "real dispatcher + real-time
-            // poll" shape CLAUDE.md documents for RadioBrowserApi/StreamValidator's tests.
+            // poll" shape AGENTS.md documents for RadioBrowserApi/StreamValidator's tests.
             val deferred = async(Dispatchers.Default) { provider.getCurrentLocation(timeoutMs = 5000) }
             val deadline = System.currentTimeMillis() + 2000
             while (shadowLocationManager.getLocationUpdateListeners(LocationManager.NETWORK_PROVIDER).isEmpty() &&

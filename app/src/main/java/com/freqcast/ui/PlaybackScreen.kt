@@ -5,8 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -39,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -47,7 +46,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -60,10 +61,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -72,18 +74,19 @@ import androidx.core.content.ContextCompat
 import com.freqcast.R
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
-import com.freqcast.ui.theme.background_gradient_end
-import com.freqcast.ui.theme.background_gradient_mid
-import com.freqcast.ui.theme.background_gradient_start
 import com.freqcast.ui.theme.card_border
 import com.freqcast.ui.theme.card_surface
 import com.freqcast.ui.theme.card_surface_active
+import com.freqcast.ui.theme.freqcastGradientBackground
 import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.glass_primary
 import com.freqcast.ui.theme.isLandscape
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
+import com.freqcast.util.ClipExport
 import com.freqcast.util.EmojiGenerator
+import com.freqcast.util.formatOffsetFromLive
+import com.freqcast.util.isNetworkAvailable
 
 class PlaybackActivity : ComponentActivity() {
     // Must be Compose-observable state (not a plain var): onServiceConnected fires asynchronously
@@ -265,7 +268,7 @@ class PlaybackActivity : ComponentActivity() {
     }
 
     private fun togglePlayback() {
-        if (!isNetworkAvailable()) {
+        if (!isNetworkAvailable(this)) {
             Toast.makeText(this, getString(R.string.error_network), Toast.LENGTH_SHORT).show()
             return
         }
@@ -293,14 +296,6 @@ class PlaybackActivity : ComponentActivity() {
             startForegroundService(this)
         }
     }
-
-    private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -313,20 +308,7 @@ fun PlaybackScreen(
     onPlayStopClick: () -> Unit,
 ) {
     Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(
-                    brush =
-                        Brush.verticalGradient(
-                            colors =
-                                listOf(
-                                    background_gradient_start,
-                                    background_gradient_mid,
-                                    background_gradient_end,
-                                ),
-                        ),
-                ),
+        modifier = Modifier.fillMaxSize().freqcastGradientBackground(),
     ) {
         Scaffold(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -374,6 +356,8 @@ fun NowPlayingContent(
     var isPlaying by remember { mutableStateOf(playbackService?.isPlaying() ?: false) }
     var trackTitle by remember { mutableStateOf<String?>(null) }
     var sleepTimerEndAtMs by remember { mutableStateOf<Long?>(null) }
+    var hasTimeshift by remember { mutableStateOf(false) }
+    var isAtLive by remember { mutableStateOf(true) }
     LaunchedEffect(playbackService) {
         val svc = playbackService ?: return@LaunchedEffect
         svc.playbackSnapshot.collect { snapshot ->
@@ -381,6 +365,29 @@ fun NowPlayingContent(
             isPlaying = snapshot.isPlaying && isCurrentStream
             trackTitle = if (isCurrentStream) snapshot.trackTitle else null
             sleepTimerEndAtMs = snapshot.sleepTimerEndAtMs
+            hasTimeshift = snapshot.hasTimeshift && isCurrentStream
+            isAtLive = snapshot.isAtLive
+        }
+    }
+
+    // playbackSnapshot only fires on discrete events, but the buffer/offset grow every second,
+    // so they need their own ticker rather than piggybacking on the collector above.
+    var bufferedDurationMs by remember { mutableStateOf(0L) }
+    var offsetFromLiveMs by remember { mutableStateOf(0L) }
+    var clipFormatAvailable by remember { mutableStateOf(false) }
+    LaunchedEffect(playbackService, hasTimeshift) {
+        val svc = playbackService
+        if (svc == null || !hasTimeshift) {
+            bufferedDurationMs = 0L
+            offsetFromLiveMs = 0L
+            clipFormatAvailable = false
+            return@LaunchedEffect
+        }
+        while (true) {
+            bufferedDurationMs = svc.bufferedDurationMs()
+            offsetFromLiveMs = svc.offsetFromLiveMs()
+            clipFormatAvailable = svc.currentClipFormat() != null
+            kotlinx.coroutines.delay(1_000)
         }
     }
 
@@ -456,11 +463,31 @@ fun NowPlayingContent(
                             TrackTitleRow(trackTitle = trackTitle ?: "", context = context)
                         }
                         PlayStopButton(isPlaying = isPlaying, onClick = onPlayStopClick, height = 64.dp)
-                        SleepTimerControl(
-                            sleepTimerRemainingMs = sleepTimerRemainingMs,
-                            playbackService = playbackService,
-                            context = context,
-                        )
+                        if (hasTimeshift) {
+                            TimeshiftControls(
+                                isAtLive = isAtLive,
+                                bufferedDurationMs = bufferedDurationMs,
+                                offsetFromLiveMs = offsetFromLiveMs,
+                                onSeekToOffset = { playbackService?.seekToOffsetFromLive(it) },
+                                onRewind = { playbackService?.seekBackward(it) },
+                                onSeekToLive = { playbackService?.seekToLive() },
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            SleepTimerControl(
+                                sleepTimerRemainingMs = sleepTimerRemainingMs,
+                                playbackService = playbackService,
+                                context = context,
+                            )
+                            if (hasTimeshift && clipFormatAvailable) {
+                                ClipExportControl(
+                                    stationName = displayName,
+                                    bufferedDurationMs = bufferedDurationMs,
+                                    playbackService = playbackService,
+                                    context = context,
+                                )
+                            }
+                        }
                     }
                 }
             } else {
@@ -484,12 +511,100 @@ fun NowPlayingContent(
 
                     PlayStopButton(isPlaying = isPlaying, onClick = onPlayStopClick, height = 72.dp)
 
-                    SleepTimerControl(
-                        sleepTimerRemainingMs = sleepTimerRemainingMs,
-                        playbackService = playbackService,
-                        context = context,
-                    )
+                    if (hasTimeshift) {
+                        TimeshiftControls(
+                            isAtLive = isAtLive,
+                            bufferedDurationMs = bufferedDurationMs,
+                            offsetFromLiveMs = offsetFromLiveMs,
+                            onSeekToOffset = { playbackService?.seekToOffsetFromLive(it) },
+                            onRewind = { playbackService?.seekBackward(it) },
+                            onSeekToLive = { playbackService?.seekToLive() },
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        SleepTimerControl(
+                            sleepTimerRemainingMs = sleepTimerRemainingMs,
+                            playbackService = playbackService,
+                            context = context,
+                        )
+                        if (hasTimeshift && clipFormatAvailable) {
+                            ClipExportControl(
+                                stationName = displayName,
+                                bufferedDurationMs = bufferedDurationMs,
+                                playbackService = playbackService,
+                                context = context,
+                            )
+                        }
+                    }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Buffered-window seek bar for timeshift (rewind) playback: drag the slider to scrub anywhere in
+ * the buffer, or tap a step button for a quick jump. Replaces the old fixed "−5s" button with a
+ * visual sense of how much buffer is available and where playback currently sits within it.
+ */
+@Composable
+private fun TimeshiftControls(
+    isAtLive: Boolean,
+    bufferedDurationMs: Long,
+    offsetFromLiveMs: Long,
+    onSeekToOffset: (Long) -> Unit,
+    onRewind: (Long) -> Unit,
+    onSeekToLive: () -> Unit,
+) {
+    val bufferedSeconds = (bufferedDurationMs / 1000f).coerceAtLeast(1f)
+    val livePositionSeconds = ((bufferedDurationMs - offsetFromLiveMs) / 1000f).coerceIn(0f, bufferedSeconds)
+    // While the user is actively dragging, show their in-progress position instead of the
+    // ticker-driven value so the thumb doesn't jump; committed to a real seek on release.
+    var draggingSeconds by remember { mutableStateOf<Float?>(null) }
+    val sliderDescription = stringResource(R.string.timeshift_slider)
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Slider(
+            value = draggingSeconds ?: livePositionSeconds,
+            onValueChange = { draggingSeconds = it },
+            onValueChangeFinished = {
+                draggingSeconds?.let { target ->
+                    val offsetMs = ((bufferedSeconds - target) * 1000).toLong().coerceAtLeast(0L)
+                    onSeekToOffset(offsetMs)
+                }
+                draggingSeconds = null
+            },
+            valueRange = 0f..bufferedSeconds,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = sliderDescription },
+        )
+        Text(
+            text = if (isAtLive) stringResource(R.string.live).uppercase() else formatOffsetFromLive(offsetFromLiveMs),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isAtLive) glass_accent else text_hint,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            listOf(15, 30, 60).forEach { seconds ->
+                val description = stringResource(R.string.rewind_seconds, seconds)
+                OutlinedButton(
+                    onClick = { onRewind(seconds * 1000L) },
+                    modifier = Modifier.semantics { contentDescription = description },
+                ) {
+                    Text("−${seconds}s")
+                }
+            }
+            Button(onClick = onSeekToLive, enabled = !isAtLive) {
+                Text(stringResource(R.string.go_live))
             }
         }
     }
@@ -666,3 +781,101 @@ private fun SleepTimerControl(
         )
     }
 }
+
+/**
+ * Chip + preset-picker dialog for exporting the last N minutes of the live timeshift buffer as a
+ * shareable audio file. Mirrors [SleepTimerControl]'s chip-opens-dialog shape. Only rendered by the
+ * caller once [RadioPlaybackService.currentClipFormat] is non-null (MP3/AAC known - see
+ * `TimeshiftController.exportClip`'s docs for why Ogg/HLS never reach here), so [bufferedDurationMs]
+ * is the only thing gating which presets are offered: the buffer isn't a rolling window, so a
+ * preset longer than what's actually been recorded so far is hidden rather than silently clamped.
+ */
+@Composable
+private fun ClipExportControl(
+    stationName: String,
+    bufferedDurationMs: Long,
+    playbackService: RadioPlaybackService?,
+    context: Context,
+) {
+    var dialogOpen by remember { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
+
+    Row(
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(card_surface_active)
+                .clickable(enabled = !exporting) { dialogOpen = true }
+                .padding(horizontal = Spacing.md, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Share,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = text_hint,
+        )
+        Text(text = stringResource(R.string.export_clip), color = text_hint)
+    }
+
+    if (dialogOpen) {
+        val availableMinutes = CLIP_EXPORT_PRESET_MINUTES.filter { it * 60_000L <= bufferedDurationMs }
+        AlertDialog(
+            onDismissRequest = { dialogOpen = false },
+            containerColor = card_surface,
+            titleContentColor = text_primary,
+            textContentColor = text_primary,
+            title = { Text(stringResource(R.string.export_clip)) },
+            text = {
+                if (availableMinutes.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.export_clip_not_enough_buffer),
+                        color = text_hint,
+                    )
+                } else {
+                    Column {
+                        availableMinutes.forEach { minutes ->
+                            Text(
+                                text = stringResource(R.string.export_clip_last_minutes, minutes),
+                                color = text_primary,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            dialogOpen = false
+                                            val svc = playbackService ?: return@clickable
+                                            exporting = true
+                                            ClipExport.export(
+                                                context = context,
+                                                service = svc,
+                                                stationName = stationName,
+                                                durationMs = minutes * 60_000L,
+                                                chooserTitle = context.getString(R.string.export_clip),
+                                            ) { success ->
+                                                exporting = false
+                                                if (!success) {
+                                                    Toast
+                                                        .makeText(
+                                                            context,
+                                                            context.getString(R.string.export_clip_failed_toast),
+                                                            Toast.LENGTH_SHORT,
+                                                        ).show()
+                                                }
+                                            }
+                                        }.padding(vertical = 12.dp),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { dialogOpen = false }) {
+                    Text(stringResource(R.string.close))
+                }
+            },
+        )
+    }
+}
+
+private val CLIP_EXPORT_PRESET_MINUTES = listOf(1, 5, 10, 30)

@@ -2,10 +2,14 @@
 <resources>
     <string name="app_name">Freqcast</string>
     <string name="add_station">添加</string>
-    <string name="station_name">电台名称</string>
+    <string name="station_name">电台名称（可选）</string>
     <string name="stream_url">流媒体或网站地址</string>
-    <string name="station_genre">风格（可选）</string>
+    <string name="station_description">简介（可选）</string>
     <string name="save">保存</string>
+    <string name="stage_checking_url">正在检查链接…</string>
+    <string name="stage_searching_directory">正在电台目录中搜索…</string>
+    <string name="stage_scanning_page">正在页面中查找流媒体…</string>
+    <string name="stage_downloading_icon">正在下载电台图标…</string>
     <string name="play">播放</string>
     <string name="stop">停止</string>
     <string name="volume">音量</string>
@@ -16,7 +20,6 @@
     <string name="error_network">网络错误</string>
     <string name="error_playback">播放错误</string>
     <string name="error_live_window">播放位置落后于直播窗口，正在跳转到直播点</string>
-    <string name="enter_name">请输入名称</string>
     <string name="enter_url">请输入网址</string>
     <string name="station_saved">电台已保存</string>
     <string name="save_error">保存失败：%1$s</string>
@@ -45,6 +48,10 @@
     <string name="connection_failed">连接失败</string>
     <string name="close">关闭</string>
     <string name="rewind_5s">−5 秒</string>
+    <string name="rewind_seconds">快退 %1$d 秒</string>
+    <string name="go_live">跳转到直播</string>
+    <string name="behind_live">落后直播 %1$d:%2$02d</string>
+    <string name="timeshift_slider">播放位置</string>
     <string name="live">直播</string>
     <string name="sleep_timer">睡眠定时器</string>
     <string name="sleep_timer_off">关闭</string>
@@ -52,6 +59,10 @@
     <string name="sleep_timer_minutes">%1$d 分钟</string>
     <string name="sleep_timer_set_toast">睡眠定时器已设置：%1$d 分钟</string>
     <string name="sleep_timer_cancelled_toast">睡眠定时器已取消</string>
+    <string name="export_clip">导出片段</string>
+    <string name="export_clip_last_minutes">最近 %1$d 分钟</string>
+    <string name="export_clip_not_enough_buffer">缓冲时间还不够</string>
+    <string name="export_clip_failed_toast">片段导出失败</string>
     <string name="more_options">更多选项</string>
     <string name="export_stations">导出电台</string>
     <string name="share_station">分享电台</string>
@@ -103,6 +114,9 @@
     <string name="settings">设置</string>
     <string name="settings_metered_warning">移动数据提醒</string>
     <string name="settings_metered_warning_description">在按流量计费的网络下播放前先询问确认</string>
+    <string name="settings_timeshift_buffer_size">回放缓冲区大小</string>
+    <string name="settings_timeshift_buffer_size_description">为直播电台保留多少可回放的音频缓冲</string>
+    <string name="settings_timeshift_buffer_size_value">%1$d MB（约 %2$d 分钟）</string>
     <string name="metered_connection_dialog_title">移动数据网络</string>
     <string name="metered_connection_dialog_message">当前网络按流量计费,播放该电台可能会消耗你的移动数据。</string>
     <string name="metered_connection_continue">仍然播放</string>

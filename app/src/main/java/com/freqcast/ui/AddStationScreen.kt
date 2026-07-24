@@ -9,14 +9,17 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -35,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,11 +50,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.freqcast.R
@@ -61,13 +63,11 @@ import com.freqcast.ui.components.StationIconPickerDialog
 import com.freqcast.ui.components.rememberStationIconBitmap
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
-import com.freqcast.ui.theme.background_gradient_end
-import com.freqcast.ui.theme.background_gradient_mid
-import com.freqcast.ui.theme.background_gradient_start
 import com.freqcast.ui.theme.card_border
 import com.freqcast.ui.theme.card_surface
 import com.freqcast.ui.theme.card_surface_active
-import com.freqcast.ui.theme.text_hint
+import com.freqcast.ui.theme.freqcastFormFieldColors
+import com.freqcast.ui.theme.freqcastGradientBackground
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.IconStorage
@@ -83,7 +83,7 @@ class AddStationActivity : ComponentActivity() {
 
         val repository = RadioStationRepository.create(this)
         val editingStationId = intent.getLongExtra(EXTRA_STATION_ID, -1L).takeIf { it != -1L }
-        val viewModelFactory = AddStationViewModel.provideFactory(repository, editingStationId)
+        val viewModelFactory = AddStationViewModel.provideFactory(repository, editingStationId, this)
 
         setContent {
             FreqcastTheme {
@@ -152,20 +152,7 @@ fun AddStationScreen(
     }
 
     Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(
-                    brush =
-                        Brush.verticalGradient(
-                            colors =
-                                listOf(
-                                    background_gradient_start,
-                                    background_gradient_mid,
-                                    background_gradient_end,
-                                ),
-                        ),
-                ),
+        modifier = Modifier.fillMaxSize().freqcastGradientBackground(),
     ) {
         Scaffold(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -284,19 +271,7 @@ fun AddStationScreen(
                                 uiState.nameErrorRes?.let {
                                     { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                                 },
-                            colors =
-                                TextFieldDefaults.colors(
-                                    focusedContainerColor = card_surface_active,
-                                    unfocusedContainerColor = card_surface_active,
-                                    focusedTextColor = text_primary,
-                                    unfocusedTextColor = text_primary,
-                                    focusedLabelColor = text_hint,
-                                    unfocusedLabelColor = text_hint,
-                                    cursorColor = text_primary,
-                                    focusedIndicatorColor = text_hint,
-                                    unfocusedIndicatorColor = text_hint.copy(alpha = 0.5f),
-                                    errorIndicatorColor = MaterialTheme.colorScheme.error,
-                                ),
+                            colors = freqcastFormFieldColors(),
                             shape = MaterialTheme.shapes.medium,
                         )
 
@@ -310,40 +285,17 @@ fun AddStationScreen(
                                 uiState.urlErrorRes?.let {
                                     { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
                                 },
-                            colors =
-                                TextFieldDefaults.colors(
-                                    focusedContainerColor = card_surface_active,
-                                    unfocusedContainerColor = card_surface_active,
-                                    focusedTextColor = text_primary,
-                                    unfocusedTextColor = text_primary,
-                                    focusedLabelColor = text_hint,
-                                    unfocusedLabelColor = text_hint,
-                                    cursorColor = text_primary,
-                                    focusedIndicatorColor = text_hint,
-                                    unfocusedIndicatorColor = text_hint.copy(alpha = 0.5f),
-                                    errorIndicatorColor = MaterialTheme.colorScheme.error,
-                                ),
+                            colors = freqcastFormFieldColors(),
                             shape = MaterialTheme.shapes.medium,
                         )
 
                         OutlinedTextField(
-                            value = uiState.genre,
-                            onValueChange = viewModel::onGenreChange,
-                            label = { Text(stringResource(R.string.station_genre)) },
+                            value = uiState.description,
+                            onValueChange = viewModel::onDescriptionChange,
+                            label = { Text(stringResource(R.string.station_description)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            colors =
-                                TextFieldDefaults.colors(
-                                    focusedContainerColor = card_surface_active,
-                                    unfocusedContainerColor = card_surface_active,
-                                    focusedTextColor = text_primary,
-                                    unfocusedTextColor = text_primary,
-                                    focusedLabelColor = text_hint,
-                                    unfocusedLabelColor = text_hint,
-                                    cursorColor = text_primary,
-                                    focusedIndicatorColor = text_hint,
-                                    unfocusedIndicatorColor = text_hint.copy(alpha = 0.5f),
-                                ),
+                            colors = freqcastFormFieldColors(),
                             shape = MaterialTheme.shapes.medium,
                         )
 
@@ -357,11 +309,25 @@ fun AddStationScreen(
                             shape = MaterialTheme.shapes.medium,
                         ) {
                             if (uiState.isSaving) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    strokeWidth = 2.dp,
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(modifier = Modifier.width(Spacing.sm))
+                                    Text(
+                                        text =
+                                            uiState.savingStageRes?.let { stringResource(it) }
+                                                ?: stringResource(R.string.save),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             } else {
                                 Text(stringResource(R.string.save))
                             }

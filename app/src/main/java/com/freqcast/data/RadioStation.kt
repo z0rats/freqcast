@@ -22,7 +22,7 @@ data class RadioStation(
     // repository.restoreStation (undoDelete) is the one path that preserves an explicit value
     // instead, so undoing a delete restores the station to its original position.
     val sortOrder: Int = 0,
-    val genre: String? = null,
+    val description: String? = null,
     // Known-HLS hint from the Radio Browser directory's own `hls` flag, filled in for
     // Discover-added stations only; false for manual adds, which fall back to isHlsUrl()'s
     // URL heuristic in RadioPlaybackService.

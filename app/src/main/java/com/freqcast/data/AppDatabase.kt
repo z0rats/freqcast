@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RadioStation::class, WakeAlarm::class], version = 9, exportSchema = true)
+@Database(entities = [RadioStation::class, WakeAlarm::class], version = 10, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun radioStationDao(): RadioStationDao
 
@@ -152,6 +152,41 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        /**
+         * Renames `genre` to `description` - same free-text column, now framed as a general note
+         * rather than a music genre. Uses the same create/copy/drop/rename rebuild as
+         * [MIGRATION_7_8] rather than `RENAME COLUMN`, for the same cross-API-level SQLite
+         * version safety reason documented there.
+         */
+        val MIGRATION_9_10 =
+            object : Migration(9, 10) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE radio_stations_new (" +
+                            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "`name` TEXT NOT NULL, `streamUrl` TEXT NOT NULL, `customIcon` TEXT, " +
+                            "`sortOrder` INTEGER NOT NULL DEFAULT 0, `description` TEXT, " +
+                            "`isHls` INTEGER NOT NULL, `radioBrowserUuid` TEXT)",
+                    )
+                    db.execSQL(
+                        "INSERT INTO radio_stations_new " +
+                            "(id, name, streamUrl, customIcon, sortOrder, description, isHls, radioBrowserUuid) " +
+                            "SELECT id, name, streamUrl, customIcon, sortOrder, genre, isHls, radioBrowserUuid " +
+                            "FROM radio_stations",
+                    )
+                    db.execSQL("DROP TABLE radio_stations")
+                    db.execSQL("ALTER TABLE radio_stations_new RENAME TO radio_stations")
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS `index_radio_stations_name` " +
+                            "ON `radio_stations` (`name`)",
+                    )
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS `index_radio_stations_streamUrl` " +
+                            "ON `radio_stations` (`streamUrl`)",
+                    )
+                }
+            }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -171,6 +206,7 @@ abstract class AppDatabase : RoomDatabase() {
                             MIGRATION_6_7,
                             MIGRATION_7_8,
                             MIGRATION_8_9,
+                            MIGRATION_9_10,
                         )
                         // Safety net only for schema jumps with no explicit migration
                         // (e.g. pre-1.0 installs skipping straight to a future version).

@@ -116,10 +116,6 @@ class AlarmEditViewModel(
             stationRepository: RadioStationRepository,
             editingAlarmId: Long?,
         ): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    AlarmEditViewModel(alarmRepository, stationRepository, editingAlarmId) as T
-            }
+            viewModelFactory { AlarmEditViewModel(alarmRepository, stationRepository, editingAlarmId) }
     }
 }

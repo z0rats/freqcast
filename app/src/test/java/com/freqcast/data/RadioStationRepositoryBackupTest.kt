@@ -49,14 +49,14 @@ class RadioStationRepositoryBackupTest {
         }
 
     @Test
-    fun `exportStationsToJson serializes name, streamUrl, customIcon and genre`() =
+    fun `exportStationsToJson serializes name, streamUrl, customIcon and description`() =
         runTest {
             repository.insertStation(
                 RadioStation(
                     name = "Rock FM",
                     streamUrl = "http://example.com/rock",
                     customIcon = "🎸",
-                    genre = "rock,classic rock",
+                    description = "rock,classic rock",
                 ),
             )
             repository.insertStation(RadioStation(name = "Jazz Radio", streamUrl = "http://example.com/jazz"))
@@ -67,37 +67,47 @@ class RadioStationRepositoryBackupTest {
             assertEquals("Rock FM", array.getJSONObject(0).getString("name"))
             assertEquals("http://example.com/rock", array.getJSONObject(0).getString("streamUrl"))
             assertEquals("🎸", array.getJSONObject(0).getString("customIcon"))
-            assertEquals("rock,classic rock", array.getJSONObject(0).getString("genre"))
+            assertEquals("rock,classic rock", array.getJSONObject(0).getString("description"))
             assertTrue(array.getJSONObject(1).isNull("customIcon"))
-            assertTrue(array.getJSONObject(1).isNull("genre"))
+            assertTrue(array.getJSONObject(1).isNull("description"))
         }
 
     @Test
-    fun `importStationsFromJson reads genre, isHls and radioBrowserUuid when present`() =
+    fun `importStationsFromJson reads description, isHls and radioBrowserUuid when present`() =
         runTest {
             val json =
                 """
                 [{
                   "name": "Rock FM", "streamUrl": "http://example.com/rock",
-                  "genre": "rock", "isHls": true, "radioBrowserUuid": "uuid-1"
+                  "description": "rock", "isHls": true, "radioBrowserUuid": "uuid-1"
                 }]
                 """.trimIndent()
 
             repository.importStationsFromJson(json)
 
-            assertEquals("rock", repository.getAllStations()[0].genre)
+            assertEquals("rock", repository.getAllStations()[0].description)
             assertEquals(true, repository.getAllStations()[0].isHls)
             assertEquals("uuid-1", repository.getAllStations()[0].radioBrowserUuid)
         }
 
     @Test
-    fun `importStationsFromJson defaults genre, isHls and radioBrowserUuid for older backups`() =
+    fun `importStationsFromJson falls back to the older 'genre' key when description is absent`() =
+        runTest {
+            val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock", "genre": "rock"}]"""
+
+            repository.importStationsFromJson(json)
+
+            assertEquals("rock", repository.getAllStations()[0].description)
+        }
+
+    @Test
+    fun `importStationsFromJson defaults description, isHls and radioBrowserUuid for older backups`() =
         runTest {
             val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock"}]"""
 
             repository.importStationsFromJson(json)
 
-            assertNull(repository.getAllStations()[0].genre)
+            assertNull(repository.getAllStations()[0].description)
             assertEquals(false, repository.getAllStations()[0].isHls)
             assertNull(repository.getAllStations()[0].radioBrowserUuid)
         }
@@ -272,12 +282,12 @@ class RadioStationRepositoryBackupTest {
     @Test
     fun `importStations dispatches to JSON import for a JSON array`() =
         runTest {
-            val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock", "genre": "rock"}]"""
+            val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock", "description": "rock"}]"""
 
             val result = repository.importStations(json)
 
             assertEquals(ImportResult(imported = 1, skipped = 0, failed = 0), result)
-            assertEquals("rock", repository.getAllStations()[0].genre)
+            assertEquals("rock", repository.getAllStations()[0].description)
         }
 
     @Test
@@ -299,7 +309,7 @@ class RadioStationRepositoryBackupTest {
                     name = "Rock FM",
                     streamUrl = "http://example.com/rock",
                     customIcon = "🎸",
-                    genre = "rock",
+                    description = "rock",
                 ),
             )
             repository.insertStation(RadioStation(name = "Jazz Radio", streamUrl = "http://example.com/jazz"))
@@ -323,10 +333,10 @@ class RadioStationRepositoryBackupTest {
             assertEquals("Rock FM", imported[0].name)
             assertEquals("http://example.com/rock", imported[0].streamUrl)
             assertEquals("🎸", imported[0].customIcon)
-            assertEquals("rock", imported[0].genre)
+            assertEquals("rock", imported[0].description)
             assertEquals("Jazz Radio", imported[1].name)
             assertNull(imported[1].customIcon)
-            assertNull(imported[1].genre)
+            assertNull(imported[1].description)
             freshDatabase.close()
         }
 }

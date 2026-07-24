@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -134,5 +135,42 @@ class IconStorageTest {
         val path = IconStorage.saveImageBytes(context, byteArrayOf(1, 2, 3, 4))
 
         assertNull(path)
+    }
+
+    /** A minimal but spec-correct raw 32bpp `.ico` container - see IcoDecoderTest for the full parser coverage. */
+    private fun icoBytesFor(
+        width: Int,
+        height: Int,
+    ): ByteArray {
+        fun le16(v: Int) = byteArrayOf((v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte())
+
+        fun le32(v: Int) =
+            byteArrayOf(
+                (v and 0xFF).toByte(),
+                ((v shr 8) and 0xFF).toByte(),
+                ((v shr 16) and 0xFF).toByte(),
+                ((v shr 24) and 0xFF).toByte(),
+            )
+        val rowStride = width * 4
+        val colorData = ByteArray(rowStride * height) { -1 } // opaque white, BGRA
+        val header =
+            le32(40) + le32(width) + le32(height * 2) + le16(1) + le16(32) +
+                le32(0) + le32(0) + le32(0) + le32(0) + le32(0) + le32(0)
+        val image = header + colorData
+        val dirHeader = le16(0) + le16(1) + le16(1)
+        val entryHeader =
+            byteArrayOf(width.toByte(), height.toByte(), 0, 0) + le16(1) + le16(32) + le32(image.size) + le32(22)
+        return dirHeader + entryHeader + image
+    }
+
+    @Test
+    fun `saveImageBytes decodes a raw ico favicon since BitmapFactory alone can't`() {
+        val path = IconStorage.saveImageBytes(context, icoBytesFor(32, 32))
+
+        assertNotNull(path)
+        assertTrue(IconStorage.isImagePath(path!!))
+        val decoded = IconStorage.decodeBitmap(path)
+        assertNotNull(decoded)
+        assertEquals(32, decoded!!.width)
     }
 }

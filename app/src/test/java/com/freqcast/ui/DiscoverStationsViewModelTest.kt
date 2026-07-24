@@ -215,7 +215,7 @@ class DiscoverStationsViewModelTest {
         }
 
     @Test
-    fun `addStation persists the directory's tags as the station's genre`() =
+    fun `addStation persists the directory's tags as the station's description`() =
         runTest {
             val viewModel = createViewModel(testScheduler)
             advanceUntilIdle()
@@ -227,7 +227,7 @@ class DiscoverStationsViewModelTest {
                     .contains(station.url)
             }
 
-            assertEquals("rock,pop", database.radioStationDao().getAllStations()[0].genre)
+            assertEquals("rock,pop", database.radioStationDao().getAllStations()[0].description)
         }
 
     @Test

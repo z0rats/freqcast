@@ -50,7 +50,21 @@ class RadioStationRepository(
 
     suspend fun getStationByUrl(url: String): RadioStation? = dao.findStationByUrl(url)
 
-    /** Serializes all stations to a JSON array of `{name, streamUrl, customIcon, genre, isHls, radioBrowserUuid}` objects. */
+    /** [base], or "[base] (2)", "[base] (3)", ... - whichever is the first not already taken by another station. */
+    suspend fun uniqueName(
+        base: String,
+        excludeId: Long = 0,
+    ): String {
+        var candidate = base
+        var suffix = 2
+        while (isNameTaken(candidate, excludeId)) {
+            candidate = "$base ($suffix)"
+            suffix++
+        }
+        return candidate
+    }
+
+    /** Serializes all stations to a JSON array of `{name, streamUrl, customIcon, description, isHls, radioBrowserUuid}` objects. */
     suspend fun exportStationsToJson(): String = StationBackupJson.toJsonArray(dao.getAllStations())
 
     /**
@@ -82,7 +96,9 @@ class RadioStationRepository(
                 continue
             }
             val icon = obj.optNullableString("customIcon")
-            val genre = obj.optNullableString("genre")
+            // "genre" was this field's name before the column was renamed to "description";
+            // older backup files still carry it under that key.
+            val description = obj.optNullableString("description") ?: obj.optNullableString("genre")
             val isHls = obj.optBoolean("isHls", false)
             val radioBrowserUuid = obj.optNullableString("radioBrowserUuid")
             insertStation(
@@ -90,7 +106,7 @@ class RadioStationRepository(
                     name = name,
                     streamUrl = url,
                     customIcon = icon,
-                    genre = genre,
+                    description = description,
                     isHls = isHls,
                     radioBrowserUuid = radioBrowserUuid,
                 ),

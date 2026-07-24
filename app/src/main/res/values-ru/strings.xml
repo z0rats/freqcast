@@ -2,10 +2,14 @@
 <resources>
     <string name="app_name">Freqcast</string>
     <string name="add_station">Добавить</string>
-    <string name="station_name">Название станции</string>
+    <string name="station_name">Название станции (опционально)</string>
     <string name="stream_url">URL потока или сайта</string>
-    <string name="station_genre">Жанр (опционально)</string>
+    <string name="station_description">Описание (опционально)</string>
     <string name="save">Сохранить</string>
+    <string name="stage_checking_url">Проверяем ссылку…</string>
+    <string name="stage_searching_directory">Ищем в каталоге станций…</string>
+    <string name="stage_scanning_page">Сканируем страницу в поисках потока…</string>
+    <string name="stage_downloading_icon">Загружаем иконку станции…</string>
     <string name="play">Воспроизвести</string>
     <string name="stop">Стоп</string>
     <string name="volume">Громкость</string>
@@ -16,7 +20,6 @@
     <string name="error_network">Ошибка сети</string>
     <string name="error_playback">Ошибка воспроизведения</string>
     <string name="error_live_window">Позиция воспроизведения отстаёт от прямого эфира, переход к live-точке</string>
-    <string name="enter_name">Введите название</string>
     <string name="enter_url">Введите URL</string>
     <string name="station_saved">Станция сохранена</string>
     <string name="save_error">Ошибка сохранения: %1$s</string>
@@ -45,6 +48,10 @@
     <string name="connection_failed">Не удалось подключиться</string>
     <string name="close">Закрыть</string>
     <string name="rewind_5s">−5 с</string>
+    <string name="rewind_seconds">Назад на %1$d с</string>
+    <string name="go_live">К прямому эфиру</string>
+    <string name="behind_live">Отставание от эфира: %1$d:%2$02d</string>
+    <string name="timeshift_slider">Позиция воспроизведения</string>
     <string name="live">Прямой эфир</string>
     <string name="sleep_timer">Таймер сна</string>
     <string name="sleep_timer_off">Выкл</string>
@@ -52,6 +59,10 @@
     <string name="sleep_timer_minutes">%1$d мин</string>
     <string name="sleep_timer_set_toast">Таймер сна установлен: %1$d мин</string>
     <string name="sleep_timer_cancelled_toast">Таймер сна отменён</string>
+    <string name="export_clip">Экспорт клипа</string>
+    <string name="export_clip_last_minutes">Последние %1$d мин</string>
+    <string name="export_clip_not_enough_buffer">Пока недостаточно буфера</string>
+    <string name="export_clip_failed_toast">Не удалось экспортировать клип</string>
     <string name="more_options">Ещё</string>
     <string name="export_stations">Экспорт станций</string>
     <string name="share_station">Поделиться станцией</string>
@@ -103,6 +114,9 @@
     <string name="settings">Настройки</string>
     <string name="settings_metered_warning">Предупреждение о мобильном интернете</string>
     <string name="settings_metered_warning_description">Спрашивать подтверждение перед воспроизведением при лимитном соединении</string>
+    <string name="settings_timeshift_buffer_size">Размер буфера перемотки</string>
+    <string name="settings_timeshift_buffer_size_description">Сколько аудио хранить в буфере, чтобы перематывать эфир назад</string>
+    <string name="settings_timeshift_buffer_size_value">%1$d МБ (~%2$d мин)</string>
     <string name="metered_connection_dialog_title">Мобильный интернет</string>
     <string name="metered_connection_dialog_message">Вы используете лимитное соединение. Воспроизведение этой станции может расходовать мобильный трафик.</string>
     <string name="metered_connection_continue">Всё равно включить</string>

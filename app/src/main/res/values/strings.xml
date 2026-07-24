@@ -2,10 +2,14 @@
 <resources>
     <string name="app_name">Freqcast</string>
     <string name="add_station">Add</string>
-    <string name="station_name">Station Name</string>
+    <string name="station_name">Station Name (optional)</string>
     <string name="stream_url">Stream or website URL</string>
-    <string name="station_genre">Genre (optional)</string>
+    <string name="station_description">Description (optional)</string>
     <string name="save">Save</string>
+    <string name="stage_checking_url">Checking link…</string>
+    <string name="stage_searching_directory">Searching station directory…</string>
+    <string name="stage_scanning_page">Scanning page for a stream…</string>
+    <string name="stage_downloading_icon">Downloading station icon…</string>
     <string name="play">Play</string>
     <string name="stop">Stop</string>
     <string name="volume">Volume</string>
@@ -16,7 +20,6 @@
     <string name="error_network">Network error</string>
     <string name="error_playback">Playback error</string>
     <string name="error_live_window">Stream position behind live window, seeking to live edge</string>
-    <string name="enter_name">Enter name</string>
     <string name="enter_url">Enter URL</string>
     <string name="station_saved">Station saved</string>
     <string name="save_error">Save error: %1$s</string>
@@ -45,6 +48,10 @@
     <string name="connection_failed">Connection failed</string>
     <string name="close">Close</string>
     <string name="rewind_5s">−5 s</string>
+    <string name="rewind_seconds">Rewind %1$d seconds</string>
+    <string name="go_live">Go live</string>
+    <string name="behind_live">%1$d:%2$02d behind live</string>
+    <string name="timeshift_slider">Playback position</string>
     <string name="live">Live</string>
     <string name="sleep_timer">Sleep timer</string>
     <string name="sleep_timer_off">Off</string>
@@ -52,6 +59,10 @@
     <string name="sleep_timer_minutes">%1$d min</string>
     <string name="sleep_timer_set_toast">Sleep timer set: %1$d min</string>
     <string name="sleep_timer_cancelled_toast">Sleep timer cancelled</string>
+    <string name="export_clip">Export clip</string>
+    <string name="export_clip_last_minutes">Last %1$d min</string>
+    <string name="export_clip_not_enough_buffer">Not enough buffered yet</string>
+    <string name="export_clip_failed_toast">Couldn\'t export clip</string>
     <string name="more_options">More options</string>
     <string name="export_stations">Export stations</string>
     <string name="share_station">Share station</string>
@@ -103,6 +114,9 @@
     <string name="settings">Settings</string>
     <string name="settings_metered_warning">Mobile data warning</string>
     <string name="settings_metered_warning_description">Ask for confirmation before playing on a metered connection</string>
+    <string name="settings_timeshift_buffer_size">Rewind buffer size</string>
+    <string name="settings_timeshift_buffer_size_description">How much audio to keep buffered so you can rewind live streams</string>
+    <string name="settings_timeshift_buffer_size_value">%1$d MB (~%2$d min)</string>
     <string name="metered_connection_dialog_title">Mobile data connection</string>
     <string name="metered_connection_dialog_message">You\'re on a metered connection. Playing this station may use your mobile data.</string>
     <string name="metered_connection_continue">Play anyway</string>

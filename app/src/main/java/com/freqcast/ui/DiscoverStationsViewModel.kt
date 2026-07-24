@@ -163,12 +163,7 @@ class DiscoverStationsViewModel(
                 _uiState.value = _uiState.value.copy(addedUrls = _uiState.value.addedUrls + station.url)
                 return@launch
             }
-            var name = station.name
-            var suffix = 2
-            while (repository.isNameTaken(name)) {
-                name = "${station.name} ($suffix)"
-                suffix++
-            }
+            val name = repository.uniqueName(station.name)
             try {
                 val stationId =
                     repository.insertStation(
@@ -176,7 +171,7 @@ class DiscoverStationsViewModel(
                             name = name,
                             streamUrl = station.url,
                             customIcon = null,
-                            genre = station.tags.takeIf { it.isNotBlank() },
+                            description = station.tags.takeIf { it.isNotBlank() },
                             isHls = station.hls,
                             radioBrowserUuid = station.uuid.takeIf { it.isNotBlank() },
                         ),
@@ -215,10 +210,6 @@ class DiscoverStationsViewModel(
             repository: RadioStationRepository,
             context: Context,
         ): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    DiscoverStationsViewModel(repository, context.applicationContext) as T
-            }
+            viewModelFactory { DiscoverStationsViewModel(repository, context.applicationContext) }
     }
 }
