@@ -11,10 +11,10 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -88,7 +88,7 @@ import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.formatOffsetFromLive
 import com.freqcast.util.isNetworkAvailable
 
-class PlaybackActivity : ComponentActivity() {
+class PlaybackActivity : AppCompatActivity() {
     // Must be Compose-observable state (not a plain var): onServiceConnected fires asynchronously
     // after the first composition, and a plain field mutation wouldn't trigger recomposition,
     // leaving PlaybackScreen's playbackService parameter (and everything derived from it -

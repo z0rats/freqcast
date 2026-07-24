@@ -1,4 +1,8 @@
-# 📻 Freqcast — Internet Radio Player
+<p align="center">
+  <img src="docs/icon-192.png" alt="Freqcast icon" width="96" />
+</p>
+
+# Freqcast — Internet Radio Player
 
 [![codecov](https://codecov.io/gh/z0rats/freqcast/branch/master/graph/badge.svg)](https://codecov.io/gh/z0rats/freqcast)
 

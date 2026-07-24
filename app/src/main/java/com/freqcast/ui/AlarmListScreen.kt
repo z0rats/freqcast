@@ -2,10 +2,10 @@ package com.freqcast.ui
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,7 +60,7 @@ import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
 
-class AlarmActivity : ComponentActivity() {
+class AlarmActivity : AppCompatActivity() {
     private val reloadTrigger = mutableIntStateOf(0)
 
     private val alarmEditLauncher =

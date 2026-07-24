@@ -117,6 +117,9 @@
     <string name="settings_timeshift_buffer_size">Tamaño del búfer de rebobinado</string>
     <string name="settings_timeshift_buffer_size_description">Cuánto audio mantener almacenado para poder rebobinar emisoras en directo</string>
     <string name="settings_timeshift_buffer_size_value">%1$d MB (~%2$d min)</string>
+    <string name="settings_language">Idioma</string>
+    <string name="settings_language_description">Elige el idioma de la app</string>
+    <string name="settings_language_system_default">Predeterminado del sistema</string>
     <string name="metered_connection_dialog_title">Conexión de datos móviles</string>
     <string name="metered_connection_dialog_message">Estás en una conexión medida. Reproducir esta emisora puede consumir tus datos móviles.</string>
     <string name="metered_connection_continue">Reproducir de todos modos</string>

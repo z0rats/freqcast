@@ -117,6 +117,9 @@
     <string name="settings_timeshift_buffer_size">回放缓冲区大小</string>
     <string name="settings_timeshift_buffer_size_description">为直播电台保留多少可回放的音频缓冲</string>
     <string name="settings_timeshift_buffer_size_value">%1$d MB（约 %2$d 分钟）</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_language_description">选择应用显示语言</string>
+    <string name="settings_language_system_default">跟随系统</string>
     <string name="metered_connection_dialog_title">移动数据网络</string>
     <string name="metered_connection_dialog_message">当前网络按流量计费,播放该电台可能会消耗你的移动数据。</string>
     <string name="metered_connection_continue">仍然播放</string>

@@ -15,8 +15,8 @@ android {
         applicationId "com.freqcast"
         minSdk 29
         targetSdk 37
-        versionCode 10
-        versionName "3.2.0"
+        versionCode 11
+        versionName "3.3.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -98,6 +98,9 @@ ktlint {
 
 dependencies {
     implementation libs.androidx.core.ktx
+    // Provides AppCompatDelegate.setApplicationLocales(), which backports Android 13's per-app
+    // language switching to minSdk 29 — no AppCompatActivity/AppCompat theme required.
+    implementation libs.androidx.appcompat
     implementation libs.material
     implementation libs.androidx.lifecycle.runtime.ktx
     implementation libs.androidx.lifecycle.viewmodel.ktx

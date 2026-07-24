@@ -4,19 +4,11 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group
-        android:scaleX="0.5"
-        android:scaleY="0.5"
-        android:translateX="27"
-        android:translateY="27">
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M54,27C40.2,27 29,38.2 29,52C29,65.8 40.2,77 54,77C67.8,77 79,65.8 79,52C79,38.2 67.8,27 54,27ZM54,71C44.1,71 36,62.9 36,53C36,43.1 44.1,35 54,35C63.9,35 72,43.1 72,53C72,62.9 63.9,71 54,71Z"/>
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M54,42C50.7,42 48,44.7 48,48C48,51.3 50.7,54 54,54C57.3,54 60,51.3 60,48C60,44.7 57.3,42 54,42Z"/>
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M54,58L54,46L48,46L48,58L54,58Z"/>
-    </group>
+    <!-- Wave Bars: an equalizer silhouette tracing the frequency-wave shape, in the app's primary/secondary tones -->
+    <path
+        android:fillColor="#FFB870"
+        android:pathData="M34,42 A3,3 0 0 1 37,45 L37,71 A3,3 0 0 1 34,74 A3,3 0 0 1 31,71 L31,45 A3,3 0 0 1 34,42 Z M54,42 A3,3 0 0 1 57,45 L57,71 A3,3 0 0 1 54,74 A3,3 0 0 1 51,71 L51,45 A3,3 0 0 1 54,42 Z M74,44 A3,3 0 0 1 77,47 L77,69 A3,3 0 0 1 74,72 A3,3 0 0 1 71,69 L71,47 A3,3 0 0 1 74,44 Z"/>
+    <path
+        android:fillColor="#FFB4A0"
+        android:pathData="M24,49 A3,3 0 0 1 27,52 L27,64 A3,3 0 0 1 24,67 A3,3 0 0 1 21,64 L21,52 A3,3 0 0 1 24,49 Z M44,36 A3,3 0 0 1 47,39 L47,77 A3,3 0 0 1 44,80 A3,3 0 0 1 41,77 L41,39 A3,3 0 0 1 44,36 Z M64,49 A3,3 0 0 1 67,52 L67,64 A3,3 0 0 1 64,67 A3,3 0 0 1 61,64 L61,52 A3,3 0 0 1 64,49 Z M84,39 A3,3 0 0 1 87,42 L87,74 A3,3 0 0 1 84,77 A3,3 0 0 1 81,74 L81,42 A3,3 0 0 1 84,39 Z"/>
 </vector>

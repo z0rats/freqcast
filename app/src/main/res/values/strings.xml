@@ -117,6 +117,9 @@
     <string name="settings_timeshift_buffer_size">Rewind buffer size</string>
     <string name="settings_timeshift_buffer_size_description">How much audio to keep buffered so you can rewind live streams</string>
     <string name="settings_timeshift_buffer_size_value">%1$d MB (~%2$d min)</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_description">Choose the app display language</string>
+    <string name="settings_language_system_default">System default</string>
     <string name="metered_connection_dialog_title">Mobile data connection</string>
     <string name="metered_connection_dialog_message">You\'re on a metered connection. Playing this station may use your mobile data.</string>
     <string name="metered_connection_continue">Play anyway</string>

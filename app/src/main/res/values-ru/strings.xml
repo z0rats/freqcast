@@ -117,6 +117,9 @@
     <string name="settings_timeshift_buffer_size">Размер буфера перемотки</string>
     <string name="settings_timeshift_buffer_size_description">Сколько аудио хранить в буфере, чтобы перематывать эфир назад</string>
     <string name="settings_timeshift_buffer_size_value">%1$d МБ (~%2$d мин)</string>
+    <string name="settings_language">Язык</string>
+    <string name="settings_language_description">Выберите язык приложения</string>
+    <string name="settings_language_system_default">Как в системе</string>
     <string name="metered_connection_dialog_title">Мобильный интернет</string>
     <string name="metered_connection_dialog_message">Вы используете лимитное соединение. Воспроизведение этой станции может расходовать мобильный трафик.</string>
     <string name="metered_connection_continue">Всё равно включить</string>

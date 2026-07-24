@@ -2,11 +2,12 @@ package com.freqcast.ui
 
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.freqcast.R
 import com.freqcast.data.RadioStationRepository
@@ -58,7 +60,23 @@ import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.StationShare
 import kotlinx.coroutines.launch
 
-class SettingsActivity : ComponentActivity() {
+/** Selectable app display languages, keyed by BCP-47 tag; `null` follows the system locale. */
+private data class LanguageOption(
+    val tag: String?,
+    val displayName: String,
+)
+
+@Composable
+private fun languageOptions(): List<LanguageOption> =
+    listOf(
+        LanguageOption(null, stringResource(R.string.settings_language_system_default)),
+        LanguageOption("en", "English"),
+        LanguageOption("es", "Español"),
+        LanguageOption("ru", "Русский"),
+        LanguageOption("zh-CN", "中文"),
+    )
+
+class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -90,6 +108,18 @@ fun SettingsScreen(
     var warnOnMeteredConnection by remember { mutableStateOf(settingsStore.warnOnMeteredConnection) }
     var timeshiftBufferSizeMb by remember { mutableStateOf(settingsStore.timeshiftBufferSizeMb) }
     var bufferSizeMenuOpen by remember { mutableStateOf(false) }
+    val languageOptions = languageOptions()
+    val currentLanguageTag =
+        AppCompatDelegate
+            .getApplicationLocales()
+            .takeIf { !it.isEmpty }
+            ?.get(0)
+            ?.toLanguageTag()
+    var selectedLanguage by
+        remember {
+            mutableStateOf(languageOptions.find { it.tag == currentLanguageTag } ?: languageOptions.first())
+        }
+    var languageMenuOpen by remember { mutableStateOf(false) }
 
     val exportChooserTitle = stringResource(R.string.export_stations)
     val onExportClick: () -> Unit = {
@@ -146,6 +176,52 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Box(modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp)) {
+                Card(
+                    onClick = { languageMenuOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = card_surface),
+                    shape = MaterialTheme.shapes.large,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.settings_language), color = text_primary)
+                            Text(
+                                stringResource(R.string.settings_language_description),
+                                color = text_hint,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(selectedLanguage.displayName, color = glass_accent)
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = glass_accent)
+                        }
+                    }
+                }
+                DropdownMenu(expanded = languageMenuOpen, onDismissRequest = { languageMenuOpen = false }) {
+                    languageOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.displayName) },
+                            onClick = {
+                                selectedLanguage = option
+                                languageMenuOpen = false
+                                AppCompatDelegate.setApplicationLocales(
+                                    if (option.tag == null) {
+                                        LocaleListCompat.getEmptyLocaleList()
+                                    } else {
+                                        LocaleListCompat.forLanguageTags(option.tag)
+                                    },
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp),
                 colors = CardDefaults.cardColors(containerColor = card_surface),
