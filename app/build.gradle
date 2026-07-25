@@ -15,8 +15,8 @@ android {
         applicationId "com.freqcast"
         minSdk 29
         targetSdk 37
-        versionCode 12
-        versionName "3.4.0"
+        versionCode 13
+        versionName "3.4.1"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

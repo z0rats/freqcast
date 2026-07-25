@@ -1,0 +1,1 @@
+Build system fix: removed an unused Gradle plugin that auto-downloads JDKs from a third-party service, blocking F-Droid's build scanner. No functional changes.
