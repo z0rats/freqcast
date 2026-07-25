@@ -15,10 +15,17 @@ android {
         applicationId "com.freqcast"
         minSdk 29
         targetSdk 37
-        versionCode 13
-        versionName "3.4.1"
+        versionCode 14
+        versionName "3.4.2"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // F-Droid's scanner rejects the "Dependency metadata" signing block AGP embeds by default
+    // for Google Play's dependency transparency feature — irrelevant outside Play distribution.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     signingConfigs {
