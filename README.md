@@ -83,4 +83,4 @@ If you'd like to support development, see [FUNDING.md](FUNDING.md) (Boosty / cry
 
 ## 📄 License
 
-Licensed under [PolyForm Noncommercial 1.0.0](LICENSE) — free to view, fork, and modify for any noncommercial purpose. Commercial use requires the licensor's permission; contact via [FUNDING.md](FUNDING.md) or open an issue.
+Licensed under [GPL-3.0](LICENSE) — free to use, modify, and distribute, including commercially. Modified or redistributed versions must also be released under GPL-3.0 with source available.

@@ -12,7 +12,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -418,84 +417,96 @@ private fun DiscoverResultCard(
         shape = MaterialTheme.shapes.large,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = Spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = EmojiGenerator.getEmojiForStation(station.name, station.url),
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.size(36.dp),
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                Text(
+                    text = EmojiGenerator.getEmojiForStation(station.name, station.url),
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.size(36.dp),
+                )
+
                 Text(
                     text = station.name,
                     style = MaterialTheme.typography.titleMedium,
                     color = text_primary,
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
+
+                if (isAdded) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = stringResource(R.string.discover_added),
+                        tint = glass_accent,
+                    )
+                } else {
+                    TextButton(onClick = onAddClick) {
+                        Text(stringResource(R.string.discover_add), color = glass_accent)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.padding(start = 36.dp + Spacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     text = stationSubtitle(station),
                     style = MaterialTheme.typography.bodySmall,
                     color = text_hint,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
-            }
 
-            if (station.votes > 0) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                if (station.votes > 0) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = text_hint,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text = VoteCountFormatter.format(station.votes),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = text_hint,
+                        )
+                    }
+                }
+
+                if (station.sslError) {
                     Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = null,
-                        tint = text_hint,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Text(
-                        text = VoteCountFormatter.format(station.votes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = text_hint,
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = stringResource(R.string.discover_ssl_warning),
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp),
                     )
                 }
-            }
 
-            if (station.sslError) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = stringResource(R.string.discover_ssl_warning),
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-
-            if (station.homepage.isNotBlank()) {
-                IconButton(onClick = { openWebsite(context, station.homepage) }) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = stringResource(R.string.visit_website),
-                        tint = text_hint,
-                    )
-                }
-            }
-
-            if (isAdded) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = stringResource(R.string.discover_added),
-                    tint = glass_accent,
-                )
-            } else {
-                TextButton(onClick = onAddClick) {
-                    Text(stringResource(R.string.discover_add), color = glass_accent)
+                if (station.homepage.isNotBlank()) {
+                    IconButton(
+                        onClick = { openWebsite(context, station.homepage) },
+                        modifier = Modifier.size(24.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = stringResource(R.string.visit_website),
+                            tint = text_hint,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
                 }
             }
         }

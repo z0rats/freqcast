@@ -54,12 +54,14 @@
     <string name="timeshift_slider">Posición de reproducción</string>
     <string name="live">En directo</string>
     <string name="sleep_timer">Temporizador de apagado</string>
+    <string name="sleep_short">Dormir</string>
     <string name="sleep_timer_off">Desactivado</string>
     <string name="sleep_timer_active">Apagado en %1$d:%2$02d</string>
     <string name="sleep_timer_minutes">%1$d min</string>
     <string name="sleep_timer_set_toast">Temporizador establecido: %1$d min</string>
     <string name="sleep_timer_cancelled_toast">Temporizador cancelado</string>
     <string name="export_clip">Exportar clip</string>
+    <string name="clip_short">Clip</string>
     <string name="export_clip_last_minutes">Últimos %1$d min</string>
     <string name="export_clip_not_enough_buffer">Aún no hay suficiente búfer</string>
     <string name="export_clip_failed_toast">No se pudo exportar el clip</string>

@@ -1,0 +1,5 @@
+Redesigned Now Playing screen: circular play/stop control, station artwork tile with a LIVE badge, and a cleaner dock for the sleep timer and clip export.
+
+Redesigned Discover station cards for a cleaner two-line layout.
+
+Improved error logging for station search and nearby search failures.

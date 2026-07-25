@@ -54,12 +54,14 @@
     <string name="timeshift_slider">Позиция воспроизведения</string>
     <string name="live">Прямой эфир</string>
     <string name="sleep_timer">Таймер сна</string>
+    <string name="sleep_short">Сон</string>
     <string name="sleep_timer_off">Выкл</string>
     <string name="sleep_timer_active">Сон через %1$d:%2$02d</string>
     <string name="sleep_timer_minutes">%1$d мин</string>
     <string name="sleep_timer_set_toast">Таймер сна установлен: %1$d мин</string>
     <string name="sleep_timer_cancelled_toast">Таймер сна отменён</string>
     <string name="export_clip">Экспорт клипа</string>
+    <string name="clip_short">Клип</string>
     <string name="export_clip_last_minutes">Последние %1$d мин</string>
     <string name="export_clip_not_enough_buffer">Пока недостаточно буфера</string>
     <string name="export_clip_failed_toast">Не удалось экспортировать клип</string>

@@ -23,30 +23,36 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -61,19 +67,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.freqcast.R
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
+import com.freqcast.ui.theme.background_gradient_end
+import com.freqcast.ui.theme.background_gradient_start
 import com.freqcast.ui.theme.card_border
 import com.freqcast.ui.theme.card_surface
 import com.freqcast.ui.theme.card_surface_active
@@ -445,7 +458,7 @@ fun NowPlayingContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
-                        StationIcon(emoji = emoji, size = 88.dp)
+                        StationArt(emoji = emoji, tileSize = 128.dp, showLiveBadge = isPlaying && isAtLive)
                         Text(
                             text = displayName,
                             style = MaterialTheme.typography.titleLarge,
@@ -457,12 +470,11 @@ fun NowPlayingContent(
                     Column(
                         modifier = Modifier.weight(1.2f),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
                         if (isPlaying && trackTitle != null) {
                             TrackTitleRow(trackTitle = trackTitle ?: "", context = context)
                         }
-                        PlayStopButton(isPlaying = isPlaying, onClick = onPlayStopClick, height = 64.dp)
                         if (hasTimeshift) {
                             TimeshiftControls(
                                 isAtLive = isAtLive,
@@ -473,7 +485,8 @@ fun NowPlayingContent(
                                 onSeekToLive = { playbackService?.seekToLive() },
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        PlayStopButton(isPlaying = isPlaying, onClick = onPlayStopClick, size = 60.dp)
+                        PlayerDock {
                             SleepTimerControl(
                                 sleepTimerRemainingMs = sleepTimerRemainingMs,
                                 playbackService = playbackService,
@@ -492,26 +505,26 @@ fun NowPlayingContent(
                 }
             } else {
                 Column(
-                    modifier = Modifier.padding(Spacing.lg),
+                    modifier = Modifier.padding(Spacing.md),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
-                    StationIcon(emoji = emoji, size = 64.dp)
+                    StationArt(emoji = emoji, tileSize = 168.dp, showLiveBadge = isPlaying && isAtLive)
 
                     Text(
                         text = displayName,
                         style = MaterialTheme.typography.headlineMedium,
                         color = text_primary,
                         textAlign = TextAlign.Center,
+                        maxLines = 2,
                     )
 
                     if (isPlaying && trackTitle != null) {
                         TrackTitleRow(trackTitle = trackTitle ?: "", context = context)
                     }
 
-                    PlayStopButton(isPlaying = isPlaying, onClick = onPlayStopClick, height = 72.dp)
-
                     if (hasTimeshift) {
+                        Spacer(modifier = Modifier.height(Spacing.xs))
                         TimeshiftControls(
                             isAtLive = isAtLive,
                             bufferedDurationMs = bufferedDurationMs,
@@ -522,7 +535,10 @@ fun NowPlayingContent(
                         )
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Spacer(modifier = Modifier.height(Spacing.xs))
+                    PlayStopButton(isPlaying = isPlaying, onClick = onPlayStopClick, size = 72.dp)
+
+                    PlayerDock {
                         SleepTimerControl(
                             sleepTimerRemainingMs = sleepTimerRemainingMs,
                             playbackService = playbackService,
@@ -584,42 +600,192 @@ private fun TimeshiftControls(
                     .fillMaxWidth()
                     .semantics { contentDescription = sliderDescription },
         )
-        Text(
-            text = if (isAtLive) stringResource(R.string.live).uppercase() else formatOffsetFromLive(offsetFromLiveMs),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (isAtLive) glass_accent else text_hint,
-        )
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.CenterHorizontally),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text(
+                text = if (isAtLive) "" else formatOffsetFromLive(offsetFromLiveMs),
+                style = MaterialTheme.typography.labelMedium,
+                color = text_hint,
+            )
+            LiveTag(active = isAtLive)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = Spacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
             listOf(15, 30, 60).forEach { seconds ->
-                val description = stringResource(R.string.rewind_seconds, seconds)
-                OutlinedButton(
+                RewindChip(
+                    label = "−${seconds}s",
+                    highlighted = false,
+                    enabled = true,
+                    contentDescription = stringResource(R.string.rewind_seconds, seconds),
                     onClick = { onRewind(seconds * 1000L) },
-                    modifier = Modifier.semantics { contentDescription = description },
-                ) {
-                    Text("−${seconds}s")
-                }
+                    modifier = Modifier.weight(1f),
+                )
             }
-            Button(onClick = onSeekToLive, enabled = !isAtLive) {
-                Text(stringResource(R.string.go_live))
+            val goLiveLabel = stringResource(R.string.go_live)
+            RewindChip(
+                label = goLiveLabel,
+                highlighted = !isAtLive,
+                enabled = !isAtLive,
+                contentDescription = goLiveLabel,
+                onClick = onSeekToLive,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+/** Small dot + "LIVE" label, used both on [StationArt]'s badge and the timeshift scrubber's trailing edge. */
+@Composable
+private fun LiveTag(
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val tint = if (active) glass_accent else text_hint
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Default.FiberManualRecord,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(8.dp),
+        )
+        Text(
+            text = stringResource(R.string.live).uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = tint,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+/** Compact, equal-width jump control used for the −15s/−30s/−60s/Go-live row — sized to always fit one line. */
+@Composable
+private fun RewindChip(
+    label: String,
+    highlighted: Boolean,
+    enabled: Boolean,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tint = if (highlighted) glass_accent else text_primary
+    Box(
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (highlighted) glass_accent.copy(alpha = 0.2f) else card_surface_active)
+                .clickable(enabled = enabled, onClick = onClick)
+                .semantics { this.contentDescription = contentDescription }
+                .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = tint.copy(alpha = if (enabled) 1f else 0.4f),
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/** Station artwork tile: a gradient tile standing in for cover art, with an optional pill LIVE badge. */
+@Composable
+private fun StationArt(
+    emoji: String,
+    tileSize: Dp,
+    showLiveBadge: Boolean,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(tileSize)
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.radialGradient(colors = listOf(background_gradient_end, background_gradient_start)),
+                ).border(width = 1.dp, color = card_border, shape = RoundedCornerShape(24.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = emoji, fontSize = (tileSize.value * 0.4f).sp)
+        if (showLiveBadge) {
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .padding(horizontal = Spacing.sm, vertical = 4.dp),
+            ) {
+                LiveTag(active = true)
             }
         }
     }
 }
 
+/**
+ * Bottom utility row for Sleep timer / Export clip — icon + short caption side by side under a
+ * hairline divider, mirroring how Spotify docks secondary actions below the transport controls
+ * instead of as full-text chips competing for row width.
+ */
 @Composable
-private fun StationIcon(
-    emoji: String,
-    size: Dp,
+private fun PlayerDock(content: @Composable RowScope.() -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(modifier = Modifier.height(Spacing.xs))
+        Box(
+            modifier =
+                Modifier
+                    .width(120.dp)
+                    .height(1.dp)
+                    .background(card_border),
+        )
+        Row(
+            modifier = Modifier.padding(top = Spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.lg, Alignment.CenterHorizontally),
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun DockButton(
+    icon: ImageVector,
+    label: String,
+    highlighted: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
-    Text(
-        text = emoji,
-        style = MaterialTheme.typography.displayMedium,
-        modifier = Modifier.size(size),
-    )
+    val tint = (if (highlighted) glass_accent else text_hint).copy(alpha = if (enabled) 1f else 0.4f)
+    Column(
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(14.dp))
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = tint,
+            fontWeight = if (highlighted) FontWeight.Bold else FontWeight.Normal,
+        )
+    }
 }
 
 @Composable
@@ -664,22 +830,29 @@ private fun TrackTitleRow(
     }
 }
 
+/** Circular transport control — the app's one primary action, so it gets the theme's primary color. */
 @Composable
 private fun PlayStopButton(
     isPlaying: Boolean,
     onClick: () -> Unit,
-    height: Dp,
+    size: Dp,
 ) {
-    Button(
-        onClick = onClick,
+    val description = if (isPlaying) stringResource(R.string.stop) else stringResource(R.string.play)
+    Box(
         modifier =
             Modifier
-                .fillMaxWidth()
-                .height(height),
-        shape = MaterialTheme.shapes.medium,
+                .size(size)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable(onClick = onClick)
+                .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = if (isPlaying) stringResource(R.string.stop) else stringResource(R.string.play),
+        Icon(
+            imageVector = if (isPlaying) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(size / 2.2f),
         )
     }
 }
@@ -692,36 +865,21 @@ private fun SleepTimerControl(
 ) {
     var sleepTimerDialogOpen by remember { mutableStateOf(false) }
     val sleepTimerActive = sleepTimerRemainingMs != null
-    Row(
-        modifier =
-            Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(
-                    if (sleepTimerActive) glass_accent.copy(alpha = 0.22f) else card_surface_active,
-                ).clickable { sleepTimerDialogOpen = true }
-                .padding(horizontal = Spacing.md, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Default.Bedtime,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = if (sleepTimerActive) glass_accent else text_hint,
-        )
-        Text(
-            text =
-                sleepTimerRemainingMs?.let { ms ->
-                    val totalSeconds = (ms / 1000).toInt()
-                    stringResource(
-                        R.string.sleep_timer_active,
-                        totalSeconds / 60,
-                        totalSeconds % 60,
-                    )
-                } ?: stringResource(R.string.sleep_timer),
-            color = if (sleepTimerActive) glass_accent else text_hint,
-        )
-    }
+
+    DockButton(
+        icon = Icons.Default.Bedtime,
+        label =
+            sleepTimerRemainingMs?.let { ms ->
+                val totalSeconds = (ms / 1000).toInt()
+                stringResource(
+                    R.string.sleep_timer_active,
+                    totalSeconds / 60,
+                    totalSeconds % 60,
+                )
+            } ?: stringResource(R.string.sleep_short),
+        highlighted = sleepTimerActive,
+        onClick = { sleepTimerDialogOpen = true },
+    )
 
     if (sleepTimerDialogOpen) {
         AlertDialog(
@@ -800,24 +958,13 @@ private fun ClipExportControl(
     var dialogOpen by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
 
-    Row(
-        modifier =
-            Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(card_surface_active)
-                .clickable(enabled = !exporting) { dialogOpen = true }
-                .padding(horizontal = Spacing.md, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Default.Share,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = text_hint,
-        )
-        Text(text = stringResource(R.string.export_clip), color = text_hint)
-    }
+    DockButton(
+        icon = Icons.Default.Share,
+        label = stringResource(R.string.clip_short),
+        highlighted = false,
+        enabled = !exporting,
+        onClick = { dialogOpen = true },
+    )
 
     if (dialogOpen) {
         val availableMinutes = CLIP_EXPORT_PRESET_MINUTES.filter { it * 60_000L <= bufferedDurationMs }

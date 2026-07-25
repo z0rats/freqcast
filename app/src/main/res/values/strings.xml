@@ -54,12 +54,14 @@
     <string name="timeshift_slider">Playback position</string>
     <string name="live">Live</string>
     <string name="sleep_timer">Sleep timer</string>
+    <string name="sleep_short">Sleep</string>
     <string name="sleep_timer_off">Off</string>
     <string name="sleep_timer_active">Sleep in %1$d:%2$02d</string>
     <string name="sleep_timer_minutes">%1$d min</string>
     <string name="sleep_timer_set_toast">Sleep timer set: %1$d min</string>
     <string name="sleep_timer_cancelled_toast">Sleep timer cancelled</string>
     <string name="export_clip">Export clip</string>
+    <string name="clip_short">Clip</string>
     <string name="export_clip_last_minutes">Last %1$d min</string>
     <string name="export_clip_not_enough_buffer">Not enough buffered yet</string>
     <string name="export_clip_failed_toast">Couldn\'t export clip</string>

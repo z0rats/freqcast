@@ -1,0 +1,18 @@
+Freqcast is a modern internet radio player that finds streams from station websites, so you don't have to hunt for a .mp3, .aac, or .m3u8 URL yourself.
+
+Paste a station's website link and Freqcast checks Radio Browser, then scans the site itself, discovers a playable stream, verifies that it works, and adds it to your library.
+
+Features:
+
+- Paste a station website instead of hunting for a stream URL — Freqcast automatically discovers and verifies the playable stream whenever possible
+- Discover stations — search the Radio Browser directory by name, genre, country, language, or "near me", and add results straight to your library
+- Background playback with automatic reconnect
+- Timeshift (rewind) for compatible streams
+- Live ICY metadata
+- Sleep timer and multiple wake-up alarms
+- Home screen widget and Android Auto support
+- Import/export station lists (JSON, OPML, M3U, PLS)
+- Tablet and foldable layouts
+- Localized into English, Russian, Spanish and Simplified Chinese
+
+Freqcast is fully local, requires no account, shows no ads, and doesn't depend on a proprietary station catalog. It works with standard HTTP/HTTPS streams and HLS.

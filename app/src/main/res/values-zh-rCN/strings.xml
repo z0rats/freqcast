@@ -54,12 +54,14 @@
     <string name="timeshift_slider">播放位置</string>
     <string name="live">直播</string>
     <string name="sleep_timer">睡眠定时器</string>
+    <string name="sleep_short">睡眠</string>
     <string name="sleep_timer_off">关闭</string>
     <string name="sleep_timer_active">%1$d:%2$02d 后停止</string>
     <string name="sleep_timer_minutes">%1$d 分钟</string>
     <string name="sleep_timer_set_toast">睡眠定时器已设置：%1$d 分钟</string>
     <string name="sleep_timer_cancelled_toast">睡眠定时器已取消</string>
     <string name="export_clip">导出片段</string>
+    <string name="clip_short">片段</string>
     <string name="export_clip_last_minutes">最近 %1$d 分钟</string>
     <string name="export_clip_not_enough_buffer">缓冲时间还不够</string>
     <string name="export_clip_failed_toast">片段导出失败</string>

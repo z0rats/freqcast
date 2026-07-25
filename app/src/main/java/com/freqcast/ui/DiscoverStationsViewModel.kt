@@ -1,6 +1,7 @@
 package com.freqcast.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -99,6 +100,7 @@ class DiscoverStationsViewModel(
                         )
                     _uiState.value = _uiState.value.copy(results = results, isSearching = false, hasSearched = true)
                 } catch (e: Exception) {
+                    Log.e(TAG, "searchNearby failed", e)
                     _uiState.value =
                         _uiState.value.copy(
                             results = emptyList(),
@@ -146,6 +148,7 @@ class DiscoverStationsViewModel(
             val results = api.search(query, searchBy)
             _uiState.value = _uiState.value.copy(results = results, isSearching = false, hasSearched = true)
         } catch (e: Exception) {
+            Log.e(TAG, "search failed: query=\"$query\", searchBy=$searchBy", e)
             _uiState.value =
                 _uiState.value.copy(
                     results = emptyList(),
@@ -203,6 +206,7 @@ class DiscoverStationsViewModel(
     }
 
     companion object {
+        private const val TAG = "DiscoverStations"
         private const val SEARCH_DEBOUNCE_MS = 400L
         private const val NEARBY_RADIUS_METERS = 50_000
 
