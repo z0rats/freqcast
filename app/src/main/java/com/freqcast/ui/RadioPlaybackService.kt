@@ -43,8 +43,10 @@ import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.playback.ClipFormat
+import com.freqcast.ui.playback.ConnectionRetryPolicy
 import com.freqcast.ui.playback.PlaybackStateStore
 import com.freqcast.ui.playback.RadioBrowseTree
+import com.freqcast.ui.playback.RetryDecision
 import com.freqcast.ui.playback.SettingsStore
 import com.freqcast.ui.playback.SleepTimerController
 import com.freqcast.ui.playback.TimeshiftController
@@ -113,18 +115,8 @@ class RadioPlaybackService : MediaLibraryService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
-    /** Current stream URL; kept so we can restart playback when network is restored. */
-    private var currentStreamUrl: String? = null
-
-    /** The known-HLS hint for [currentStreamUrl], reused so a network-loss retry doesn't lose it. */
-    private var currentKnownHls: Boolean? = null
-
-    /** True when playback failed due to network; we retry when network is back (e.g. VPN reconnect). */
-    private var pendingRetry = false
+    private val retryPolicy = ConnectionRetryPolicy()
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-
-    /** Consecutive automatic reconnect attempts for the current stream; reset on manual start or successful load. */
-    private var retryCount = 0
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val sleepTimer = SleepTimerController(mainHandler) { stopPlayback() }
@@ -150,7 +142,7 @@ class RadioPlaybackService : MediaLibraryService() {
 
     /** Pushes the latest station/playing state to the home screen widget (see `widget/RadioWidget`). */
     private fun updateWidget(isPlaying: Boolean) {
-        val streamUrl = currentStreamUrl ?: player?.currentMediaItem?.mediaId
+        val streamUrl = retryPolicy.currentStreamUrlOrNull() ?: player?.currentMediaItem?.mediaId
         WidgetStateStore(this).save(stationName = stationName, streamUrl = streamUrl, isPlaying = isPlaying)
         serviceScope.launch { RadioWidget().updateAll(this@RadioPlaybackService) }
     }
@@ -357,7 +349,7 @@ class RadioPlaybackService : MediaLibraryService() {
                                 }
                                 if (playbackState == Player.STATE_READY) {
                                     // Stream loaded successfully: give future failures a fresh retry budget.
-                                    retryCount = 0
+                                    retryPolicy.onPlaybackSucceeded()
                                 }
                                 refreshSnapshot()
                             }
@@ -432,7 +424,7 @@ class RadioPlaybackService : MediaLibraryService() {
 
                         override fun getCurrentContentText(player: Player): CharSequence =
                             when {
-                                pendingRetry -> getString(R.string.reconnecting)
+                                retryPolicy.isPendingRetry() -> getString(R.string.reconnecting)
                                 else -> timeshift.currentTrackTitle() ?: getString(R.string.app_name)
                             }
 
@@ -507,13 +499,8 @@ class RadioPlaybackService : MediaLibraryService() {
         val exoPlayer = player ?: return
         val isHls = isHlsUrl(streamUrl, knownHls)
         Log.d(TAG, "applyPlayback: isHls=$isHls, url=${streamUrl.take(60)}, isRetry=$isRetry")
-        currentStreamUrl = streamUrl
-        currentKnownHls = knownHls
-        pendingRetry = false
+        retryPolicy.onPlaybackStarted(streamUrl, knownHls, isRetry)
         playbackStateStore.save(stationName, streamUrl)
-        if (!isRetry) {
-            retryCount = 0
-        }
         timeshift.stop()
         registerNetworkCallback()
 
@@ -562,7 +549,7 @@ class RadioPlaybackService : MediaLibraryService() {
                     onError = {
                         mainHandler.post {
                             markConnectionError()
-                            pendingRetry = true
+                            retryPolicy.markPendingRetry()
                             timeshift.stop()
                             notificationManager?.invalidate()
                             refreshSnapshot()
@@ -577,13 +564,10 @@ class RadioPlaybackService : MediaLibraryService() {
                     },
                 )
             val bufferFile = timeshift.currentBufferFile()!!
-            val mediaSource =
-                ProgressiveMediaSource
-                    .Factory(dataSourceFactory)
-                    .createMediaSource(mediaItem.buildUpon().setUri(Uri.fromFile(bufferFile)).build())
-            exoPlayer.setMediaSource(mediaSource)
-            exoPlayer.prepare()
-            exoPlayer.play()
+            attachProgressiveMediaSource(
+                mediaItem.buildUpon().setUri(Uri.fromFile(bufferFile)).build(),
+                dataSourceFactory,
+            )
         }
 
         notificationManager?.invalidate()
@@ -634,30 +618,22 @@ class RadioPlaybackService : MediaLibraryService() {
 
     private fun tryResumePlaybackAfterNetworkRestored() {
         if (!isNetworkAvailable(this)) return
-        val url = currentStreamUrl ?: player?.currentMediaItem?.mediaId ?: return
         val p = player ?: return
-        // Retry when we had set pendingRetry (network error) or player is in IDLE (e.g. connection lost).
-        val shouldRetry = pendingRetry || p.playbackState == Player.STATE_IDLE
-        if (!shouldRetry) return
-        if (retryCount >= MAX_RETRY_COUNT) {
-            Log.d(TAG, "tryResumePlaybackAfterNetworkRestored: retry limit ($MAX_RETRY_COUNT) reached, giving up")
-            markConnectionError()
-            stopPlayback()
-            return
-        }
-        retryCount++
-        Log.d(
-            TAG,
-            "tryResumePlaybackAfterNetworkRestored: state=${p.playbackState}, " +
-                "restarting playback ($retryCount/$MAX_RETRY_COUNT)",
-        )
-        startPlayback(url, isRetry = true, knownHls = currentKnownHls)
-    }
+        when (val decision = retryPolicy.onNetworkAvailable(isPlayerIdle = p.playbackState == Player.STATE_IDLE)) {
+            is RetryDecision.RetryNow -> {
+                val target = retryPolicy.attemptRetry(decision.attemptId) ?: return
+                Log.d(TAG, "tryResumePlaybackAfterNetworkRestored: state=${p.playbackState}, restarting playback")
+                startPlayback(target.streamUrl, isRetry = true, knownHls = target.knownHls)
+            }
 
-    /** Exponential backoff (2s, 4s, 8s, 16s, capped at 30s) for the given 1-based retry attempt. */
-    internal fun retryDelayMs(attempt: Int): Long {
-        val delay = BASE_RETRY_DELAY_MS * (1L shl (attempt - 1).coerceIn(0, 4))
-        return delay.coerceAtMost(MAX_RETRY_DELAY_MS)
+            RetryDecision.GiveUp -> {
+                Log.d(TAG, "tryResumePlaybackAfterNetworkRestored: retry limit reached, giving up")
+                markConnectionError()
+                stopPlayback()
+            }
+
+            RetryDecision.NoAction, is RetryDecision.RetryAfter -> {}
+        }
     }
 
     /** [knownHls] (the directory's own `hls` flag, when known) takes precedence over the URL heuristic. */
@@ -668,10 +644,8 @@ class RadioPlaybackService : MediaLibraryService() {
 
     fun stopPlayback() {
         cancelSleepTimer()
-        currentStreamUrl = null
-        currentKnownHls = null
+        retryPolicy.reset()
         currentCustomIcon = null
-        pendingRetry = false
         playbackStateStore.clear()
         unregisterNetworkCallback()
         timeshift.stop()
@@ -716,14 +690,19 @@ class RadioPlaybackService : MediaLibraryService() {
         val p = player ?: return
         val mediaItem = p.currentMediaItem ?: return
         val factory = dataSourceFactory ?: return
-        val mediaSource =
-            ProgressiveMediaSource
-                .Factory(factory)
-                .createMediaSource(mediaItem)
-        p.setMediaSource(mediaSource)
-        p.prepare()
-        p.play()
+        attachProgressiveMediaSource(mediaItem, factory)
         refreshSnapshot()
+    }
+
+    /** Attaches [mediaItem] via a fresh ProgressiveMediaSource built from [dataSourceFactory] and starts playback. */
+    private fun attachProgressiveMediaSource(
+        mediaItem: MediaItem,
+        dataSourceFactory: DataSource.Factory,
+    ) {
+        val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+        player?.setMediaSource(mediaSource)
+        player?.prepare()
+        player?.play()
     }
 
     fun isAtLive(): Boolean = timeshift.isAtLive()
@@ -766,51 +745,36 @@ class RadioPlaybackService : MediaLibraryService() {
                 player?.play()
             }
 
+            // Transient network errors (e.g. VPN toggle): retry when network is back instead of stopping.
             else -> {
-                // Transient network errors (e.g. VPN toggle): retry when network is back instead of stopping.
-                if (isRetryableNetworkError(error)) {
-                    if (retryCount >= MAX_RETRY_COUNT) {
-                        Log.d(TAG, "handlePlayerError: retry limit ($MAX_RETRY_COUNT) reached, giving up")
+                when (val decision = retryPolicy.onPlaybackError(error)) {
+                    is RetryDecision.RetryAfter -> {
+                        Log.d(TAG, "handlePlayerError: retryable network error, retry in ${decision.delayMs}ms")
+                        notificationManager?.invalidate()
+                        mainHandler.postDelayed({ attemptScheduledRetry(decision.attemptId) }, decision.delayMs)
+                    }
+
+                    RetryDecision.GiveUp -> {
+                        Log.d(TAG, "handlePlayerError: retry limit reached, giving up")
                         markConnectionError()
                         stopPlayback()
-                        return
                     }
-                    retryCount++
-                    val delayMs = retryDelayMs(retryCount)
-                    Log.d(
-                        TAG,
-                        "handlePlayerError: retryable network error, retry $retryCount/$MAX_RETRY_COUNT in ${delayMs}ms",
-                    )
-                    pendingRetry = true
-                    notificationManager?.invalidate()
-                    val url = currentStreamUrl
-                    if (url != null) {
-                        mainHandler.postDelayed({ retryPlaybackIfPending(url) }, delayMs)
-                    }
-                } else {
-                    markConnectionError()
-                    stopPlayback()
+
+                    RetryDecision.NoAction, is RetryDecision.RetryNow -> {}
                 }
             }
         }
     }
 
-    internal fun isRetryableNetworkError(error: PlaybackException): Boolean {
-        // All IO/network error codes in media3 (2000–2010): timeout, connection failed, reset, unspecified, etc.
-        val code = error.errorCode
-        return code in 2000..2010
-    }
-
-    /** Only retries if nothing else (manual stop/switch, or a network-triggered retry) already handled it. */
-    private fun retryPlaybackIfPending(streamUrl: String) {
-        if (!pendingRetry || currentStreamUrl != streamUrl) return
-        startPlayback(streamUrl, isRetry = true, knownHls = currentKnownHls)
+    /** Only retries if [attemptId] is still current — a manual stop/switch or a network-triggered retry in the meantime invalidates it. */
+    private fun attemptScheduledRetry(attemptId: Long) {
+        val target = retryPolicy.attemptRetry(attemptId) ?: return
+        startPlayback(target.streamUrl, isRetry = true, knownHls = target.knownHls)
     }
 
     private fun releasePlayer() {
         cancelSleepTimer()
-        currentStreamUrl = null
-        pendingRetry = false
+        retryPolicy.reset()
         unregisterNetworkCallback()
         timeshift.stop()
         notificationManager?.setPlayer(null)
@@ -828,8 +792,8 @@ class RadioPlaybackService : MediaLibraryService() {
 
     /**
      * Loads the current station list and returns it as browsable media items for the Android Auto
-     * / Assistant browse tree. Kept `internal` (not private), same as [isHlsUrl]/[retryDelayMs]
-     * above, so tests can exercise the real browse-tree contents without going through a full
+     * / Assistant browse tree. Kept `internal` (not private), same as [isHlsUrl] above, so tests
+     * can exercise the real browse-tree contents without going through a full
      * [MediaLibrarySession]/[MediaSession.ControllerInfo] Binder round trip — media3's own team
      * tests that round trip with instrumentation, not Robolectric, which this project deliberately
      * doesn't have (see Testing in AGENTS.md).
@@ -928,9 +892,6 @@ class RadioPlaybackService : MediaLibraryService() {
         const val TIMESHIFT_SEEK_BACK_MS = 5000L
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "radio_playback_channel"
-        private const val MAX_RETRY_COUNT = 5
-        private const val BASE_RETRY_DELAY_MS = 2_000L
-        private const val MAX_RETRY_DELAY_MS = 30_000L
 
         @Volatile
         private var connectionErrorFlag = false

@@ -92,11 +92,7 @@ class TimeshiftController(
 
         // ExoPlayer often ignores seekTo(ms) for live-style progressive source (C.LENGTH_UNSET).
         // Seek by reopening source at byte offset corresponding to targetMs.
-        val bytesTotal = rec.getCurrentLength()
-        val startMs = rec.getStartTimeMs()
-        val elapsedMs = (now - startMs).coerceAtLeast(1L)
-        val bytesPerMs = if (bytesTotal > 0) bytesTotal / elapsedMs else 0L
-        val targetBytes = if (bytesPerMs > 0) (targetMs * bytesPerMs).coerceIn(0L, bytesTotal) else 0L
+        val targetBytes = bytesForDuration(targetMs, rec, now)
 
         lastPositionMs = targetMs
         lastPositionAnchorMs = now
@@ -156,10 +152,7 @@ class TimeshiftController(
         // clamped to endByte via startByte's coerceAtLeast(0L) below.
         val now = System.currentTimeMillis()
         val endByte = rec.getCurrentLength()
-        val startMs = rec.getStartTimeMs()
-        val elapsedMs = (now - startMs).coerceAtLeast(1L)
-        val bytesPerMs = if (endByte > 0) endByte / elapsedMs else 0L
-        val clipBytes = if (bytesPerMs > 0) durationMs * bytesPerMs else 0L
+        val clipBytes = bytesForDuration(durationMs, rec, now)
         val startByte = (endByte - clipBytes).coerceAtLeast(0L)
 
         exportScope.launch {
@@ -185,6 +178,18 @@ class TimeshiftController(
                 }
             withContext(Dispatchers.Main) { onResult(success) }
         }
+    }
+
+    /** Byte offset [ms] into the buffer, extrapolated from the average bytes-per-ms recorded so far. */
+    private fun bytesForDuration(
+        ms: Long,
+        rec: StreamRecorder,
+        now: Long,
+    ): Long {
+        val bytesTotal = rec.getCurrentLength()
+        val elapsedMs = (now - rec.getStartTimeMs()).coerceAtLeast(1L)
+        val bytesPerMs = if (bytesTotal > 0) bytesTotal / elapsedMs else 0L
+        return if (bytesPerMs > 0) (ms * bytesPerMs).coerceIn(0L, bytesTotal) else 0L
     }
 
     private fun dataSourceFactory(

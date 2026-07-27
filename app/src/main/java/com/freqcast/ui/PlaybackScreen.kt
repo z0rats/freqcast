@@ -83,6 +83,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.freqcast.R
+import com.freqcast.ui.components.PlaybackPresentation
+import com.freqcast.ui.components.rememberPlaybackPresentation
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
 import com.freqcast.ui.theme.background_gradient_end
@@ -343,10 +345,12 @@ fun PlaybackScreen(
                 )
             },
         ) { paddingValues ->
+            val presentation = rememberPlaybackPresentation(playbackService, streamUrl)
             NowPlayingContent(
                 stationName = stationName,
                 streamUrl = streamUrl,
                 playbackService = playbackService,
+                presentation = presentation,
                 onPlayStopClick = onPlayStopClick,
                 modifier = Modifier.fillMaxSize().padding(paddingValues),
             )
@@ -361,52 +365,23 @@ fun NowPlayingContent(
     stationName: String?,
     streamUrl: String?,
     playbackService: RadioPlaybackService?,
+    presentation: PlaybackPresentation,
     onPlayStopClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val displayName = stationName ?: stringResource(R.string.unknown_station)
-    var isPlaying by remember { mutableStateOf(playbackService?.isPlaying() ?: false) }
-    var trackTitle by remember { mutableStateOf<String?>(null) }
-    var sleepTimerEndAtMs by remember { mutableStateOf<Long?>(null) }
-    var hasTimeshift by remember { mutableStateOf(false) }
-    var isAtLive by remember { mutableStateOf(true) }
-    LaunchedEffect(playbackService) {
-        val svc = playbackService ?: return@LaunchedEffect
-        svc.playbackSnapshot.collect { snapshot ->
-            val isCurrentStream = snapshot.currentMediaId == streamUrl
-            isPlaying = snapshot.isPlaying && isCurrentStream
-            trackTitle = if (isCurrentStream) snapshot.trackTitle else null
-            sleepTimerEndAtMs = snapshot.sleepTimerEndAtMs
-            hasTimeshift = snapshot.hasTimeshift && isCurrentStream
-            isAtLive = snapshot.isAtLive
-        }
-    }
-
-    // playbackSnapshot only fires on discrete events, but the buffer/offset grow every second,
-    // so they need their own ticker rather than piggybacking on the collector above.
-    var bufferedDurationMs by remember { mutableStateOf(0L) }
-    var offsetFromLiveMs by remember { mutableStateOf(0L) }
-    var clipFormatAvailable by remember { mutableStateOf(false) }
-    LaunchedEffect(playbackService, hasTimeshift) {
-        val svc = playbackService
-        if (svc == null || !hasTimeshift) {
-            bufferedDurationMs = 0L
-            offsetFromLiveMs = 0L
-            clipFormatAvailable = false
-            return@LaunchedEffect
-        }
-        while (true) {
-            bufferedDurationMs = svc.bufferedDurationMs()
-            offsetFromLiveMs = svc.offsetFromLiveMs()
-            clipFormatAvailable = svc.currentClipFormat() != null
-            kotlinx.coroutines.delay(1_000)
-        }
-    }
+    val isPlaying = presentation.isPlaying
+    val trackTitle = presentation.trackTitle
+    val hasTimeshift = presentation.hasTimeshift
+    val isAtLive = presentation.isAtLive
+    val bufferedDurationMs = presentation.bufferedDurationMs
+    val offsetFromLiveMs = presentation.offsetFromLiveMs
+    val clipFormatAvailable = presentation.clipFormatAvailable
 
     var sleepTimerRemainingMs by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(sleepTimerEndAtMs) {
-        val endAt = sleepTimerEndAtMs
+    LaunchedEffect(presentation.sleepTimerEndAtMs) {
+        val endAt = presentation.sleepTimerEndAtMs
         if (endAt == null) {
             sleepTimerRemainingMs = null
             return@LaunchedEffect

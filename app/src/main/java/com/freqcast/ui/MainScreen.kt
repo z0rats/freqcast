@@ -89,6 +89,7 @@ import com.freqcast.ui.components.PlaybackStatus
 import com.freqcast.ui.components.StationItem
 import com.freqcast.ui.components.dragContainer
 import com.freqcast.ui.components.rememberDragDropState
+import com.freqcast.ui.components.rememberPlaybackPresentation
 import com.freqcast.ui.playback.SettingsStore
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
@@ -340,66 +341,36 @@ fun MainScreen(
             }
         }
 
-    // Update playing state and timeshift/live state periodically
-    var isPlaying by remember { mutableStateOf(false) }
+    val presentation = rememberPlaybackPresentation(playbackService, currentPlayingStation?.streamUrl)
+    val isPlaying = presentation.isPlaying
+    val hasTimeshift = presentation.hasTimeshift
+    val isAtLive = presentation.isAtLive
+    val offsetFromLiveMs = presentation.offsetFromLiveMs
+    val isBufferingCurrentStation = presentation.isBuffering
+    val trackTitle = presentation.trackTitle
+
+    // isStarting/startError track "did the user tap play and has it not gotten stuck" - a
+    // 10s timeout from tap, cleared once the service confirms it's actually playing.
     var isStarting by remember { mutableStateOf(false) }
     var startError by remember { mutableStateOf(false) }
-    var hasTimeshift by remember { mutableStateOf(false) }
-    var isAtLive by remember { mutableStateOf(true) }
-    var offsetFromLiveMs by remember { mutableStateOf(0L) }
-    var isBufferingCurrentStation by remember { mutableStateOf(false) }
-    var trackTitle by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentPlayingStationId) {
         isStarting = true
         startError = false
     }
+    // isPlaying flipping true cancels/restarts this via the isStarting key change below before
+    // the delay elapses, so reaching this point guarantees playback still hasn't started.
     LaunchedEffect(isStarting) {
         if (!isStarting) return@LaunchedEffect
         kotlinx.coroutines.delay(10_000)
-        if (isStarting && !isPlaying) {
+        if (isStarting) {
             startError = true
             isStarting = false
         }
     }
-    // Reactively mirror the service's playback state instead of polling it on a timer.
-    LaunchedEffect(playbackService, currentPlayingStation) {
-        val svc = playbackService
-        if (svc == null) {
-            isPlaying = false
-            hasTimeshift = false
-            isAtLive = true
-            isBufferingCurrentStation = false
-            trackTitle = null
-            return@LaunchedEffect
-        }
-        svc.playbackSnapshot.collect { snapshot ->
-            val isCurrentStationPlaying =
-                currentPlayingStation != null &&
-                    snapshot.currentMediaId == currentPlayingStation.streamUrl &&
-                    snapshot.isPlaying
-            isPlaying = isCurrentStationPlaying
-            hasTimeshift = snapshot.hasTimeshift
-            isAtLive = snapshot.isAtLive
-            isBufferingCurrentStation =
-                snapshot.isBuffering && snapshot.currentMediaId == currentPlayingStation?.streamUrl
-            trackTitle = snapshot.trackTitle
-            if (isCurrentStationPlaying) {
-                isStarting = false
-                startError = false
-            }
-        }
-    }
-    // playbackSnapshot only fires on discrete events, but the offset grows every second while
-    // rewound, so it needs its own ticker rather than piggybacking on the collector above.
-    LaunchedEffect(playbackService, hasTimeshift) {
-        val svc = playbackService
-        if (svc == null || !hasTimeshift) {
-            offsetFromLiveMs = 0L
-            return@LaunchedEffect
-        }
-        while (true) {
-            offsetFromLiveMs = svc.offsetFromLiveMs()
-            kotlinx.coroutines.delay(1_000)
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            isStarting = false
+            startError = false
         }
     }
 
@@ -581,6 +552,7 @@ fun MainScreen(
                                 stationName = currentPlayingStation.name,
                                 streamUrl = currentPlayingStation.streamUrl,
                                 playbackService = playbackService,
+                                presentation = presentation,
                                 onPlayStopClick = {
                                     if (isPlaying) onStopPlayback() else onPlayStationWithState(currentPlayingStation)
                                 },

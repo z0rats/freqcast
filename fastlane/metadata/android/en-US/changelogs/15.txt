@@ -1,0 +1,1 @@
+Internal refactor: extracted the network-reconnect retry logic and the shared now-playing state derivation into dedicated, independently tested modules. No functional changes.
