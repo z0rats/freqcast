@@ -1,0 +1,1 @@
+Custom station icons now survive backup export/import — they're embedded directly in the backup file instead of pointing at a local file path that breaks after moving to a new device or reinstalling.
