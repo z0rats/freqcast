@@ -70,6 +70,7 @@
     <string name="share_station">Share station</string>
     <string name="import_stations">Import stations</string>
     <string name="export_error">Export failed</string>
+    <string name="export_stations_empty">No stations to export</string>
     <string name="import_error">Import failed: unsupported or invalid file (expected a stations backup, OPML, M3U, or PLS file)</string>
     <string name="import_result">Imported %1$d, skipped %2$d duplicates</string>
     <string name="copy_track_title">Copy track title</string>

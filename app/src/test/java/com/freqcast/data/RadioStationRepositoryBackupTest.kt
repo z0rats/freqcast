@@ -1,10 +1,15 @@
 package com.freqcast.data
 
+import android.content.Context
+import android.graphics.Bitmap
 import androidx.room.Room
+import com.freqcast.util.IconStorage
 import kotlinx.coroutines.test.runTest
 import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -14,12 +19,30 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
+import java.io.File
 
+/** Native graphics mode (not the legacy Robolectric shadow) so the icon round-trip test's
+ * BitmapFactory decode reflects real pixel data - see IconStorageTest for the same rationale. */
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class RadioStationRepositoryBackupTest {
     private lateinit var database: AppDatabase
     private lateinit var repository: RadioStationRepository
+    private val context: Context = RuntimeEnvironment.getApplication()
+
+    private fun pngBytesFor(
+        width: Int,
+        height: Int,
+    ): ByteArray {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        return ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.toByteArray()
+        }
+    }
 
     @Before
     fun setup() {
@@ -43,9 +66,9 @@ class RadioStationRepositoryBackupTest {
     }
 
     @Test
-    fun `exportStationsToJson with no stations returns an empty array`() =
+    fun `exportStationsToJson with no stations returns null`() =
         runTest {
-            assertEquals("[]", repository.exportStationsToJson())
+            assertNull(repository.exportStationsToJson())
         }
 
     @Test
@@ -83,7 +106,7 @@ class RadioStationRepositoryBackupTest {
                 }]
                 """.trimIndent()
 
-            repository.importStationsFromJson(json)
+            repository.importStationsFromJson(context, json)
 
             assertEquals("rock", repository.getAllStations()[0].description)
             assertEquals(true, repository.getAllStations()[0].isHls)
@@ -95,7 +118,7 @@ class RadioStationRepositoryBackupTest {
         runTest {
             val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock", "genre": "rock"}]"""
 
-            repository.importStationsFromJson(json)
+            repository.importStationsFromJson(context, json)
 
             assertEquals("rock", repository.getAllStations()[0].description)
         }
@@ -105,7 +128,7 @@ class RadioStationRepositoryBackupTest {
         runTest {
             val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock"}]"""
 
-            repository.importStationsFromJson(json)
+            repository.importStationsFromJson(context, json)
 
             assertNull(repository.getAllStations()[0].description)
             assertEquals(false, repository.getAllStations()[0].isHls)
@@ -118,7 +141,7 @@ class RadioStationRepositoryBackupTest {
             val json =
                 """[{"name": "Rock FM", "streamUrl": "http://example.com/rock", "isFavorite": true}]"""
 
-            val result = repository.importStationsFromJson(json)
+            val result = repository.importStationsFromJson(context, json)
 
             assertEquals(ImportResult(imported = 1, skipped = 0, failed = 0), result)
             assertEquals("Rock FM", repository.getAllStations()[0].name)
@@ -176,7 +199,7 @@ class RadioStationRepositoryBackupTest {
                 ]
                 """.trimIndent()
 
-            val result = repository.importStationsFromJson(json)
+            val result = repository.importStationsFromJson(context, json)
 
             assertEquals(ImportResult(imported = 2, skipped = 0, failed = 0), result)
             val stations = repository.getAllStations()
@@ -199,7 +222,7 @@ class RadioStationRepositoryBackupTest {
                 ]
                 """.trimIndent()
 
-            val result = repository.importStationsFromJson(json)
+            val result = repository.importStationsFromJson(context, json)
 
             assertEquals(ImportResult(imported = 1, skipped = 2, failed = 0), result)
             assertEquals(3, repository.getAllStations().size)
@@ -219,7 +242,7 @@ class RadioStationRepositoryBackupTest {
                 ]
                 """.trimIndent()
 
-            val result = repository.importStationsFromJson(json)
+            val result = repository.importStationsFromJson(context, json)
 
             assertEquals(ImportResult(imported = 1, skipped = 0, failed = 4), result)
         }
@@ -227,7 +250,7 @@ class RadioStationRepositoryBackupTest {
     @Test
     fun `importStationsFromJson throws IllegalArgumentException for non-array JSON`() {
         assertThrows(IllegalArgumentException::class.java) {
-            kotlinx.coroutines.runBlocking { repository.importStationsFromJson("not json at all") }
+            kotlinx.coroutines.runBlocking { repository.importStationsFromJson(context, "not json at all") }
         }
     }
 
@@ -284,7 +307,7 @@ class RadioStationRepositoryBackupTest {
         runTest {
             val json = """[{"name": "Rock FM", "streamUrl": "http://example.com/rock", "description": "rock"}]"""
 
-            val result = repository.importStations(json)
+            val result = repository.importStations(context, json)
 
             assertEquals(ImportResult(imported = 1, skipped = 0, failed = 0), result)
             assertEquals("rock", repository.getAllStations()[0].description)
@@ -295,7 +318,7 @@ class RadioStationRepositoryBackupTest {
         runTest {
             val m3u = "#EXTM3U\n#EXTINF:-1,Rock FM\nhttp://example.com/rock"
 
-            val result = repository.importStations(m3u)
+            val result = repository.importStations(context, m3u)
 
             assertEquals(ImportResult(imported = 1, skipped = 0, failed = 0), result)
             assertEquals("Rock FM", repository.getAllStations()[0].name)
@@ -313,7 +336,7 @@ class RadioStationRepositoryBackupTest {
                 ),
             )
             repository.insertStation(RadioStation(name = "Jazz Radio", streamUrl = "http://example.com/jazz"))
-            val json = repository.exportStationsToJson()
+            val json = requireNotNull(repository.exportStationsToJson())
 
             val freshDatabase =
                 Room
@@ -326,7 +349,7 @@ class RadioStationRepositoryBackupTest {
                     .build()
             val freshRepository = RadioStationRepository(freshDatabase.radioStationDao())
 
-            val result = freshRepository.importStationsFromJson(json)
+            val result = freshRepository.importStationsFromJson(context, json)
 
             assertEquals(ImportResult(imported = 2, skipped = 0, failed = 0), result)
             val imported = freshRepository.getAllStations()
@@ -337,6 +360,67 @@ class RadioStationRepositoryBackupTest {
             assertEquals("Jazz Radio", imported[1].name)
             assertNull(imported[1].customIcon)
             assertNull(imported[1].description)
+            freshDatabase.close()
+        }
+
+    @Test
+    fun `exportStationsToJson embeds a locally stored icon's bytes as base64 iconData`() =
+        runTest {
+            val iconPath = requireNotNull(IconStorage.saveImageBytes(context, pngBytesFor(64, 64)))
+            repository.insertStation(
+                RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", customIcon = iconPath),
+            )
+
+            val array = JSONArray(repository.exportStationsToJson())
+
+            assertTrue(array.getJSONObject(0).has("iconData"))
+            assertTrue(array.getJSONObject(0).getString("iconData").isNotBlank())
+        }
+
+    @Test
+    fun `exportStationsToJson omits iconData for an emoji icon`() =
+        runTest {
+            repository.insertStation(
+                RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", customIcon = "🎸"),
+            )
+
+            val array = JSONArray(repository.exportStationsToJson())
+
+            assertTrue(array.getJSONObject(0).isNull("customIcon").not())
+            assertTrue(!array.getJSONObject(0).has("iconData"))
+        }
+
+    @Test
+    fun `export then import round-trips a locally stored icon image onto a fresh device`() =
+        runTest {
+            val iconPath = requireNotNull(IconStorage.saveImageBytes(context, pngBytesFor(64, 64)))
+            repository.insertStation(
+                RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", customIcon = iconPath),
+            )
+            val json = requireNotNull(repository.exportStationsToJson())
+
+            // Simulate importing on another device/after a reinstall: the original icon file is gone,
+            // so only the embedded iconData payload can restore it.
+            File(iconPath).delete()
+            val freshDatabase =
+                Room
+                    .inMemoryDatabaseBuilder(
+                        RuntimeEnvironment.getApplication(),
+                        AppDatabase::class.java,
+                    ).allowMainThreadQueries()
+                    .setQueryExecutor { it.run() }
+                    .setTransactionExecutor { it.run() }
+                    .build()
+            val freshRepository = RadioStationRepository(freshDatabase.radioStationDao())
+
+            val result = freshRepository.importStationsFromJson(context, json)
+
+            assertEquals(ImportResult(imported = 1, skipped = 0, failed = 0), result)
+            val importedIcon = requireNotNull(freshRepository.getAllStations()[0].customIcon)
+            assertTrue(IconStorage.isImagePath(importedIcon))
+            assertTrue(File(importedIcon).exists())
+            assertNotEquals(iconPath, importedIcon)
+            assertNotNull(IconStorage.decodeBitmap(importedIcon))
             freshDatabase.close()
         }
 }

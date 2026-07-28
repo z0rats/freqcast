@@ -70,6 +70,7 @@
     <string name="share_station">分享电台</string>
     <string name="import_stations">导入电台</string>
     <string name="export_error">导出失败</string>
+    <string name="export_stations_empty">没有可导出的电台</string>
     <string name="import_error">导入失败：不支持或无效的文件（应为电台备份、OPML、M3U 或 PLS 文件）</string>
     <string name="import_result">已导入 %1$d 个，跳过 %2$d 个重复项</string>
     <string name="copy_track_title">复制曲目标题</string>

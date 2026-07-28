@@ -1,8 +1,11 @@
 package com.freqcast.data
 
+import android.content.Context
+import com.freqcast.util.IconStorage
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.util.Base64
 
 /** Null when [key] is absent/JSON-null, or when the string it holds is blank. */
 private fun JSONObject.optNullableString(key: String): String? =
@@ -64,15 +67,27 @@ class RadioStationRepository(
         return candidate
     }
 
-    /** Serializes all stations to a JSON array of `{name, streamUrl, customIcon, description, isHls, radioBrowserUuid}` objects. */
-    suspend fun exportStationsToJson(): String = StationBackupJson.toJsonArray(dao.getAllStations())
+    /**
+     * Serializes all stations to a JSON array of `{name, streamUrl, customIcon, description, isHls,
+     * radioBrowserUuid}` objects, or `null` if there are no saved stations to export.
+     */
+    suspend fun exportStationsToJson(): String? {
+        val stations = dao.getAllStations()
+        if (stations.isEmpty()) return null
+        return StationBackupJson.toJsonArray(stations)
+    }
 
     /**
      * Imports stations from a JSON array produced by [exportStationsToJson]. Entries whose
      * name or URL already exists are skipped rather than overwritten; entries missing a name
      * or URL are counted as failed. Throws [IllegalArgumentException] if [json] isn't a JSON array.
+     * [context] is needed to persist an entry's `iconData` payload (if present) as a new local icon
+     * file via [IconStorage] — see [resolveImportedIcon].
      */
-    suspend fun importStationsFromJson(json: String): ImportResult {
+    suspend fun importStationsFromJson(
+        context: Context,
+        json: String,
+    ): ImportResult {
         val array =
             try {
                 JSONArray(json)
@@ -95,7 +110,7 @@ class RadioStationRepository(
                 skipped++
                 continue
             }
-            val icon = obj.optNullableString("customIcon")
+            val icon = resolveImportedIcon(context, obj)
             // "genre" was this field's name before the column was renamed to "description";
             // older backup files still carry it under that key.
             val description = obj.optNullableString("description") ?: obj.optNullableString("genre")
@@ -114,6 +129,23 @@ class RadioStationRepository(
             imported++
         }
         return ImportResult(imported, skipped, failed)
+    }
+
+    /**
+     * Resolves an imported entry's icon: if a base64 `iconData` payload is present (added by
+     * [StationBackupJson] for a locally stored icon image so it survives a move to another device),
+     * decodes it and persists it as a new local icon file via [IconStorage] — the entry's
+     * `customIcon` string came from the exporting device and won't resolve here. Falls back to that
+     * `customIcon` string as-is (an emoji, or a pre-`iconData` backup's now-unresolvable path) when
+     * no `iconData` payload is present.
+     */
+    private fun resolveImportedIcon(
+        context: Context,
+        obj: JSONObject,
+    ): String? {
+        val iconData = obj.optNullableString("iconData") ?: return obj.optNullableString("customIcon")
+        val bytes = runCatching { Base64.getDecoder().decode(iconData) }.getOrNull() ?: return null
+        return IconStorage.saveImageBytes(context, bytes)
     }
 
     /**
@@ -149,9 +181,12 @@ class RadioStationRepository(
      * is a JSON stations backup ([importStationsFromJson]) or an OPML/M3U/PLS playlist
      * ([importStationsFromPlaylist]) and dispatches accordingly.
      */
-    suspend fun importStations(content: String): ImportResult =
+    suspend fun importStations(
+        context: Context,
+        content: String,
+    ): ImportResult =
         if (content.trimStart().startsWith("[")) {
-            importStationsFromJson(content)
+            importStationsFromJson(context, content)
         } else {
             importStationsFromPlaylist(content)
         }

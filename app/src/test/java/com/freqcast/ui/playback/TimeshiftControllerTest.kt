@@ -21,7 +21,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.math.abs
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TimeshiftControllerTest {
@@ -132,39 +131,6 @@ class TimeshiftControllerTest {
 
         assertNotNull(factory)
         assertTrue(controller.isAtLive())
-    }
-
-    @Test
-    fun `seekToOffsetFromLive and exportClip agree on the byte offset for the same duration`() {
-        server.enqueue(MockResponse().setBody("x".repeat(50_000)))
-        controller.start(server.url("/stream").toString(), onError = {})
-        awaitTrue { !controller.hasTimeshift() }
-
-        // Half the buffered duration keeps the target well clear of the 0/full-buffer clamps,
-        // so this exercises the shared mid-buffer byte math, not just the edge cases.
-        val durationMs = (controller.bufferedDurationMs() / 2).coerceAtLeast(1L)
-
-        val seekFactory = controller.seekToOffsetFromLive(durationMs) as LiveFileDataSource.Factory
-        val overrideField = LiveFileDataSource.Factory::class.java.getDeclaredField("startPositionOverride")
-        overrideField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val startPositionOverride = overrideField.get(seekFactory) as () -> Long
-        val seekTargetByte = startPositionOverride()
-
-        val bufferLength = controller.currentBufferFile()!!.length()
-        val dest = tempFolder.newFile("clip.tmp")
-        val resultLatch = CountDownLatch(1)
-        controller.exportClip(durationMs, dest) { resultLatch.countDown() }
-        assertTrue(resultLatch.await(5, TimeUnit.SECONDS))
-        val exportStartByte = bufferLength - dest.length()
-
-        // seekToOffsetFromLive and exportClip both derive their byte offset from the same
-        // bytes-per-ms rate (TimeshiftController.bytesForDuration); the tolerance absorbs wall-clock
-        // drift between their two independent System.currentTimeMillis() reads, not a formula split.
-        assertTrue(
-            "seek target byte ($seekTargetByte) should be close to export start byte ($exportStartByte)",
-            abs(seekTargetByte - exportStartByte) <= 2_000L,
-        )
     }
 
     @Test

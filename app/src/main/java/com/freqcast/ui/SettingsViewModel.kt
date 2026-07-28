@@ -1,5 +1,6 @@
 package com.freqcast.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -43,14 +44,20 @@ class SettingsViewModel(
         }
     }
 
-    /** Plain suspend function (not launched internally) so callers get the JSON back to write to a file. */
-    suspend fun exportStationsJson(): String = repository.exportStationsToJson()
+    /**
+     * Plain suspend function (not launched internally) so callers get the JSON back to write to a
+     * file. Returns `null` if there are no saved stations to export.
+     */
+    suspend fun exportStationsJson(): String? = repository.exportStationsToJson()
 
     /**
      * Plain suspend function so callers get the [ImportResult] back to show to the user. Accepts a
      * JSON stations backup or an OPML/M3U/PLS playlist — see [RadioStationRepository.importStations].
      */
-    suspend fun importStations(content: String): ImportResult = repository.importStations(content)
+    suspend fun importStations(
+        context: Context,
+        content: String,
+    ): ImportResult = repository.importStations(context, content)
 
     companion object {
         fun provideFactory(

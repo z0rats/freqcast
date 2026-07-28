@@ -144,7 +144,13 @@ fun SettingsScreen(
         coroutineScope.launch {
             try {
                 val json = viewModel.exportStationsJson()
-                StationShare.share(context, json, exportChooserTitle, "freqcast-stations")
+                if (json == null) {
+                    Toast
+                        .makeText(context, context.getString(R.string.export_stations_empty), Toast.LENGTH_SHORT)
+                        .show()
+                } else {
+                    StationShare.share(context, json, exportChooserTitle, "freqcast-stations")
+                }
             } catch (e: Exception) {
                 Toast.makeText(context, context.getString(R.string.export_error), Toast.LENGTH_SHORT).show()
             }
@@ -159,7 +165,7 @@ fun SettingsScreen(
                     val content =
                         context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
                             ?: throw java.io.IOException("Cannot open file")
-                    val result = viewModel.importStations(content)
+                    val result = viewModel.importStations(context, content)
                     Toast
                         .makeText(
                             context,

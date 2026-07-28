@@ -70,6 +70,7 @@
     <string name="share_station">Compartir emisora</string>
     <string name="import_stations">Importar emisoras</string>
     <string name="export_error">Error al exportar</string>
+    <string name="export_stations_empty">No hay emisoras para exportar</string>
     <string name="import_error">Error al importar: archivo no compatible o no válido (se esperaba una copia de seguridad de emisoras, OPML, M3U o PLS)</string>
     <string name="import_result">Importadas %1$d, omitidos %2$d duplicados</string>
     <string name="copy_track_title">Copiar título de la pista</string>

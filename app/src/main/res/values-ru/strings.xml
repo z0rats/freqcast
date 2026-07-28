@@ -70,6 +70,7 @@
     <string name="share_station">Поделиться станцией</string>
     <string name="import_stations">Импорт станций</string>
     <string name="export_error">Не удалось экспортировать</string>
+    <string name="export_stations_empty">Нет станций для экспорта</string>
     <string name="import_error">Не удалось импортировать: неподдерживаемый или недействительный файл (ожидается резервная копия станций, OPML, M3U или PLS)</string>
     <string name="import_result">Импортировано: %1$d, пропущено дубликатов: %2$d</string>
     <string name="copy_track_title">Скопировать название трека</string>
