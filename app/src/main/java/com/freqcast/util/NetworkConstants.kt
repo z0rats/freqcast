@@ -10,3 +10,6 @@ package com.freqcast.util
  * playback ends up using would make the validation unreliable.
  */
 const val STREAM_USER_AGENT = "Mozilla/5.0 (compatible; Freqcast/2.0)"
+
+/** Identifies this app to the Radio Browser directory and GitHub's release API, both of which ask for one. */
+const val APP_USER_AGENT = "Freqcast/2.0 (github.com/z0rats/freqcast)"

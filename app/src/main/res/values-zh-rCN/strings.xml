@@ -78,11 +78,8 @@
     <string name="discover_search_mode_name">名称</string>
     <string name="discover_search_mode_genre">风格</string>
     <string name="discover_search_mode_country">国家</string>
-    <string name="discover_search_mode_language">语言</string>
     <string name="discover_search_hint_name">按电台名称搜索…</string>
     <string name="discover_search_hint_genre">按风格搜索，例如 jazz…</string>
-    <string name="discover_search_hint_country">按国家搜索…</string>
-    <string name="discover_search_hint_language">按语言搜索，例如 english…</string>
     <string name="discover_search_error">搜索失败，请检查网络连接后重试</string>
     <string name="discover_empty_results">未找到电台</string>
     <string name="discover_prompt">搜索 Radio Browser 目录以查找要添加的电台</string>
@@ -122,6 +119,9 @@
     <string name="settings_language">语言</string>
     <string name="settings_language_description">选择应用显示语言</string>
     <string name="settings_language_system_default">跟随系统</string>
+    <string name="settings_version">版本 %1$s</string>
+    <string name="settings_update_available">有可用更新</string>
+    <string name="settings_up_to_date">已是最新版本</string>
     <string name="metered_connection_dialog_title">移动数据网络</string>
     <string name="metered_connection_dialog_message">当前网络按流量计费,播放该电台可能会消耗你的移动数据。</string>
     <string name="metered_connection_continue">仍然播放</string>

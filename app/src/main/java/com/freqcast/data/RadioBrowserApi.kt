@@ -1,5 +1,6 @@
 package com.freqcast.data
 
+import com.freqcast.util.APP_USER_AGENT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -8,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /** A station returned by the [RadioBrowserApi] directory search, not yet saved locally. */
@@ -42,6 +44,7 @@ class RadioBrowserApi(
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .build(),
+    private val cacheTtlMs: Long = DEFAULT_CACHE_TTL_MS,
 ) {
     enum class SearchBy(
         val param: String,
@@ -49,8 +52,16 @@ class RadioBrowserApi(
         NAME("name"),
         TAG("tag"),
         COUNTRY("country"),
-        LANGUAGE("language"),
     }
+
+    /** [search]/[searchNearby] results rarely go stale within a session, so repeat lookups (e.g. re-tapping the
+     * same country chip, or coming back to Discover) reuse them for [cacheTtlMs] instead of re-hitting the network. */
+    private class CacheEntry(
+        val stations: List<RadioBrowserStation>,
+        val expiresAtMs: Long,
+    )
+
+    private val cache = ConcurrentHashMap<String, CacheEntry>()
 
     /**
      * Throws [IOException] on network failure; callers are expected to catch and surface it.
@@ -102,17 +113,44 @@ class RadioBrowserApi(
                     .addPathSegments("json/stations/search")
                     .apply(buildQuery)
                     .build()
-            val request =
-                Request
-                    .Builder()
-                    .url(url)
-                    .header("User-Agent", USER_AGENT)
-                    .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                parseStations(response.body?.string().orEmpty())
+            val cacheKey = url.toString()
+            val now = System.currentTimeMillis()
+            cache[cacheKey]?.takeIf { it.expiresAtMs > now }?.let { return@withContext it.stations }
+            val stations = executeSearchWithRetries(url)
+            cache[cacheKey] = CacheEntry(stations, now + cacheTtlMs)
+            stations
+        }
+
+    /**
+     * [baseUrl] round-robins many independent community mirrors, but OkHttp keeps reusing whichever
+     * backend connection it first opened — so once that one mirror times out or 503s, every
+     * subsequent call on this client keeps hitting it. Evicting the pool between attempts forces
+     * each retry to pick a fresh connection (and likely a different mirror) instead of repeating
+     * the same failure.
+     */
+    private fun executeSearchWithRetries(url: HttpUrl): List<RadioBrowserStation> {
+        repeat(MAX_RETRIES) {
+            try {
+                return executeSearch(url)
+            } catch (e: IOException) {
+                client.connectionPool.evictAll()
             }
         }
+        return executeSearch(url)
+    }
+
+    private fun executeSearch(url: HttpUrl): List<RadioBrowserStation> {
+        val request =
+            Request
+                .Builder()
+                .url(url)
+                .header("User-Agent", APP_USER_AGENT)
+                .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            return parseStations(response.body?.string().orEmpty())
+        }
+    }
 
     /**
      * Registers a play as a "click" with the directory (`GET /json/url/{uuid}`), which is what
@@ -134,7 +172,7 @@ class RadioBrowserApi(
                     Request
                         .Builder()
                         .url(url)
-                        .header("User-Agent", USER_AGENT)
+                        .header("User-Agent", APP_USER_AGENT)
                         .build()
                 client.newCall(request).execute().close()
             } catch (e: IOException) {
@@ -159,7 +197,7 @@ class RadioBrowserApi(
                     Request
                         .Builder()
                         .url(url)
-                        .header("User-Agent", USER_AGENT)
+                        .header("User-Agent", APP_USER_AGENT)
                         .build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@use null
@@ -202,6 +240,9 @@ class RadioBrowserApi(
 
     companion object {
         private const val DEFAULT_BASE_URL = "https://all.api.radio-browser.info/"
-        private const val USER_AGENT = "Freqcast/2.0 (github.com/z0rats/freqcast)"
+        private const val DEFAULT_CACHE_TTL_MS = 15 * 60 * 1000L
+
+        /** Total attempts = this + 1 — one initial try, then this many retries against a fresh connection. */
+        private const val MAX_RETRIES = 3
     }
 }

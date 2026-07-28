@@ -78,11 +78,8 @@
     <string name="discover_search_mode_name">Название</string>
     <string name="discover_search_mode_genre">Жанр</string>
     <string name="discover_search_mode_country">Страна</string>
-    <string name="discover_search_mode_language">Язык</string>
     <string name="discover_search_hint_name">Поиск по названию станции…</string>
     <string name="discover_search_hint_genre">Поиск по жанру, напр. джаз…</string>
-    <string name="discover_search_hint_country">Поиск по стране…</string>
-    <string name="discover_search_hint_language">Поиск по языку, напр. русский…</string>
     <string name="discover_search_error">Ошибка поиска. Проверьте соединение и попробуйте снова</string>
     <string name="discover_empty_results">Станции не найдены</string>
     <string name="discover_prompt">Найдите станции в каталоге Radio Browser, чтобы добавить их</string>
@@ -122,6 +119,9 @@
     <string name="settings_language">Язык</string>
     <string name="settings_language_description">Выберите язык приложения</string>
     <string name="settings_language_system_default">Как в системе</string>
+    <string name="settings_version">Версия %1$s</string>
+    <string name="settings_update_available">Доступно обновление</string>
+    <string name="settings_up_to_date">Установлена последняя версия</string>
     <string name="metered_connection_dialog_title">Мобильный интернет</string>
     <string name="metered_connection_dialog_message">Вы используете лимитное соединение. Воспроизведение этой станции может расходовать мобильный трафик.</string>
     <string name="metered_connection_continue">Всё равно включить</string>

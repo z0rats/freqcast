@@ -168,20 +168,24 @@ class RadioBrowserApiTest {
         }
 
     @Test
-    fun `search sends a language query under the language param`() =
+    fun `search retries after a failed attempt and returns the retry's results`() =
         runTest {
-            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setResponseCode(503))
+            server.enqueue(MockResponse().setBody("""[{"name":"Recovered FM","url":"http://example.com/a"}]"""))
 
-            api.search("english", RadioBrowserApi.SearchBy.LANGUAGE)
+            val results = api.search("x", RadioBrowserApi.SearchBy.NAME)
 
-            val request = server.takeRequest()
-            assertTrue(request.path?.contains("language=english") == true)
+            assertEquals(2, server.requestCount)
+            assertEquals(1, results.size)
+            assertEquals("Recovered FM", results[0].name)
         }
 
     @Test(expected = IOException::class)
-    fun `search throws on a non-2xx response`() =
+    fun `search throws once retries are exhausted on a persistently failing mirror`() =
         runTest {
-            server.enqueue(MockResponse().setResponseCode(500))
+            // fetchStations retries up to MAX_RETRIES (3) times, so 4 total queued failures are
+            // needed here for a persistently-failing mirror to actually surface as an IOException.
+            repeat(4) { server.enqueue(MockResponse().setResponseCode(500)) }
 
             api.search("x", RadioBrowserApi.SearchBy.NAME)
         }
@@ -228,11 +232,50 @@ class RadioBrowserApiTest {
         }
 
     @Test(expected = IOException::class)
-    fun `searchNearby throws on a non-2xx response`() =
+    fun `searchNearby throws once retries are exhausted on a persistently failing mirror`() =
         runTest {
-            server.enqueue(MockResponse().setResponseCode(500))
+            repeat(4) { server.enqueue(MockResponse().setResponseCode(500)) }
 
             api.searchNearby(latitude = 52.5, longitude = 13.4, radiusMeters = 50_000)
+        }
+
+    @Test
+    fun `an identical repeat search is served from cache instead of hitting the network again`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"Cached FM","url":"http://example.com/a"}]"""))
+
+            val first = api.search("jazz", RadioBrowserApi.SearchBy.NAME)
+            val second = api.search("jazz", RadioBrowserApi.SearchBy.NAME)
+
+            assertEquals(1, server.requestCount)
+            assertEquals(first, second)
+        }
+
+    @Test
+    fun `a different query is not served from another query's cache entry`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            server.enqueue(MockResponse().setBody("""[{"name":"Rock FM","url":"http://example.com/rock"}]"""))
+
+            api.search("jazz", RadioBrowserApi.SearchBy.NAME)
+            api.search("rock", RadioBrowserApi.SearchBy.NAME)
+
+            assertEquals(2, server.requestCount)
+        }
+
+    @Test
+    fun `a search past its cache ttl hits the network again`() =
+        runTest {
+            val shortLivedApi = RadioBrowserApi(baseUrl = server.url("/"), cacheTtlMs = 0L)
+            server.enqueue(MockResponse().setBody("""[{"name":"First","url":"http://example.com/a"}]"""))
+            server.enqueue(MockResponse().setBody("""[{"name":"Second","url":"http://example.com/b"}]"""))
+
+            val first = shortLivedApi.search("jazz", RadioBrowserApi.SearchBy.NAME)
+            val second = shortLivedApi.search("jazz", RadioBrowserApi.SearchBy.NAME)
+
+            assertEquals(2, server.requestCount)
+            assertEquals("First", first[0].name)
+            assertEquals("Second", second[0].name)
         }
 
     @Test

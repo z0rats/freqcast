@@ -63,6 +63,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,6 +86,8 @@ import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.ui.theme.text_secondary
+import com.freqcast.util.Country
+import com.freqcast.util.CountryCatalog
 import com.freqcast.util.CountryFlagEmoji
 import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.VoteCountFormatter
@@ -239,46 +243,51 @@ fun DiscoverStationsScreen(
                         selected = uiState.mode == DiscoverSearchMode.COUNTRY,
                         onClick = { viewModel.onModeChange(DiscoverSearchMode.COUNTRY) },
                     )
-                    SearchModeChip(
-                        label = stringResource(R.string.discover_search_mode_language),
-                        selected = uiState.mode == DiscoverSearchMode.LANGUAGE,
-                        onClick = { viewModel.onModeChange(DiscoverSearchMode.LANGUAGE) },
-                    )
                 }
 
-                if (uiState.mode == DiscoverSearchMode.NEARBY) {
-                    if (uiState.locationPermissionDenied) {
-                        CenteredHint(
-                            stringResource(R.string.discover_location_permission_denied),
-                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                when (uiState.mode) {
+                    DiscoverSearchMode.NEARBY -> {
+                        if (uiState.locationPermissionDenied) {
+                            CenteredHint(
+                                stringResource(R.string.discover_location_permission_denied),
+                                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                            )
+                        }
+                    }
+
+                    DiscoverSearchMode.COUNTRY -> {
+                        CountryFlagPicker(
+                            selectedCountry = uiState.query,
+                            onCountryClick = viewModel::onQueryChange,
                         )
                     }
-                } else {
-                    val hint =
-                        when (uiState.mode) {
-                            DiscoverSearchMode.NAME -> stringResource(R.string.discover_search_hint_name)
-                            DiscoverSearchMode.GENRE -> stringResource(R.string.discover_search_hint_genre)
-                            DiscoverSearchMode.COUNTRY -> stringResource(R.string.discover_search_hint_country)
-                            DiscoverSearchMode.LANGUAGE -> stringResource(R.string.discover_search_hint_language)
-                            DiscoverSearchMode.NEARBY -> ""
-                        }
-                    TextField(
-                        value = uiState.query,
-                        onValueChange = viewModel::onQueryChange,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                        placeholder = { Text(hint) },
-                        singleLine = true,
-                        colors =
-                            TextFieldDefaults.colors(
-                                focusedContainerColor = card_surface,
-                                unfocusedContainerColor = card_surface,
-                                focusedTextColor = text_primary,
-                                unfocusedTextColor = text_primary,
-                                focusedPlaceholderColor = text_hint,
-                                unfocusedPlaceholderColor = text_hint,
-                            ),
-                        shape = MaterialTheme.shapes.medium,
-                    )
+
+                    DiscoverSearchMode.NAME, DiscoverSearchMode.GENRE -> {
+                        val hint =
+                            when (uiState.mode) {
+                                DiscoverSearchMode.NAME -> stringResource(R.string.discover_search_hint_name)
+                                DiscoverSearchMode.GENRE -> stringResource(R.string.discover_search_hint_genre)
+                                else -> ""
+                            }
+                        TextField(
+                            value = uiState.query,
+                            onValueChange = viewModel::onQueryChange,
+                            modifier =
+                                Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                            placeholder = { Text(hint) },
+                            singleLine = true,
+                            colors =
+                                TextFieldDefaults.colors(
+                                    focusedContainerColor = card_surface,
+                                    unfocusedContainerColor = card_surface,
+                                    focusedTextColor = text_primary,
+                                    unfocusedTextColor = text_primary,
+                                    focusedPlaceholderColor = text_hint,
+                                    unfocusedPlaceholderColor = text_hint,
+                                ),
+                            shape = MaterialTheme.shapes.medium,
+                        )
+                    }
                 }
 
                 DiscoverResultsContent(
@@ -327,6 +336,57 @@ private fun SearchModeChip(
                 selectedBorderColor = glass_accent,
             ),
     )
+}
+
+/** Tapping a flag fills [onCountryClick] with that country's English name — what the directory expects. */
+@Composable
+private fun CountryFlagPicker(
+    selectedCountry: String,
+    onCountryClick: (String) -> Unit,
+) {
+    val countries = CountryCatalog.countries
+    val midpoint = (countries.size + 1) / 2
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        CountryFlagRow(countries.subList(0, midpoint), selectedCountry, onCountryClick)
+        CountryFlagRow(countries.subList(midpoint, countries.size), selectedCountry, onCountryClick)
+    }
+}
+
+@Composable
+private fun CountryFlagRow(
+    countries: List<Country>,
+    selectedCountry: String,
+    onCountryClick: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        countries.forEach { country ->
+            val selected = country.englishName == selectedCountry
+            FilterChip(
+                selected = selected,
+                onClick = { onCountryClick(country.englishName) },
+                label = { Text(country.flag, style = MaterialTheme.typography.headlineSmall) },
+                modifier = Modifier.semantics { contentDescription = country.englishName },
+                colors =
+                    FilterChipDefaults.filterChipColors(
+                        containerColor = card_surface,
+                        selectedContainerColor = glass_accent,
+                    ),
+                border =
+                    FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = selected,
+                        borderColor = card_border,
+                        selectedBorderColor = glass_accent,
+                    ),
+            )
+        }
+    }
 }
 
 @Composable

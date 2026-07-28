@@ -12,16 +12,19 @@ import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.util.IconStorage
 import com.freqcast.util.LocationProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
-enum class DiscoverSearchMode { NAME, GENRE, COUNTRY, LANGUAGE, NEARBY }
+enum class DiscoverSearchMode { NAME, GENRE, COUNTRY, NEARBY }
 
 data class DiscoverStationsUiState(
     val query: String = "",
@@ -63,6 +66,10 @@ class DiscoverStationsViewModel(
         _uiState.value =
             _uiState.value.copy(
                 mode = mode,
+                // Each mode's query means something different (free text vs. a picked country
+                // name) — carrying it over would silently search the new mode with a leftover
+                // value the user never entered there.
+                query = "",
                 results = emptyList(),
                 isSearching = false,
                 hasSearched = false,
@@ -98,7 +105,11 @@ class DiscoverStationsViewModel(
                             longitude = location.longitude,
                             radiusMeters = NEARBY_RADIUS_METERS,
                         )
+                    coroutineContext.ensureActive()
                     _uiState.value = _uiState.value.copy(results = results, isSearching = false, hasSearched = true)
+                } catch (e: CancellationException) {
+                    // Superseded by a newer search (searchJob?.cancel()), not a real failure.
+                    throw e
                 } catch (e: Exception) {
                     Log.e(TAG, "searchNearby failed", e)
                     _uiState.value =
@@ -141,12 +152,21 @@ class DiscoverStationsViewModel(
                 DiscoverSearchMode.NAME -> RadioBrowserApi.SearchBy.NAME
                 DiscoverSearchMode.GENRE -> RadioBrowserApi.SearchBy.TAG
                 DiscoverSearchMode.COUNTRY -> RadioBrowserApi.SearchBy.COUNTRY
-                DiscoverSearchMode.LANGUAGE -> RadioBrowserApi.SearchBy.LANGUAGE
                 DiscoverSearchMode.NEARBY -> return
             }
         try {
             val results = api.search(query, searchBy)
+            // api.search()'s blocking OkHttp call isn't itself interruptible, so a cancellation
+            // requested while it was in flight may not have surfaced as an exception yet by the
+            // time it returns — check explicitly rather than let a stale, superseded search's
+            // results overwrite whatever the newer search already put in _uiState.
+            coroutineContext.ensureActive()
             _uiState.value = _uiState.value.copy(results = results, isSearching = false, hasSearched = true)
+        } catch (e: CancellationException) {
+            // scheduleSearch() cancels this job whenever a newer keystroke supersedes it — if that
+            // lands while api.search() is already in flight, it surfaces here, not just as a
+            // cancelled delay(); not a real failure, so it must not become discover_search_error.
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "search failed: query=\"$query\", searchBy=$searchBy", e)
             _uiState.value =

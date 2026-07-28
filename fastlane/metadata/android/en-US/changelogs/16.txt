@@ -1,0 +1,5 @@
+Discover: "Country" search is now a tappable flag picker (Russia, Belarus, USA, Spain, Germany, France, Italy, UK, Poland, China) instead of free-text entry; removed the "Language" search mode.
+
+Settings now shows the installed app version and whether a newer one is available on GitHub Releases.
+
+Station search is more reliable: results are cached briefly, failed requests retry automatically against a fresh connection, and switching search tabs no longer leaves the previous tab's text behind. Fixed a bug where a search superseded by newer typing could show a spurious error or overwrite the newer search's results.

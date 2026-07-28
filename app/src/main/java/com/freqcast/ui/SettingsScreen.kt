@@ -1,5 +1,9 @@
 package com.freqcast.ui
 
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -8,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +38,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,13 +82,24 @@ private fun languageOptions(): List<LanguageOption> =
         LanguageOption("zh-CN", "中文"),
     )
 
+/** The installed app's own version name (e.g. "3.4.3"), shown in the Settings footer. */
+private fun currentVersionName(context: android.content.Context): String =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+            .versionName
+    } else {
+        @Suppress("DEPRECATION")
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.orEmpty()
+
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val repository = RadioStationRepository.create(this)
-        val viewModelFactory = SettingsViewModel.provideFactory(repository)
+        val viewModelFactory = SettingsViewModel.provideFactory(repository, currentVersionName(this))
 
         setContent {
             FreqcastTheme {
@@ -104,6 +121,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val uiState by viewModel.uiState.collectAsState()
     val settingsStore = remember { SettingsStore(context) }
     var warnOnMeteredConnection by remember { mutableStateOf(settingsStore.warnOnMeteredConnection) }
     var timeshiftBufferSizeMb by remember { mutableStateOf(settingsStore.timeshiftBufferSizeMb) }
@@ -343,6 +361,48 @@ fun SettingsScreen(
                     Text(stringResource(R.string.import_stations), color = text_primary)
                 }
             }
+
+            AppVersionFooter(uiState = uiState)
+        }
+    }
+}
+
+@Composable
+private fun AppVersionFooter(uiState: SettingsUiState) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp).padding(top = Spacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            stringResource(R.string.settings_version, uiState.currentVersion),
+            color = text_hint,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        when (uiState.updateStatus) {
+            UpdateStatus.AVAILABLE -> {
+                Text(
+                    stringResource(R.string.settings_update_available),
+                    color = glass_accent,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier =
+                        Modifier.clickable {
+                            uiState.updateUrl?.let { url ->
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            }
+                        },
+                )
+            }
+
+            UpdateStatus.UP_TO_DATE -> {
+                Text(
+                    stringResource(R.string.settings_up_to_date),
+                    color = text_hint,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            UpdateStatus.UNKNOWN -> {}
         }
     }
 }

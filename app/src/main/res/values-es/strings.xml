@@ -78,11 +78,8 @@
     <string name="discover_search_mode_name">Nombre</string>
     <string name="discover_search_mode_genre">Género</string>
     <string name="discover_search_mode_country">País</string>
-    <string name="discover_search_mode_language">Idioma</string>
     <string name="discover_search_hint_name">Buscar por nombre de emisora…</string>
     <string name="discover_search_hint_genre">Buscar por género, p. ej. jazz…</string>
-    <string name="discover_search_hint_country">Buscar por país…</string>
-    <string name="discover_search_hint_language">Buscar por idioma, p. ej. español…</string>
     <string name="discover_search_error">Error de búsqueda. Comprueba tu conexión e inténtalo de nuevo</string>
     <string name="discover_empty_results">No se encontraron emisoras</string>
     <string name="discover_prompt">Busca en el directorio de Radio Browser para encontrar emisoras que añadir</string>
@@ -122,6 +119,9 @@
     <string name="settings_language">Idioma</string>
     <string name="settings_language_description">Elige el idioma de la app</string>
     <string name="settings_language_system_default">Predeterminado del sistema</string>
+    <string name="settings_version">Versión %1$s</string>
+    <string name="settings_update_available">Actualización disponible</string>
+    <string name="settings_up_to_date">Ya tienes la última versión</string>
     <string name="metered_connection_dialog_title">Conexión de datos móviles</string>
     <string name="metered_connection_dialog_message">Estás en una conexión medida. Reproducir esta emisora puede consumir tus datos móviles.</string>
     <string name="metered_connection_continue">Reproducir de todos modos</string>

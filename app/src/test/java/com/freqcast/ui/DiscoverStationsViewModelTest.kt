@@ -169,6 +169,31 @@ class DiscoverStationsViewModelTest {
         }
 
     @Test
+    fun `cancelling an in-flight search does not surface an error once its late response arrives`() =
+        runTest {
+            // Delayed so the request is still in flight (not yet resumed) when we cancel it below —
+            // server.takeRequest() is a real synchronization barrier confirming that, unlike racing
+            // two overlapping requests against each other and hoping they land in a given order.
+            server.enqueue(
+                MockResponse()
+                    .setBody("[]")
+                    .setBodyDelay(500, TimeUnit.MILLISECONDS),
+            )
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("jazz")
+            advanceUntilIdle()
+            server.takeRequest(5, TimeUnit.SECONDS)
+            // Switching modes cancels the in-flight search job (scheduleSearch()'s searchJob?.cancel()).
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+            Thread.sleep(700) // let the cancelled call's delayed response arrive and get processed
+            advanceUntilIdle() // pump the now-ready continuation through the virtual test dispatcher
+
+            assertNull(viewModel.uiState.value.errorRes)
+        }
+
+    @Test
     fun `blank query clears results without calling the API`() =
         runTest {
             val viewModel = createViewModel(testScheduler)
@@ -341,21 +366,6 @@ class DiscoverStationsViewModelTest {
 
             assertEquals("/missing.png", request?.path)
             assertNull(database.radioStationDao().getAllStations()[0].customIcon)
-        }
-
-    @Test
-    fun `onModeChange to LANGUAGE searches by language`() =
-        runTest {
-            server.enqueue(MockResponse().setBody("[]"))
-            val viewModel = createViewModel(testScheduler)
-            advanceUntilIdle()
-
-            viewModel.onModeChange(DiscoverSearchMode.LANGUAGE)
-            viewModel.onQueryChange("english")
-            awaitTrue { viewModel.uiState.value.hasSearched }
-
-            val request = server.takeRequest()
-            assertTrue(request.path?.contains("language=english") == true)
         }
 
     @Test
