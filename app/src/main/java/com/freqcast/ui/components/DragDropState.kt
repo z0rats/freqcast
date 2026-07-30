@@ -88,7 +88,12 @@ class DragDropState internal constructor(
             draggingItemIndex = target.index
         }
 
-        // Auto-scroll the list when dragging near its top/bottom edge.
+        // Auto-scroll the list when dragging near its top/bottom edge. Capped at scrollEdgeSize
+        // per tick (not left to grow with how far past the edge the finger has travelled) and
+        // gated on there actually being somewhere left to scroll to. Without both, holding the
+        // drag at the very first/last item keeps requesting an ever-larger, pointless scroll on
+        // every single onDrag call - which, fighting the swap-target search below over the same
+        // still-settling layoutInfo, is what produces the heavy jitter right at the list's edge.
         val viewportStart = state.layoutInfo.viewportStartOffset
         val viewportEnd = state.layoutInfo.viewportEndOffset
         val scrollEdgeSize = (viewportEnd - viewportStart) / 6f
@@ -96,9 +101,17 @@ class DragDropState internal constructor(
         val distanceFromStart = startOffset - viewportStart
         val overscroll =
             when {
-                distanceFromEnd < scrollEdgeSize -> scrollEdgeSize - distanceFromEnd
-                distanceFromStart < scrollEdgeSize -> -(scrollEdgeSize - distanceFromStart)
-                else -> 0f
+                distanceFromEnd < scrollEdgeSize && state.canScrollForward -> {
+                    (scrollEdgeSize - distanceFromEnd).coerceAtMost(scrollEdgeSize)
+                }
+
+                distanceFromStart < scrollEdgeSize && state.canScrollBackward -> {
+                    -(scrollEdgeSize - distanceFromStart).coerceAtMost(scrollEdgeSize)
+                }
+
+                else -> {
+                    0f
+                }
             }
         if (overscroll != 0f) {
             scope.launch { scrollChannel.trySend(overscroll) }

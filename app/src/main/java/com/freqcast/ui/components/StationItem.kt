@@ -1,7 +1,7 @@
 package com.freqcast.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -31,9 +31,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +60,7 @@ import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.IconStorage
+import kotlinx.coroutines.launch
 
 @Composable
 fun StationItem(
@@ -77,19 +78,24 @@ fun StationItem(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val scope = rememberCoroutineScope()
+    // Animatable + snapTo/animateTo (not animateFloatAsState) so the card tracks the finger 1:1
+    // during the drag itself - only the release/close settle is animated. Mirrors
+    // NowPlayingBottomBar's station-switch drag for the same reason: wrapping every intermediate
+    // drag value in a tween, as this used to, adds lag between finger and card mid-swipe.
+    val offsetAnim = remember { Animatable(0f) }
     var isSwipeRevealed by remember { mutableStateOf(false) }
     // Wide enough to reveal 3 action buttons (Edit, Share, Delete): 3 * 48dp + 2 * 8dp spacing + 16dp end padding.
     val revealThreshold = 184.dp
     val cardSpacing = Spacing.sm
     val revealThresholdPx = with(density) { revealThreshold.toPx() }
     val cardSpacingPx = with(density) { cardSpacing.toPx() }
+    val maxOffsetPx = -(revealThresholdPx + cardSpacingPx)
+    val settleSpec = tween<Float>(durationMillis = 300)
 
-    val animatedOffset by animateFloatAsState(
-        targetValue = dragOffset,
-        animationSpec = tween(300),
-        label = "swipeOffset",
-    )
+    fun settleTo(target: Float) {
+        scope.launch { offsetAnim.animateTo(target, settleSpec) }
+    }
 
     Box(
         modifier =
@@ -99,7 +105,7 @@ fun StationItem(
                 .clipToBounds(),
     ) {
         AnimatedVisibility(
-            visible = isSwipeRevealed || dragOffset < 0f,
+            visible = isSwipeRevealed || offsetAnim.value < 0f,
             modifier =
                 Modifier
                     .zIndex(0f)
@@ -109,17 +115,17 @@ fun StationItem(
             SwipeActionsBackground(
                 onEditClick = {
                     isSwipeRevealed = false
-                    dragOffset = 0f
+                    settleTo(0f)
                     onEditClick()
                 },
                 onShareClick = {
                     isSwipeRevealed = false
-                    dragOffset = 0f
+                    settleTo(0f)
                     onShareClick()
                 },
                 onDeleteClick = {
                     isSwipeRevealed = false
-                    dragOffset = 0f
+                    settleTo(0f)
                     onDeleteClick()
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -137,7 +143,7 @@ fun StationItem(
             onPlayClick = {
                 if (isSwipeRevealed) {
                     isSwipeRevealed = false
-                    dragOffset = 0f
+                    settleTo(0f)
                 } else {
                     onPlayClick()
                 }
@@ -145,7 +151,7 @@ fun StationItem(
             onCardClick = {
                 if (isSwipeRevealed) {
                     isSwipeRevealed = false
-                    dragOffset = 0f
+                    settleTo(0f)
                 }
             },
             modifier =
@@ -155,7 +161,7 @@ fun StationItem(
                     .padding(end = cardSpacing)
                     .then(
                         with(density) {
-                            Modifier.offset(x = animatedOffset.toDp())
+                            Modifier.offset(x = offsetAnim.value.toDp())
                         },
                     ).then(
                         // Swiping to reveal edit/share/delete is suppressed while this item is
@@ -167,20 +173,14 @@ fun StationItem(
                             Modifier.pointerInput(Unit) {
                                 detectHorizontalDragGestures(
                                     onDragEnd = {
-                                        val maxOffset = -(revealThresholdPx + cardSpacingPx)
-                                        val shouldReveal = dragOffset < maxOffset / 2
+                                        val shouldReveal = offsetAnim.value < maxOffsetPx / 2
                                         isSwipeRevealed = shouldReveal
-                                        if (shouldReveal) {
-                                            dragOffset = maxOffset
-                                        } else {
-                                            dragOffset = 0f
-                                        }
+                                        settleTo(if (shouldReveal) maxOffsetPx else 0f)
                                     },
                                 ) { _, dragAmount ->
-                                    val maxOffset = -(revealThresholdPx + cardSpacingPx)
-                                    val newOffset = (dragOffset + dragAmount).coerceIn(maxOffset, 0f)
-                                    dragOffset = newOffset
-                                    isSwipeRevealed = newOffset < maxOffset / 2
+                                    val newOffset = (offsetAnim.value + dragAmount).coerceIn(maxOffsetPx, 0f)
+                                    isSwipeRevealed = newOffset < maxOffsetPx / 2
+                                    scope.launch { offsetAnim.snapTo(newOffset) }
                                 }
                             }
                         },
