@@ -1,0 +1,5 @@
+Now Playing screen redesign: full-bleed artwork, real station icons instead of just emoji, and long-press to copy the station name or track title.
+
+Fixed jittery drag-to-reorder near the top/bottom of the station list and laggy swipe-to-reveal on station rows.
+
+More reliable connection-error and playback-status reporting across the mini player, full player, and widget.
