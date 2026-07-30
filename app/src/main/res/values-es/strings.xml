@@ -75,6 +75,8 @@
     <string name="import_result">Importadas %1$d, omitidos %2$d duplicados</string>
     <string name="copy_track_title">Copiar título de la pista</string>
     <string name="track_title_copied">Título de la pista copiado</string>
+    <string name="copy_station_name">Copiar nombre de la emisora</string>
+    <string name="station_name_copied">Nombre de la emisora copiado</string>
     <string name="discover_stations">Descubrir emisoras</string>
     <string name="discover_search_mode_name">Nombre</string>
     <string name="discover_search_mode_genre">Género</string>

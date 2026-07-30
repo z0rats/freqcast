@@ -7,18 +7,24 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,22 +45,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -69,39 +73,49 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.freqcast.R
+import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.components.PlaybackPresentation
 import com.freqcast.ui.components.rememberPlaybackPresentation
+import com.freqcast.ui.components.rememberStationIconBitmap
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
 import com.freqcast.ui.theme.background_gradient_end
+import com.freqcast.ui.theme.background_gradient_mid
 import com.freqcast.ui.theme.background_gradient_start
 import com.freqcast.ui.theme.card_border
 import com.freqcast.ui.theme.card_surface
 import com.freqcast.ui.theme.card_surface_active
 import com.freqcast.ui.theme.freqcastGradientBackground
 import com.freqcast.ui.theme.glass_accent
-import com.freqcast.ui.theme.glass_primary
 import com.freqcast.ui.theme.isLandscape
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.ClipExport
 import com.freqcast.util.EmojiGenerator
+import com.freqcast.util.IconStorage
 import com.freqcast.util.formatOffsetFromLive
 import com.freqcast.util.isNetworkAvailable
+import kotlinx.coroutines.launch
 
 class PlaybackActivity : AppCompatActivity() {
     // Must be Compose-observable state (not a plain var): onServiceConnected fires asynchronously
@@ -109,9 +123,11 @@ class PlaybackActivity : AppCompatActivity() {
     // leaving PlaybackScreen's playbackService parameter (and everything derived from it -
     // isPlaying, track title, sleep timer countdown) permanently stuck at its initial null value.
     private val playbackServiceState = mutableStateOf<RadioPlaybackService?>(null)
+    private val customIconState = mutableStateOf<String?>(null)
     private var isBound = false
     private var stationName: String? = null
     private var streamUrl: String? = null
+    private val repository by lazy { RadioStationRepository.create(this) }
 
     companion object {
         const val EXTRA_STATION_ID = "station_id"
@@ -134,16 +150,6 @@ class PlaybackActivity : AppCompatActivity() {
             override fun onServiceDisconnected(name: ComponentName?) {
                 playbackServiceState.value = null
                 isBound = false
-                Handler(Looper.getMainLooper()).post {
-                    if (RadioPlaybackService.getAndClearConnectionError()) {
-                        Toast
-                            .makeText(
-                                this@PlaybackActivity.applicationContext,
-                                getString(R.string.connection_failed),
-                                Toast.LENGTH_LONG,
-                            ).show()
-                    }
-                }
             }
         }
 
@@ -181,9 +187,11 @@ class PlaybackActivity : AppCompatActivity() {
         setContent {
             FreqcastTheme {
                 val playbackService by playbackServiceState
+                val customIcon by customIconState
                 PlaybackScreen(
                     stationName = stationName,
                     streamUrl = streamUrl,
+                    customIcon = customIcon,
                     playbackService = playbackService,
                     onBackClick = { finish() },
                     onPlayStopClick = { togglePlayback() },
@@ -205,6 +213,7 @@ class PlaybackActivity : AppCompatActivity() {
         if (intentStationName != null && intentStreamUrl != null) {
             stationName = intentStationName
             streamUrl = intentStreamUrl
+            loadCustomIcon(intentStreamUrl)
             // Launched from an App Shortcut (long-press launcher icon): start playing immediately
             // instead of just showing the screen and waiting for the user to tap Play. At this
             // point the service isn't bound yet, so togglePlayback() takes its "service == null"
@@ -215,27 +224,21 @@ class PlaybackActivity : AppCompatActivity() {
             return
         }
 
-        if (playbackServiceState.value != null) {
-            val currentMediaId =
-                playbackServiceState.value
-                    ?.getPlayer()
-                    ?.currentMediaItem
-                    ?.mediaId
-            if (currentMediaId != null) {
-                streamUrl = currentMediaId
-                val serviceStationName = playbackServiceState.value?.getCurrentStationName()
-                if (serviceStationName != null) {
-                    stationName = serviceStationName
-                }
-                return
-            }
-        }
+        if (syncFromService()) return
 
         if (intentStationName != null) {
             stationName = intentStationName
         }
         if (intentStreamUrl != null) {
             streamUrl = intentStreamUrl
+            loadCustomIcon(intentStreamUrl)
+        }
+    }
+
+    private fun loadCustomIcon(url: String?) {
+        val target = url ?: return
+        lifecycleScope.launch {
+            customIconState.value = repository.getStationByUrl(target)?.customIcon
         }
     }
 
@@ -248,20 +251,20 @@ class PlaybackActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (playbackServiceState.value != null) {
-            val currentMediaId =
-                playbackServiceState.value
-                    ?.getPlayer()
-                    ?.currentMediaItem
-                    ?.mediaId
-            if (currentMediaId != null && currentMediaId != streamUrl) {
-                streamUrl = currentMediaId
-                val serviceStationName = playbackServiceState.value?.getCurrentStationName()
-                if (serviceStationName != null) {
-                    stationName = serviceStationName
-                }
-            }
-        }
+        syncFromService()
+    }
+
+    private fun syncFromService(): Boolean {
+        val currentMediaId =
+            playbackServiceState.value
+                ?.getPlayer()
+                ?.currentMediaItem
+                ?.mediaId ?: return false
+        if (currentMediaId == streamUrl) return false
+        streamUrl = currentMediaId
+        playbackServiceState.value?.getCurrentStationName()?.let { stationName = it }
+        loadCustomIcon(currentMediaId)
+        return true
     }
 
     override fun onDestroy() {
@@ -318,6 +321,7 @@ class PlaybackActivity : AppCompatActivity() {
 fun PlaybackScreen(
     stationName: String?,
     streamUrl: String?,
+    customIcon: String?,
     playbackService: RadioPlaybackService?,
     onBackClick: () -> Unit,
     onPlayStopClick: () -> Unit,
@@ -346,9 +350,21 @@ fun PlaybackScreen(
             },
         ) { paddingValues ->
             val presentation = rememberPlaybackPresentation(playbackService, streamUrl)
+
+            val context = LocalContext.current
+            var lastShownConnectionErrorAt by remember { mutableStateOf<Long?>(null) }
+            LaunchedEffect(presentation.connectionErrorAt) {
+                val errorAt = presentation.connectionErrorAt
+                if (errorAt != null && errorAt != lastShownConnectionErrorAt) {
+                    lastShownConnectionErrorAt = errorAt
+                    Toast.makeText(context, context.getString(R.string.connection_failed), Toast.LENGTH_LONG).show()
+                }
+            }
+
             NowPlayingContent(
                 stationName = stationName,
                 streamUrl = streamUrl,
+                customIcon = customIcon,
                 playbackService = playbackService,
                 presentation = presentation,
                 onPlayStopClick = onPlayStopClick,
@@ -364,6 +380,7 @@ fun PlaybackScreen(
 fun NowPlayingContent(
     stationName: String?,
     streamUrl: String?,
+    customIcon: String?,
     playbackService: RadioPlaybackService?,
     presentation: PlaybackPresentation,
     onPlayStopClick: () -> Unit,
@@ -397,109 +414,55 @@ fun NowPlayingContent(
         }
     }
 
+    val landscape = isLandscape()
+    val emoji = EmojiGenerator.getEmojiForStation(displayName, streamUrl ?: "")
+
+    // No card: art bleeds straight into the gradient background (Spotify/Apple Music-style
+    // "full-bleed hero" rather than a boxed panel) - see the playback-redesign artifact for why.
     Column(
-        modifier =
-            modifier
-                .verticalScroll(rememberScrollState())
-                .padding(Spacing.lg),
+        modifier = modifier.verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val landscape = isLandscape()
-        val emoji = EmojiGenerator.getEmojiForStation(displayName, streamUrl ?: "")
-        Card(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = if (landscape) 760.dp else 520.dp)
-                    .border(width = 1.dp, color = card_border, shape = MaterialTheme.shapes.large),
-            colors =
-                CardDefaults.cardColors(
-                    containerColor = glass_primary,
-                ),
-            shape = MaterialTheme.shapes.large,
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        ) {
-            // Landscape mirrors the "art pane + controls pane" layout of Spotify/Apple
-            // Music's now-playing screen: side-by-side instead of stacked, so nothing
-            // needs scrolling on a phone's limited landscape height.
-            if (landscape) {
-                Row(
-                    modifier = Modifier.padding(Spacing.lg),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.lg),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-                    ) {
-                        StationArt(emoji = emoji, tileSize = 128.dp, showLiveBadge = isPlaying && isAtLive)
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.titleLarge,
-                            color = text_primary,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                        )
-                    }
-                    Column(
-                        modifier = Modifier.weight(1.2f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-                    ) {
-                        if (isPlaying && trackTitle != null) {
-                            TrackTitleRow(trackTitle = trackTitle ?: "", context = context)
-                        }
-                        if (hasTimeshift) {
-                            TimeshiftControls(
-                                isAtLive = isAtLive,
-                                bufferedDurationMs = bufferedDurationMs,
-                                offsetFromLiveMs = offsetFromLiveMs,
-                                onSeekToOffset = { playbackService?.seekToOffsetFromLive(it) },
-                                onRewind = { playbackService?.seekBackward(it) },
-                                onSeekToLive = { playbackService?.seekToLive() },
-                            )
-                        }
-                        PlayStopButton(isPlaying = isPlaying, onClick = onPlayStopClick, size = 60.dp)
-                        PlayerDock {
-                            SleepTimerControl(
-                                sleepTimerRemainingMs = sleepTimerRemainingMs,
-                                playbackService = playbackService,
-                                context = context,
-                            )
-                            if (hasTimeshift && clipFormatAvailable) {
-                                ClipExportControl(
-                                    stationName = displayName,
-                                    bufferedDurationMs = bufferedDurationMs,
-                                    playbackService = playbackService,
-                                    context = context,
-                                )
-                            }
-                        }
-                    }
-                }
-            } else {
+        // Landscape mirrors the "art pane + controls pane" layout of Spotify/Apple Music's
+        // now-playing screen: side-by-side instead of stacked, so nothing needs scrolling on a
+        // phone's limited landscape height.
+        if (landscape) {
+            Row(
+                modifier = Modifier.widthIn(max = 760.dp).padding(Spacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.lg),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column(
-                    modifier = Modifier.padding(Spacing.md),
+                    modifier = Modifier.weight(1f),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
-                    StationArt(emoji = emoji, tileSize = 168.dp, showLiveBadge = isPlaying && isAtLive)
-
-                    Text(
+                    StationArt(
+                        customIcon = customIcon,
+                        fallbackEmoji = emoji,
+                        tileSize = 148.dp,
+                        showLiveBadge = isPlaying && isAtLive,
+                    )
+                    CopyableLabel(
                         text = displayName,
-                        style = MaterialTheme.typography.headlineMedium,
+                        valueToCopy = displayName,
+                        copiedMessage = stringResource(R.string.station_name_copied),
+                        longClickLabel = stringResource(R.string.copy_station_name),
+                        style = MaterialTheme.typography.titleLarge,
                         color = text_primary,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                     )
-
+                }
+                Column(
+                    modifier = Modifier.weight(1.2f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
                     if (isPlaying && trackTitle != null) {
-                        TrackTitleRow(trackTitle = trackTitle ?: "", context = context)
+                        TrackTitleRow(trackTitle = trackTitle ?: "")
                     }
-
                     if (hasTimeshift) {
-                        Spacer(modifier = Modifier.height(Spacing.xs))
                         TimeshiftControls(
                             isAtLive = isAtLive,
                             bufferedDurationMs = bufferedDurationMs,
@@ -509,10 +472,7 @@ fun NowPlayingContent(
                             onSeekToLive = { playbackService?.seekToLive() },
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(Spacing.xs))
-                    PlayStopButton(isPlaying = isPlaying, onClick = onPlayStopClick, size = 72.dp)
-
+                    PlayPauseButton(isPlaying = isPlaying, onClick = onPlayStopClick, size = 60.dp)
                     PlayerDock {
                         SleepTimerControl(
                             sleepTimerRemainingMs = sleepTimerRemainingMs,
@@ -530,7 +490,132 @@ fun NowPlayingContent(
                     }
                 }
             }
+        } else {
+            HeroArtBand(
+                customIcon = customIcon,
+                fallbackEmoji = emoji,
+                showLiveBadge = isPlaying && isAtLive,
+            )
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 520.dp)
+                        .padding(horizontal = Spacing.lg)
+                        .padding(top = Spacing.sm, bottom = Spacing.md),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                CopyableLabel(
+                    text = displayName,
+                    valueToCopy = displayName,
+                    copiedMessage = stringResource(R.string.station_name_copied),
+                    longClickLabel = stringResource(R.string.copy_station_name),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = text_primary,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+
+                if (isPlaying && trackTitle != null) {
+                    TrackTitleRow(trackTitle = trackTitle ?: "")
+                }
+
+                if (hasTimeshift) {
+                    Spacer(modifier = Modifier.height(Spacing.xs))
+                    TimeshiftControls(
+                        isAtLive = isAtLive,
+                        bufferedDurationMs = bufferedDurationMs,
+                        offsetFromLiveMs = offsetFromLiveMs,
+                        onSeekToOffset = { playbackService?.seekToOffsetFromLive(it) },
+                        onRewind = { playbackService?.seekBackward(it) },
+                        onSeekToLive = { playbackService?.seekToLive() },
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.xs))
+                PlayPauseButton(isPlaying = isPlaying, onClick = onPlayStopClick, size = 64.dp)
+                Spacer(modifier = Modifier.height(Spacing.xs))
+
+                PlayerDock {
+                    SleepTimerControl(
+                        sleepTimerRemainingMs = sleepTimerRemainingMs,
+                        playbackService = playbackService,
+                        context = context,
+                    )
+                    if (hasTimeshift && clipFormatAvailable) {
+                        ClipExportControl(
+                            stationName = displayName,
+                            bufferedDurationMs = bufferedDurationMs,
+                            playbackService = playbackService,
+                            context = context,
+                        )
+                    }
+                }
+            }
         }
+    }
+}
+
+/**
+ * Full-bleed hero art band for the portrait now-playing layout (replaces the old boxed glass
+ * card - see the playback-redesign artifact): a large radial-gradient tile with
+ * the station's icon, blending into the screen's own background gradient via a bottom scrim
+ * instead of sitting inside a separate panel.
+ */
+@Composable
+private fun HeroArtBand(
+    customIcon: String?,
+    fallbackEmoji: String,
+    showLiveBadge: Boolean,
+) {
+    val iconBitmap = rememberStationIconBitmap(customIcon)
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(background_gradient_end, background_gradient_mid, background_gradient_start),
+                    ),
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (iconBitmap != null) {
+            Image(
+                bitmap = iconBitmap.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.size(132.dp).clip(RoundedCornerShape(28.dp)),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Text(
+                text = customIcon?.takeUnless(IconStorage::isImagePath) ?: fallbackEmoji,
+                fontSize = 80.sp,
+            )
+        }
+        if (showLiveBadge) {
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(14.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .padding(horizontal = Spacing.sm, vertical = 4.dp),
+            ) {
+                LiveTag(active = true)
+            }
+        }
+        Box(
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, background_gradient_start))),
+        )
     }
 }
 
@@ -539,6 +624,7 @@ fun NowPlayingContent(
  * the buffer, or tap a step button for a quick jump. Replaces the old fixed "−5s" button with a
  * visual sense of how much buffer is available and where playback currently sits within it.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimeshiftControls(
     isAtLive: Boolean,
@@ -570,6 +656,13 @@ private fun TimeshiftControls(
                 draggingSeconds = null
             },
             valueRange = 0f..bufferedSeconds,
+            colors =
+                SliderDefaults.colors(
+                    thumbColor = glass_accent,
+                    activeTrackColor = glass_accent,
+                    inactiveTrackColor = card_surface_active,
+                ),
+            thumb = { ScrubThumb() },
             modifier =
                 Modifier
                     .fillMaxWidth()
@@ -587,30 +680,102 @@ private fun TimeshiftControls(
             )
             LiveTag(active = isAtLive)
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = Spacing.xs),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-        ) {
-            listOf(15, 30, 60).forEach { seconds ->
-                RewindChip(
-                    label = "−${seconds}s",
-                    highlighted = false,
-                    enabled = true,
-                    contentDescription = stringResource(R.string.rewind_seconds, seconds),
-                    onClick = { onRewind(seconds * 1000L) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            val goLiveLabel = stringResource(R.string.go_live)
-            RewindChip(
-                label = goLiveLabel,
-                highlighted = !isAtLive,
-                enabled = !isAtLive,
-                contentDescription = goLiveLabel,
-                onClick = onSeekToLive,
+        SegmentedRewindRow(
+            isAtLive = isAtLive,
+            onRewind = onRewind,
+            onSeekToLive = onSeekToLive,
+            modifier = Modifier.padding(top = Spacing.xs),
+        )
+    }
+}
+
+/** Glowing scrub-bar thumb: a solid amber dot with a soft halo, replacing the barely-visible default. */
+@Composable
+private fun ScrubThumb() {
+    Box(contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(20.dp).background(glass_accent.copy(alpha = 0.22f), CircleShape))
+        Box(modifier = Modifier.size(12.dp).background(glass_accent, CircleShape))
+    }
+}
+
+/**
+ * −15s/−30s/−60s/Go-live as one continuous segmented control (single background, hairline
+ * dividers between segments) instead of four separate chip boxes - reads as one control for one
+ * job (jump within the timeshift buffer), not four unrelated buttons.
+ */
+@Composable
+private fun SegmentedRewindRow(
+    isAtLive: Boolean,
+    onRewind: (Long) -> Unit,
+    onSeekToLive: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .background(card_surface_active)
+                .border(width = 1.dp, color = card_border, shape = MaterialTheme.shapes.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf(15, 30, 60).forEachIndexed { index, seconds ->
+            if (index > 0) SegmentDivider()
+            SegmentButton(
+                label = "−${seconds}s",
+                highlighted = false,
+                contentDescription = stringResource(R.string.rewind_seconds, seconds),
+                onClick = { onRewind(seconds * 1000L) },
                 modifier = Modifier.weight(1f),
             )
         }
+        SegmentDivider()
+        val goLiveLabel = stringResource(R.string.go_live)
+        SegmentButton(
+            label = goLiveLabel,
+            highlighted = !isAtLive,
+            enabled = !isAtLive,
+            contentDescription = goLiveLabel,
+            onClick = onSeekToLive,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun SegmentDivider() {
+    Box(modifier = Modifier.height(28.dp).width(1.dp).background(card_border))
+}
+
+@Composable
+private fun SegmentButton(
+    label: String,
+    highlighted: Boolean,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier =
+            modifier
+                .background(if (highlighted) MaterialTheme.colorScheme.primary else Color.Transparent)
+                .clickable(enabled = enabled, onClick = onClick)
+                .semantics { this.contentDescription = contentDescription }
+                .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color =
+                if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    text_primary.copy(alpha = if (enabled) 1f else 0.4f)
+                },
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -641,43 +806,19 @@ private fun LiveTag(
     }
 }
 
-/** Compact, equal-width jump control used for the −15s/−30s/−60s/Go-live row — sized to always fit one line. */
-@Composable
-private fun RewindChip(
-    label: String,
-    highlighted: Boolean,
-    enabled: Boolean,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val tint = if (highlighted) glass_accent else text_primary
-    Box(
-        modifier =
-            modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (highlighted) glass_accent.copy(alpha = 0.2f) else card_surface_active)
-                .clickable(enabled = enabled, onClick = onClick)
-                .semantics { this.contentDescription = contentDescription }
-                .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = tint.copy(alpha = if (enabled) 1f else 0.4f),
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-/** Station artwork tile: a gradient tile standing in for cover art, with an optional pill LIVE badge. */
+/**
+ * Station artwork tile: the station's custom icon image if it has one, an emoji tile otherwise -
+ * mirrors [com.freqcast.ui.components.StationItem]'s icon-vs-emoji fallback so the full player
+ * shows the same artwork as the station list instead of always falling back to the generated emoji.
+ */
 @Composable
 private fun StationArt(
-    emoji: String,
+    customIcon: String?,
+    fallbackEmoji: String,
     tileSize: Dp,
     showLiveBadge: Boolean,
 ) {
+    val iconBitmap = rememberStationIconBitmap(customIcon)
     Box(
         modifier =
             Modifier
@@ -688,7 +829,19 @@ private fun StationArt(
                 ).border(width = 1.dp, color = card_border, shape = RoundedCornerShape(24.dp)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = emoji, fontSize = (tileSize.value * 0.4f).sp)
+        if (iconBitmap != null) {
+            Image(
+                bitmap = iconBitmap.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.size(tileSize).clip(RoundedCornerShape(24.dp)),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Text(
+                text = customIcon?.takeUnless(IconStorage::isImagePath) ?: fallbackEmoji,
+                fontSize = (tileSize.value * 0.4f).sp,
+            )
+        }
         if (showLiveBadge) {
             Box(
                 modifier =
@@ -706,27 +859,16 @@ private fun StationArt(
 }
 
 /**
- * Bottom utility row for Sleep timer / Export clip — icon + short caption side by side under a
- * hairline divider, mirroring how Spotify docks secondary actions below the transport controls
- * instead of as full-text chips competing for row width.
+ * Bottom row for Sleep timer / Export clip - pill buttons in the same rounded-segment language as
+ * [SegmentedRewindRow], rather than a bare icon-over-caption pair that reads as a different
+ * control language from the rest of the screen.
  */
 @Composable
 private fun PlayerDock(content: @Composable RowScope.() -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(modifier = Modifier.height(Spacing.xs))
-        Box(
-            modifier =
-                Modifier
-                    .width(120.dp)
-                    .height(1.dp)
-                    .background(card_border),
-        )
-        Row(
-            modifier = Modifier.padding(top = Spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.lg, Alignment.CenterHorizontally),
-            content = content,
-        )
-    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.CenterHorizontally),
+        content = content,
+    )
 }
 
 @Composable
@@ -739,20 +881,22 @@ private fun DockButton(
     enabled: Boolean = true,
 ) {
     val tint = (if (highlighted) glass_accent else text_hint).copy(alpha = if (enabled) 1f else 0.4f)
-    Column(
+    Row(
         modifier =
             modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(50))
+                .background(if (highlighted) glass_accent.copy(alpha = 0.16f) else card_surface_active)
+                .border(width = 1.dp, color = card_border, shape = RoundedCornerShape(50))
                 .clickable(enabled = enabled, onClick = onClick)
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(horizontal = Spacing.md, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(16.dp),
         )
         Text(
             text = label,
@@ -764,71 +908,125 @@ private fun DockButton(
 }
 
 @Composable
-private fun TrackTitleRow(
-    trackTitle: String,
-    context: Context,
-) {
-    val clipboardManager = LocalClipboardManager.current
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = trackTitle,
-            style = MaterialTheme.typography.bodyLarge,
-            color = text_primary.copy(alpha = 0.8f),
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            modifier = Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE),
-        )
-        IconButton(
-            onClick = {
-                clipboardManager.setText(AnnotatedString(trackTitle))
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                    Toast
-                        .makeText(
-                            context,
-                            context.getString(R.string.track_title_copied),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                }
-            },
-            modifier = Modifier.size(32.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.ContentCopy,
-                contentDescription = stringResource(R.string.copy_track_title),
-                modifier = Modifier.size(16.dp),
-                tint = text_hint,
-            )
-        }
-    }
+private fun TrackTitleRow(trackTitle: String) {
+    CopyableLabel(
+        text = trackTitle,
+        valueToCopy = trackTitle,
+        copiedMessage = stringResource(R.string.track_title_copied),
+        longClickLabel = stringResource(R.string.copy_track_title),
+        style = MaterialTheme.typography.bodyLarge,
+        color = text_primary.copy(alpha = 0.8f),
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+    )
 }
 
-/** Circular transport control — the app's one primary action, so it gets the theme's primary color. */
+/**
+ * Text label that copies [valueToCopy] to the clipboard on long-press (no visible copy button -
+ * long-press is the whole affordance, same gesture as everywhere else in the OS for "copy this
+ * text"). Tap is a no-op (indication disabled) since these labels have no other click action.
+ */
 @Composable
-private fun PlayStopButton(
+private fun CopyableLabel(
+    text: String,
+    valueToCopy: String,
+    copiedMessage: String,
+    longClickLabel: String,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+    maxLines: Int = 1,
+    textAlign: TextAlign? = null,
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Text(
+        text = text,
+        style = style,
+        color = color,
+        textAlign = textAlign,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        modifier =
+            modifier.combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onLongClickLabel = longClickLabel,
+                onLongClick = {
+                    clipboardManager.setText(AnnotatedString(valueToCopy))
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                        Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onClick = {},
+            ),
+    )
+}
+
+/**
+ * Circular transport control — the app's one primary action, so it gets the theme's primary
+ * color plus a slow breathing glow (the "signature" touch of the full-bleed redesign - see the
+ * playback-redesign artifact) while actually playing. The glow only animates when [isPlaying],
+ * both because a paused/stopped station has nothing to signal "on air" about, and so this screen
+ * doesn't run an infinite animation for as long as it's simply left open.
+ *
+ * Shows a pause icon while playing (not stop) even though tapping it actually calls
+ * [RadioPlaybackService.stopPlayback] under the hood - matches [com.freqcast.ui.components.StationItem]
+ * and [com.freqcast.ui.components.NowPlayingBottomBar], which both use the same pause glyph/label
+ * for the identical action, so all three transport controls read as one consistent affordance.
+ */
+@Composable
+private fun PlayPauseButton(
     isPlaying: Boolean,
     onClick: () -> Unit,
     size: Dp,
 ) {
-    val description = if (isPlaying) stringResource(R.string.stop) else stringResource(R.string.play)
-    Box(
-        modifier =
-            Modifier
-                .size(size)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-                .clickable(onClick = onClick)
-                .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = if (isPlaying) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(size / 2.2f),
-        )
+    val description = if (isPlaying) stringResource(R.string.pause) else stringResource(R.string.play)
+    Box(contentAlignment = Alignment.Center) {
+        if (isPlaying) {
+            val glowTransition = rememberInfiniteTransition(label = "playGlow")
+            val glowScale by
+                glowTransition.animateFloat(
+                    initialValue = 0.92f,
+                    targetValue = 1.1f,
+                    animationSpec =
+                        infiniteRepeatable(
+                            animation = tween(durationMillis = 2600, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse,
+                        ),
+                    label = "playGlowScale",
+                )
+            Box(
+                modifier =
+                    Modifier
+                        .size(size * 1.5f)
+                        .background(
+                            Brush.radialGradient(listOf(glass_accent.copy(alpha = 0.35f), Color.Transparent)),
+                            CircleShape,
+                        ).graphicsLayer {
+                            scaleX = glowScale
+                            scaleY = glowScale
+                        },
+            )
+        }
+        Box(
+            modifier =
+                Modifier
+                    .size(size)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(onClick = onClick)
+                    .semantics { contentDescription = description },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(size / 2.2f),
+            )
+        }
     }
 }
 

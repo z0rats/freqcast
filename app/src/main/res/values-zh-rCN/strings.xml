@@ -75,6 +75,8 @@
     <string name="import_result">已导入 %1$d 个，跳过 %2$d 个重复项</string>
     <string name="copy_track_title">复制曲目标题</string>
     <string name="track_title_copied">曲目标题已复制</string>
+    <string name="copy_station_name">复制电台名称</string>
+    <string name="station_name_copied">电台名称已复制</string>
     <string name="discover_stations">发现电台</string>
     <string name="discover_search_mode_name">名称</string>
     <string name="discover_search_mode_genre">风格</string>

@@ -75,6 +75,8 @@
     <string name="import_result">Импортировано: %1$d, пропущено дубликатов: %2$d</string>
     <string name="copy_track_title">Скопировать название трека</string>
     <string name="track_title_copied">Название трека скопировано</string>
+    <string name="copy_station_name">Скопировать название станции</string>
+    <string name="station_name_copied">Название станции скопировано</string>
     <string name="discover_stations">Найти станции</string>
     <string name="discover_search_mode_name">Название</string>
     <string name="discover_search_mode_genre">Жанр</string>
