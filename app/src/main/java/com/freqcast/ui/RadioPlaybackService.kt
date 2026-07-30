@@ -63,6 +63,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,6 +80,12 @@ data class PlaybackSnapshot(
     val isAtLive: Boolean = true,
     val trackTitle: String? = null,
     val sleepTimerEndAtMs: Long? = null,
+    val connectionErrorAt: Long? = null,
+    val isRetryPending: Boolean = false,
+    val isConnectionBroken: Boolean = false,
+    val bufferedDurationMs: Long = 0L,
+    val offsetFromLiveMs: Long = 0L,
+    val clipFormatAvailable: Boolean = false,
 )
 
 @UnstableApi
@@ -125,7 +132,30 @@ class RadioPlaybackService : MediaLibraryService() {
     private val _playbackSnapshot = MutableStateFlow(PlaybackSnapshot())
     val playbackSnapshot: StateFlow<PlaybackSnapshot> = _playbackSnapshot.asStateFlow()
 
-    private fun refreshSnapshot() {
+    /**
+     * Monotonic timestamp of the last connection failure (timeshift recorder I/O error, or retry
+     * exhaustion after a network error/loss), or null if none has happened yet in this process.
+     * Never reset back to null - consumers react to the value *changing*, not to its
+     * null/not-null-ness, since a new failure simply overwrites it.
+     */
+    private var lastConnectionErrorAt: Long? = null
+
+    /**
+     * Whether the current stream is in a give-up state (retries exhausted or a fatal error), for
+     * [PlaybackStatus.ERROR][com.freqcast.ui.components.PlaybackStatus] in the UI. Unlike
+     * [lastConnectionErrorAt] (which never resets - it only drives a one-shot Toast on change),
+     * this must flip back to false on the next attempt, or the mini player would show ERROR
+     * forever after the first failure of the session - see [applyPlayback].
+     */
+    private var isConnectionBroken = false
+
+    /**
+     * [updateWidgetToo] is false for the once-a-second timeshift ticker ([onCreate]): the widget
+     * doesn't render buffer/offset, so writing it on every tick would be pure I/O waste (see
+     * [updateWidget]'s SharedPreferences write + [RadioWidget.updateAll]). Every other call site
+     * is an actual event (play/pause/seek/error/etc.) and keeps the default.
+     */
+    private fun refreshSnapshot(updateWidgetToo: Boolean = true) {
         val isPlaying = player?.isPlaying ?: false
         _playbackSnapshot.value =
             PlaybackSnapshot(
@@ -136,8 +166,14 @@ class RadioPlaybackService : MediaLibraryService() {
                 isAtLive = timeshift.isAtLive(),
                 trackTitle = timeshift.currentTrackTitle(),
                 sleepTimerEndAtMs = sleepTimer.endAtMsOrNull(),
+                connectionErrorAt = lastConnectionErrorAt,
+                isRetryPending = retryPolicy.isPendingRetry(),
+                isConnectionBroken = isConnectionBroken,
+                bufferedDurationMs = timeshift.bufferedDurationMs(),
+                offsetFromLiveMs = timeshift.offsetFromLiveMs(),
+                clipFormatAvailable = timeshift.currentClipFormat() != null,
             )
-        updateWidget(isPlaying)
+        if (updateWidgetToo) updateWidget(isPlaying)
     }
 
     /** Pushes the latest station/playing state to the home screen widget (see `widget/RadioWidget`). */
@@ -185,6 +221,24 @@ class RadioPlaybackService : MediaLibraryService() {
         // before any playback has ever started in this process.
         buildMediaSession(streamUrl = null)
         setupNotificationManager()
+        startTimeshiftTicker()
+    }
+
+    /**
+     * Ticks [PlaybackSnapshot.bufferedDurationMs]/[PlaybackSnapshot.offsetFromLiveMs] once a second
+     * while timeshift is recording, so screens can `collect` a growing value instead of polling the
+     * service directly (see [com.freqcast.ui.components.rememberPlaybackPresentation], which used to
+     * do exactly that). One ticker for the whole process instead of one per open screen, and it never
+     * starts/stops itself around the various timeshift start/stop call sites - it just checks
+     * [TimeshiftController.hasTimeshift] each second, which is simpler than tracking lifecycle here.
+     */
+    private fun startTimeshiftTicker() {
+        serviceScope.launch {
+            while (true) {
+                delay(1_000)
+                if (timeshift.hasTimeshift()) refreshSnapshot(updateWidgetToo = false)
+            }
+        }
     }
 
     override fun onStartCommand(
@@ -500,6 +554,7 @@ class RadioPlaybackService : MediaLibraryService() {
         val isHls = isHlsUrl(streamUrl, knownHls)
         Log.d(TAG, "applyPlayback: isHls=$isHls, url=${streamUrl.take(60)}, isRetry=$isRetry")
         retryPolicy.onPlaybackStarted(streamUrl, knownHls, isRetry)
+        isConnectionBroken = false
         playbackStateStore.save(stationName, streamUrl)
         timeshift.stop()
         registerNetworkCallback()
@@ -546,15 +601,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 timeshift.start(
                     streamUrl = streamUrl,
                     maxBufferBytes = SettingsStore(this).timeshiftBufferSizeMb * 1024L * 1024L,
-                    onError = {
-                        mainHandler.post {
-                            markConnectionError()
-                            retryPolicy.markPendingRetry()
-                            timeshift.stop()
-                            notificationManager?.invalidate()
-                            refreshSnapshot()
-                        }
-                    },
+                    onError = { mainHandler.post { onTimeshiftError() } },
                     onMetadata = { title ->
                         mainHandler.post {
                             updateMediaItemMetadataForTrack(title)
@@ -616,23 +663,40 @@ class RadioPlaybackService : MediaLibraryService() {
         }
     }
 
-    private fun tryResumePlaybackAfterNetworkRestored() {
+    /** Internal (not private) so Robolectric tests can drive it directly - see [handlePlayerError]'s doc. */
+    internal fun tryResumePlaybackAfterNetworkRestored() {
         if (!isNetworkAvailable(this)) return
         val p = player ?: return
-        when (val decision = retryPolicy.onNetworkAvailable(isPlayerIdle = p.playbackState == Player.STATE_IDLE)) {
+        handleRetryDecision(retryPolicy.onNetworkAvailable(isPlayerIdle = p.playbackState == Player.STATE_IDLE))
+    }
+
+    /**
+     * Single dispatch point for every [RetryDecision] the policy can produce, regardless of which
+     * caller ([tryResumePlaybackAfterNetworkRestored] or [handlePlayerError]) triggered it - each
+     * caller only ever receives a subset of this sealed type, but funneling both through one `when`
+     * keeps the exhaustive match (and the GiveUp/NoAction handling) in a single place instead of
+     * duplicated per call site.
+     */
+    private fun handleRetryDecision(decision: RetryDecision) {
+        when (decision) {
             is RetryDecision.RetryNow -> {
-                val target = retryPolicy.attemptRetry(decision.attemptId) ?: return
-                Log.d(TAG, "tryResumePlaybackAfterNetworkRestored: state=${p.playbackState}, restarting playback")
-                startPlayback(target.streamUrl, isRetry = true, knownHls = target.knownHls)
+                attemptScheduledRetry(decision.attemptId)
+            }
+
+            is RetryDecision.RetryAfter -> {
+                Log.d(TAG, "handleRetryDecision: retryable network error, retry in ${decision.delayMs}ms")
+                notificationManager?.invalidate()
+                mainHandler.postDelayed({ attemptScheduledRetry(decision.attemptId) }, decision.delayMs)
             }
 
             RetryDecision.GiveUp -> {
-                Log.d(TAG, "tryResumePlaybackAfterNetworkRestored: retry limit reached, giving up")
-                markConnectionError()
+                Log.d(TAG, "handleRetryDecision: retry limit reached, giving up")
+                lastConnectionErrorAt = System.currentTimeMillis()
+                isConnectionBroken = true
                 stopPlayback()
             }
 
-            RetryDecision.NoAction, is RetryDecision.RetryAfter -> {}
+            RetryDecision.NoAction -> {}
         }
     }
 
@@ -737,7 +801,12 @@ class RadioPlaybackService : MediaLibraryService() {
         override fun seekForward() = seekToLive()
     }
 
-    private fun handlePlayerError(error: PlaybackException) {
+    /**
+     * Internal (not private), like [isHlsUrl]/[playFromBrowseTree] above, so Robolectric tests can
+     * drive the retry-exhaustion ("give up") path directly with a synthetic [PlaybackException]
+     * instead of needing a real failing stream connection.
+     */
+    internal fun handlePlayerError(error: PlaybackException) {
         when (error.errorCode) {
             PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> {
                 player?.seekToDefaultPosition()
@@ -747,21 +816,7 @@ class RadioPlaybackService : MediaLibraryService() {
 
             // Transient network errors (e.g. VPN toggle): retry when network is back instead of stopping.
             else -> {
-                when (val decision = retryPolicy.onPlaybackError(error)) {
-                    is RetryDecision.RetryAfter -> {
-                        Log.d(TAG, "handlePlayerError: retryable network error, retry in ${decision.delayMs}ms")
-                        notificationManager?.invalidate()
-                        mainHandler.postDelayed({ attemptScheduledRetry(decision.attemptId) }, decision.delayMs)
-                    }
-
-                    RetryDecision.GiveUp -> {
-                        Log.d(TAG, "handlePlayerError: retry limit reached, giving up")
-                        markConnectionError()
-                        stopPlayback()
-                    }
-
-                    RetryDecision.NoAction, is RetryDecision.RetryNow -> {}
-                }
+                handleRetryDecision(retryPolicy.onPlaybackError(error))
             }
         }
     }
@@ -770,6 +825,19 @@ class RadioPlaybackService : MediaLibraryService() {
     private fun attemptScheduledRetry(attemptId: Long) {
         val target = retryPolicy.attemptRetry(attemptId) ?: return
         startPlayback(target.streamUrl, isRetry = true, knownHls = target.knownHls)
+    }
+
+    /**
+     * Reacts to a timeshift recorder I/O failure (see [TimeshiftController.start]'s `onError`):
+     * marks the connection error and leaves recovery to the network-restored callback, same as a
+     * player-level error would. Internal (not private), same test-seam reason as [handlePlayerError].
+     */
+    internal fun onTimeshiftError() {
+        lastConnectionErrorAt = System.currentTimeMillis()
+        retryPolicy.markPendingRetry()
+        timeshift.stop()
+        notificationManager?.invalidate()
+        refreshSnapshot()
     }
 
     private fun releasePlayer() {
@@ -892,14 +960,5 @@ class RadioPlaybackService : MediaLibraryService() {
         const val TIMESHIFT_SEEK_BACK_MS = 5000L
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "radio_playback_channel"
-
-        @Volatile
-        private var connectionErrorFlag = false
-
-        fun markConnectionError() {
-            connectionErrorFlag = true
-        }
-
-        fun getAndClearConnectionError(): Boolean = connectionErrorFlag.also { connectionErrorFlag = false }
     }
 }

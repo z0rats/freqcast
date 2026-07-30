@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.freqcast.data.AppDatabase
 import com.freqcast.data.RadioStation
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -36,11 +37,22 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class RadioPlaybackServiceAutoTest {
+    // MediaSession enforces a unique id per process; leaving it unreleased would collide with any
+    // other test in the same JVM that also creates a RadioPlaybackService (e.g.
+    // RadioPlaybackServiceConnectionErrorTest).
+    private var service: RadioPlaybackService? = null
+
+    @After
+    fun tearDown() {
+        service?.onDestroy()
+    }
+
     @Test
     fun `browse tree lists stations in sortOrder and tapping one starts it playing`() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val dao = AppDatabase.getDatabase(context).radioStationDao()
         val service = Robolectric.buildService(RadioPlaybackService::class.java).create().get()
+        this.service = service
 
         val browseItems =
             runBlocking {

@@ -90,6 +90,7 @@ import com.freqcast.ui.components.StationItem
 import com.freqcast.ui.components.dragContainer
 import com.freqcast.ui.components.rememberDragDropState
 import com.freqcast.ui.components.rememberPlaybackPresentation
+import com.freqcast.ui.components.rememberRawPlaybackState
 import com.freqcast.ui.playback.SettingsStore
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
@@ -346,48 +347,26 @@ fun MainScreen(
     val hasTimeshift = presentation.hasTimeshift
     val isAtLive = presentation.isAtLive
     val offsetFromLiveMs = presentation.offsetFromLiveMs
-    val isBufferingCurrentStation = presentation.isBuffering
     val trackTitle = presentation.trackTitle
 
-    // isStarting/startError track "did the user tap play and has it not gotten stuck" - a
-    // 10s timeout from tap, cleared once the service confirms it's actually playing.
-    var isStarting by remember { mutableStateOf(false) }
-    var startError by remember { mutableStateOf(false) }
-    LaunchedEffect(currentPlayingStationId) {
-        isStarting = true
-        startError = false
-    }
-    // isPlaying flipping true cancels/restarts this via the isStarting key change below before
-    // the delay elapses, so reaching this point guarantees playback still hasn't started.
-    LaunchedEffect(isStarting) {
-        if (!isStarting) return@LaunchedEffect
-        kotlinx.coroutines.delay(10_000)
-        if (isStarting) {
-            startError = true
-            isStarting = false
-        }
-    }
-    LaunchedEffect(isPlaying) {
-        if (isPlaying) {
-            isStarting = false
-            startError = false
+    val connectionErrorContext = LocalContext.current
+    var lastShownConnectionErrorAt by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(presentation.connectionErrorAt) {
+        val errorAt = presentation.connectionErrorAt
+        if (errorAt != null && errorAt != lastShownConnectionErrorAt) {
+            lastShownConnectionErrorAt = errorAt
+            Toast
+                .makeText(
+                    connectionErrorContext,
+                    connectionErrorContext.getString(R.string.connection_failed),
+                    Toast.LENGTH_LONG,
+                ).show()
         }
     }
 
-    val playbackStatus =
-        when {
-            startError -> PlaybackStatus.ERROR
-            isPlaying -> PlaybackStatus.PLAYING
-            isStarting -> PlaybackStatus.STARTING
-            isBufferingCurrentStation -> PlaybackStatus.STARTING
-            else -> PlaybackStatus.PAUSED
-        }
-
-    val onPlayStationWithState: (RadioStation) -> Unit = { station ->
-        startError = false
-        isStarting = true
-        onPlayStation(station)
-    }
+    val playbackStatus = presentation.status
+    val isStarting = playbackStatus == PlaybackStatus.STARTING
+    val startError = playbackStatus == PlaybackStatus.ERROR
 
     // Reload stations when screen is resumed
     LaunchedEffect(Unit) {
@@ -436,15 +415,17 @@ fun MainScreen(
         if (settingsStore.warnOnMeteredConnection && isMeteredConnection(context)) {
             pendingMeteredStation = station
         } else {
-            onPlayStationWithState(station)
+            onPlayStation(station)
         }
     }
 
-    // Sync current playing station from service (single source of truth: ViewModel)
-    LaunchedEffect(playbackService, allStations) {
-        val currentMediaId = playbackService?.getPlayer()?.currentMediaItem?.mediaId
-        val serviceIsPlaying = playbackService?.isPlaying() ?: false
-        if (currentMediaId != null && serviceIsPlaying) {
+    // Sync current playing station from service (single source of truth: ViewModel). Keyed on the
+    // live rawPlaybackState (not (playbackService, allStations)) so it re-runs on every snapshot
+    // tick instead of only when the service instance or station list identity changes.
+    val rawPlaybackState = rememberRawPlaybackState(playbackService)
+    LaunchedEffect(rawPlaybackState, allStations) {
+        val currentMediaId = rawPlaybackState.currentMediaId
+        if (currentMediaId != null && rawPlaybackState.isPlaying) {
             val foundStation = allStations.find { it.streamUrl == currentMediaId }
             if (foundStation != null && currentPlayingStationId != foundStation.id) {
                 viewModel.updateCurrentPlayingStation(foundStation.id)
@@ -486,15 +467,12 @@ fun MainScreen(
                             trackTitle = if (isStationPlaying) trackTitle else null,
                             offsetFromLiveMs = offsetFromLiveMs,
                             onPlayPauseClick = {
-                                if (isStationPlaying) onStopPlayback() else onPlayStationWithState(station)
+                                if (isStationPlaying) onStopPlayback() else onPlayStation(station)
                             },
                             onCardClick = { onNowPlayingClick(station) },
-                            onSwitchStation = onPlayStationWithState,
+                            onSwitchStation = onPlayStation,
                             onRewind5s = { playbackService?.seekBackward(RadioPlaybackService.TIMESHIFT_SEEK_BACK_MS) },
-                            onReturnToLive = {
-                                isStarting = true
-                                playbackService?.seekToLive()
-                            },
+                            onReturnToLive = { playbackService?.seekToLive() },
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
@@ -551,10 +529,11 @@ fun MainScreen(
                             NowPlayingContent(
                                 stationName = currentPlayingStation.name,
                                 streamUrl = currentPlayingStation.streamUrl,
+                                customIcon = currentPlayingStation.customIcon,
                                 playbackService = playbackService,
                                 presentation = presentation,
                                 onPlayStopClick = {
-                                    if (isPlaying) onStopPlayback() else onPlayStationWithState(currentPlayingStation)
+                                    if (isPlaying) onStopPlayback() else onPlayStation(currentPlayingStation)
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )
@@ -588,7 +567,7 @@ fun MainScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         pendingMeteredStation = null
-                        onPlayStationWithState(station)
+                        onPlayStation(station)
                     }) {
                         Text(stringResource(R.string.metered_connection_continue))
                     }

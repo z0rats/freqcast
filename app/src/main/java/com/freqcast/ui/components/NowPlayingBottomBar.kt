@@ -6,7 +6,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -63,8 +62,6 @@ import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.formatOffsetFromLive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-
-enum class PlaybackStatus { PLAYING, PAUSED, STARTING, ERROR }
 
 @Composable
 fun NowPlayingBottomBar(
@@ -240,7 +237,7 @@ private fun MiniPlayerCardPreview(station: RadioStation) {
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.md, vertical = 10.dp),
+                    .padding(start = 26.dp, end = Spacing.md, top = 10.dp, bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -294,7 +291,7 @@ private fun MiniPlayerCardFull(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.md, vertical = 10.dp),
+                    .padding(start = 26.dp, end = Spacing.md, top = 10.dp, bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -333,7 +330,7 @@ private fun MiniPlayerCardFull(
                             style = MaterialTheme.typography.bodySmall,
                             color = text_hint,
                             maxLines = 1,
-                            modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
