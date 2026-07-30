@@ -4,6 +4,8 @@ import androidx.room.Room
 import com.freqcast.data.AppDatabase
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.UpdateChecker
+import com.freqcast.ui.playback.SettingsStore
+import com.freqcast.ui.playback.TimeshiftBufferSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -58,10 +60,12 @@ class SettingsViewModelTest {
     private fun createViewModel(
         scheduler: TestCoroutineScheduler,
         currentVersion: String = "3.4.3",
+        settingsStore: SettingsStore = SettingsStore(RuntimeEnvironment.getApplication()),
     ): SettingsViewModel {
         Dispatchers.setMain(StandardTestDispatcher(scheduler))
         return SettingsViewModel(
             repository,
+            settingsStore,
             currentVersion,
             UpdateChecker(releaseUrl = server.url("/").toString()),
         )
@@ -127,5 +131,29 @@ class SettingsViewModelTest {
 
             assertEquals(UpdateStatus.UNKNOWN, viewModel.uiState.value.updateStatus)
             assertNull(viewModel.uiState.value.updateUrl)
+        }
+
+    @Test
+    fun `setWarnOnMeteredConnection updates uiState and persists to SettingsStore`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+
+            viewModel.setWarnOnMeteredConnection(true)
+
+            assertEquals(true, viewModel.uiState.value.warnOnMeteredConnection)
+            val persisted = SettingsStore(RuntimeEnvironment.getApplication())
+            assertEquals(true, persisted.warnOnMeteredConnection)
+        }
+
+    @Test
+    fun `setTimeshiftBufferSizeMb updates uiState and persists to SettingsStore`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+
+            viewModel.setTimeshiftBufferSizeMb(TimeshiftBufferSize.LARGE.mb)
+
+            assertEquals(TimeshiftBufferSize.LARGE.mb, viewModel.uiState.value.timeshiftBufferSizeMb)
+            val persisted = SettingsStore(RuntimeEnvironment.getApplication())
+            assertEquals(TimeshiftBufferSize.LARGE.mb, persisted.timeshiftBufferSizeMb)
         }
 }

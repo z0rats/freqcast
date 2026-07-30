@@ -99,7 +99,8 @@ class SettingsActivity : AppCompatActivity() {
         enableEdgeToEdge()
 
         val repository = RadioStationRepository.create(this)
-        val viewModelFactory = SettingsViewModel.provideFactory(repository, currentVersionName(this))
+        val settingsStore = SettingsStore(this)
+        val viewModelFactory = SettingsViewModel.provideFactory(repository, settingsStore, currentVersionName(this))
 
         setContent {
             FreqcastTheme {
@@ -122,9 +123,6 @@ fun SettingsScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsState()
-    val settingsStore = remember { SettingsStore(context) }
-    var warnOnMeteredConnection by remember { mutableStateOf(settingsStore.warnOnMeteredConnection) }
-    var timeshiftBufferSizeMb by remember { mutableStateOf(settingsStore.timeshiftBufferSizeMb) }
     var bufferSizeMenuOpen by remember { mutableStateOf(false) }
     val languageOptions = languageOptions()
     val currentLanguageTag =
@@ -265,11 +263,8 @@ fun SettingsScreen(
                         )
                     }
                     Switch(
-                        checked = warnOnMeteredConnection,
-                        onCheckedChange = {
-                            warnOnMeteredConnection = it
-                            settingsStore.warnOnMeteredConnection = it
-                        },
+                        checked = uiState.warnOnMeteredConnection,
+                        onCheckedChange = { viewModel.setWarnOnMeteredConnection(it) },
                         colors =
                             SwitchDefaults.colors(
                                 checkedThumbColor = text_primary,
@@ -304,7 +299,7 @@ fun SettingsScreen(
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             val selected =
-                                TimeshiftBufferSize.entries.find { it.mb == timeshiftBufferSizeMb }
+                                TimeshiftBufferSize.entries.find { it.mb == uiState.timeshiftBufferSizeMb }
                                     ?: TimeshiftBufferSize.DEFAULT
                             Text(
                                 stringResource(
@@ -331,8 +326,7 @@ fun SettingsScreen(
                                 )
                             },
                             onClick = {
-                                timeshiftBufferSizeMb = option.mb
-                                settingsStore.timeshiftBufferSizeMb = option.mb
+                                viewModel.setTimeshiftBufferSizeMb(option.mb)
                                 bufferSizeMenuOpen = false
                             },
                         )

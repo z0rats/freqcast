@@ -8,6 +8,8 @@ import com.freqcast.data.ImportResult
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.UpdateChecker
 import com.freqcast.data.isNewerVersion
+import com.freqcast.ui.playback.SettingsStore
+import com.freqcast.ui.playback.TimeshiftBufferSize
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,15 +21,35 @@ data class SettingsUiState(
     val currentVersion: String = "",
     val updateStatus: UpdateStatus = UpdateStatus.UNKNOWN,
     val updateUrl: String? = null,
+    val warnOnMeteredConnection: Boolean = false,
+    val timeshiftBufferSizeMb: Int = TimeshiftBufferSize.DEFAULT_MB,
 )
 
 class SettingsViewModel(
     private val repository: RadioStationRepository,
+    private val settingsStore: SettingsStore,
     currentVersion: String,
     private val updateChecker: UpdateChecker = UpdateChecker(),
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(SettingsUiState(currentVersion = currentVersion))
+    private val _uiState =
+        MutableStateFlow(
+            SettingsUiState(
+                currentVersion = currentVersion,
+                warnOnMeteredConnection = settingsStore.warnOnMeteredConnection,
+                timeshiftBufferSizeMb = settingsStore.timeshiftBufferSizeMb,
+            ),
+        )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    fun setWarnOnMeteredConnection(value: Boolean) {
+        settingsStore.warnOnMeteredConnection = value
+        _uiState.value = _uiState.value.copy(warnOnMeteredConnection = value)
+    }
+
+    fun setTimeshiftBufferSizeMb(value: Int) {
+        settingsStore.timeshiftBufferSizeMb = value
+        _uiState.value = _uiState.value.copy(timeshiftBufferSizeMb = value)
+    }
 
     init {
         viewModelScope.launch {
@@ -62,7 +84,8 @@ class SettingsViewModel(
     companion object {
         fun provideFactory(
             repository: RadioStationRepository,
+            settingsStore: SettingsStore,
             currentVersion: String,
-        ): ViewModelProvider.Factory = viewModelFactory { SettingsViewModel(repository, currentVersion) }
+        ): ViewModelProvider.Factory = viewModelFactory { SettingsViewModel(repository, settingsStore, currentVersion) }
     }
 }
