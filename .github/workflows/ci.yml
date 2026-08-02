@@ -6,7 +6,8 @@ on:
   pull_request:
     branches: [ master, main ]
 
-permissions: read-all
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -33,7 +34,7 @@ jobs:
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@97412ecb7d592380790396ad7c82bf8e1ba8a937 # v6.1.1
+        uses: gradle/actions/setup-gradle@5e2ebd065dc2488b7a6ad670704656cbbe1e8f60 # v6.1.1
 
       - name: Run unit tests
         run: ./gradlew test --no-daemon
@@ -89,7 +90,7 @@ jobs:
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@97412ecb7d592380790396ad7c82bf8e1ba8a937 # v6.1.1
+        uses: gradle/actions/setup-gradle@5e2ebd065dc2488b7a6ad670704656cbbe1e8f60 # v6.1.1
 
       - name: Run ktlint check
         run: ./gradlew ktlintCheck --no-daemon
@@ -114,7 +115,7 @@ jobs:
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@97412ecb7d592380790396ad7c82bf8e1ba8a937 # v6.1.1
+        uses: gradle/actions/setup-gradle@5e2ebd065dc2488b7a6ad670704656cbbe1e8f60 # v6.1.1
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon
