@@ -47,6 +47,16 @@ class RadioBrowseTree(
 
     fun mediaItemFor(mediaId: String): MediaItem? = findStation(mediaId)?.toBrowsableMediaItem()
 
+    /**
+     * Stations whose name contains [query] (case-insensitive), from the most recent [loadStations]
+     * call — backs voice search ("Hey Google, play [station] on Freqcast") via
+     * [androidx.media3.session.MediaLibrarySession.Callback.onSearch]/`onGetSearchResult`.
+     */
+    fun search(query: String): List<MediaItem> =
+        cachedStations
+            .filter { it.name.contains(query, ignoreCase = true) }
+            .map { it.toBrowsableMediaItem() }
+
     private fun RadioStation.toBrowsableMediaItem(): MediaItem =
         MediaItem
             .Builder()

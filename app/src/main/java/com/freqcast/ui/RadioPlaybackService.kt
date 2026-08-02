@@ -920,6 +920,36 @@ class RadioPlaybackService : MediaLibraryService() {
             }
         }
 
+        /**
+         * Backs voice search (e.g. "Hey Google, play [station] on Freqcast"): per the
+         * [MediaLibrarySession.Callback] contract, the caller reports the query here first — we
+         * refresh the station cache and report the match count via [notifySearchResultChanged] —
+         * then pages through the actual items via [onGetSearchResult].
+         */
+        override fun onSearch(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<Void>> =
+            serviceScope.future {
+                loadBrowsableStations()
+                session.notifySearchResultChanged(browser, query, browseTree.search(query).size, params)
+                LibraryResult.ofVoid()
+            }
+
+        override fun onGetSearchResult(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
+            serviceScope.future {
+                LibraryResult.ofItemList(browseTree.search(query), params)
+            }
+
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
