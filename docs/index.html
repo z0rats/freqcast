@@ -281,6 +281,39 @@
   }
   .step h3 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
   .step p { margin: 0; color: var(--text-soft); font-size: 14.5px; line-height: 1.6; }
+
+  /* ---------- Gripes (real complaints, actually fixed) ---------- */
+  .gripe-list { display: flex; flex-direction: column; }
+  .gripe {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 28px;
+    padding: 22px 0;
+    border-top: 1px solid var(--border);
+  }
+  .gripe:last-child { border-bottom: 1px solid var(--border); }
+  .gripe-complaint {
+    margin: 0;
+    font-size: 15px;
+    font-style: italic;
+    color: var(--text-soft);
+    max-width: 58ch;
+  }
+  .gripe-fix {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #3a2109;
+    background: var(--accent);
+    padding: 8px 16px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  @media (max-width: 640px) {
+    .gripe { flex-direction: column; align-items: flex-start; gap: 12px; }
+  }
   .demo-frame {
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);
@@ -533,6 +566,48 @@
     </div>
     <div class="demo-frame">
       <img src="demo.gif" alt="Screen recording of adding a station by pasting its website link in Freqcast" loading="lazy">
+    </div>
+  </div>
+</section>
+
+<hr class="hr">
+
+<section id="gripes">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">Grounded in real feedback</p>
+      <h2>Real complaints, actually fixed</h2>
+      <p>Not hypothetical gaps — recurring frustrations with internet radio apps, gathered from public reviews and forum threads.</p>
+    </div>
+    <div class="gripe-list">
+      <div class="gripe">
+        <p class="gripe-complaint">"Ads cut into the stream every 5&ndash;10 minutes &mdash; sometimes restarting playback entirely."</p>
+        <span class="gripe-fix">Zero ads. Always.</span>
+      </div>
+      <div class="gripe">
+        <p class="gripe-complaint">"No way to back up a station list, or move it to a new phone."</p>
+        <span class="gripe-fix">Export &amp; import — JSON, OPML, M3U, PLS</span>
+      </div>
+      <div class="gripe">
+        <p class="gripe-complaint">"Favorites can't be reordered — you're stuck with whatever order you added them in."</p>
+        <span class="gripe-fix">Drag to reorder, any time</span>
+      </div>
+      <div class="gripe">
+        <p class="gripe-complaint">"Turned out the 'radio' app was quietly running dozens of third-party trackers."</p>
+        <span class="gripe-fix">Zero trackers. GPL-3.0, on F-Droid.</span>
+      </div>
+      <div class="gripe">
+        <p class="gripe-complaint">"Adding a stream by hand either isn't supported, or the app crashes trying to reconnect."</p>
+        <span class="gripe-fix">Manual add + capped-backoff reconnect</span>
+      </div>
+      <div class="gripe">
+        <p class="gripe-complaint">"No Android Auto — a gap open-source radio apps have left unfilled for years."</p>
+        <span class="gripe-fix">Android Auto, from day one</span>
+      </div>
+      <div class="gripe">
+        <p class="gripe-complaint">"No home-screen widget — every play needs opening the app first."</p>
+        <span class="gripe-fix">Home screen widget included</span>
+      </div>
     </div>
   </div>
 </section>
