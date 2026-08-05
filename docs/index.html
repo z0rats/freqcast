@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Freqcast — Internet radio, without the stream-URL hunt</title>
+<meta name="description" content="Freqcast is a free, open-source Android radio player. Paste a station's website and it finds, verifies, and adds the playable stream for you. No account, no ads, no catalog lock-in.">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-start: #291e17;
+    --bg-mid: #463124;
+    --bg-end: #6a4629;
+    --surface: rgba(41, 30, 23, 0.72);
+    --surface-active: rgba(70, 49, 36, 0.65);
+    --border: rgba(255, 237, 221, 0.14);
+    --border-strong: rgba(255, 237, 221, 0.26);
+    --accent: #ffb870;
+    --accent-soft: rgba(255, 184, 112, 0.16);
+    --accent-2: #ffb4a0;
+    --accent-3: #ffd772;
+    --text: #fff6ec;
+    --text-soft: rgba(255, 246, 236, 0.72);
+    --text-dim: rgba(255, 246, 236, 0.52);
+    --font-display: "Bricolage Grotesque", "IBM Plex Sans", sans-serif;
+    --font-body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+    --radius-lg: 24px;
+    --radius-md: 16px;
+    --radius-sm: 10px;
+    --wrap: 1080px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    color: var(--text);
+    background:
+      radial-gradient(1100px 620px at 82% -8%, rgba(255, 184, 112, 0.16), transparent 60%),
+      linear-gradient(180deg, var(--bg-start) 0%, var(--bg-mid) 46%, var(--bg-end) 100%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  img { max-width: 100%; display: block; }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+  .wrap {
+    width: 100%;
+    max-width: var(--wrap);
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ---------- Nav ---------- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    background: rgba(28, 19, 14, 0.55);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .brand img { width: 28px; height: 28px; border-radius: 8px; }
+  .brand span {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -0.01em;
+  }
+  .nav-links { display: flex; align-items: center; gap: 28px; }
+  .nav-links a {
+    font-size: 14px;
+    color: var(--text-soft);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta {
+    padding: 9px 18px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #3a2109;
+    font-weight: 600;
+    font-size: 14px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  @media (max-width: 720px) {
+    .nav-links a:not(.nav-cta) { display: none; }
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative;
+    padding: 88px 0 64px;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 56px;
+    align-items: center;
+  }
+  @media (max-width: 860px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-visual { order: -1; }
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-2);
+    margin: 0 0 20px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px 2px var(--accent);
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(34px, 5vw, 54px);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    margin: 0 0 22px;
+    text-wrap: balance;
+  }
+  h1 em {
+    font-style: normal;
+    background: linear-gradient(100deg, var(--accent-3), var(--accent) 60%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .lede {
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--text-soft);
+    max-width: 46ch;
+    margin: 0 0 32px;
+  }
+  .cta-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 24px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 15px;
+    text-decoration: none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary {
+    background: var(--accent);
+    color: #3a2109;
+    box-shadow: 0 8px 28px -8px rgba(255, 184, 112, 0.55);
+  }
+  .btn-primary:hover { box-shadow: 0 10px 32px -6px rgba(255, 184, 112, 0.7); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+  }
+  .btn-ghost:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .hero-meta {
+    margin-top: 18px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---------- hero visual: phone + ambient bars ---------- */
+  .hero-visual { position: relative; display: flex; justify-content: center; }
+  .glow-field {
+    position: absolute;
+    inset: -60px;
+    background: radial-gradient(closest-side, rgba(255, 184, 112, 0.35), transparent 70%);
+    filter: blur(10px);
+    z-index: 0;
+    pointer-events: none;
+  }
+  .phone {
+    position: relative;
+    z-index: 1;
+    width: 250px;
+    border-radius: 34px;
+    padding: 10px;
+    background: linear-gradient(160deg, #1c130e, #0f0a07);
+    border: 1px solid rgba(255, 237, 221, 0.12);
+    box-shadow:
+      0 30px 60px -20px rgba(0,0,0,0.6),
+      0 0 0 1px rgba(255,255,255,0.02) inset;
+  }
+  .phone-screen {
+    width: 100%;
+    aspect-ratio: 230 / 500;
+    border-radius: 24px;
+    overflow: hidden;
+    background: var(--bg-start);
+  }
+  .phone-screen img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+  #eq {
+    position: absolute;
+    left: 50%;
+    bottom: -26px;
+    transform: translateX(-50%);
+    z-index: 2;
+    opacity: 0.9;
+  }
+
+  /* ---------- Section scaffolding ---------- */
+  section { padding: 88px 0; position: relative; }
+  .section-head { max-width: 640px; margin: 0 0 48px; }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-2);
+    margin: 0 0 12px;
+  }
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(26px, 3.4vw, 36px);
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .section-head p { color: var(--text-soft); font-size: 16px; line-height: 1.65; margin: 0; }
+  .hr {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-strong) 20%, var(--border-strong) 80%, transparent);
+    border: none;
+  }
+
+  /* ---------- How it works ---------- */
+  .how {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+  }
+  @media (max-width: 860px) { .how { grid-template-columns: 1fr; } }
+  .steps { display: flex; flex-direction: column; gap: 22px; counter-reset: step; }
+  .step { display: flex; gap: 16px; }
+  .step-num {
+    flex: none;
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    background: var(--surface-active);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .step h3 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
+  .step p { margin: 0; color: var(--text-soft); font-size: 14.5px; line-height: 1.6; }
+  .demo-frame {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 18px;
+    display: flex;
+    justify-content: center;
+  }
+  .demo-frame img {
+    width: 220px;
+    border-radius: 20px;
+    box-shadow: 0 24px 48px -20px rgba(0,0,0,0.55);
+  }
+
+  /* ---------- Feature grid ---------- */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  @media (max-width: 860px) { .features { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
+  .feature-card {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    padding: 24px;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .feature-card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+  .feature-icon {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+    color: var(--accent);
+  }
+  .feature-card h3 { margin: 0 0 8px; font-size: 15.5px; font-weight: 600; }
+  .feature-card p { margin: 0; color: var(--text-soft); font-size: 14px; line-height: 1.55; }
+
+  /* ---------- Screenshots ---------- */
+  .shots {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+  }
+  @media (max-width: 860px) { .shots { grid-template-columns: 1fr; max-width: 320px; margin: 0 auto; } }
+  .shot { text-align: center; }
+  .shot .phone { width: 100%; margin: 0 auto; }
+  .shot:nth-child(2) .phone { transform: translateY(-14px); }
+  .shot figcaption {
+    margin-top: 18px;
+    font-size: 14px;
+    color: var(--text-soft);
+    line-height: 1.5;
+  }
+  .shot figcaption b { color: var(--text); font-weight: 600; }
+
+  /* ---------- Philosophy / permissions ---------- */
+  .philosophy {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 56px;
+    align-items: start;
+  }
+  @media (max-width: 860px) { .philosophy { grid-template-columns: 1fr; } }
+  .pillars { display: flex; flex-direction: column; gap: 20px; margin-top: 28px; }
+  .pillar { display: flex; gap: 14px; }
+  .pillar-mark {
+    flex: none;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-top: 8px;
+    background: var(--accent);
+    box-shadow: 0 0 8px 1px rgba(255,184,112,0.6);
+  }
+  .pillar h4 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  .pillar p { margin: 0; color: var(--text-soft); font-size: 14px; line-height: 1.55; }
+
+  table.perms {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface);
+  }
+  table.perms th, table.perms td {
+    text-align: left;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.perms th {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  table.perms tr:last-child td { border-bottom: none; }
+  table.perms td:first-child {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--accent-2);
+    white-space: nowrap;
+  }
+  table.perms td:last-child { color: var(--text-soft); }
+  .perms-wrap { overflow-x: auto; }
+
+  /* ---------- Download ---------- */
+  .download-card {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background:
+      radial-gradient(600px 260px at 15% 0%, rgba(255,184,112,0.14), transparent 60%),
+      var(--surface);
+    padding: 48px;
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 40px;
+    align-items: center;
+  }
+  @media (max-width: 860px) { .download-card { grid-template-columns: 1fr; padding: 32px 24px; } }
+  .download-card h2 { margin-bottom: 12px; }
+  .download-card p { color: var(--text-soft); font-size: 15px; line-height: 1.6; margin: 0 0 24px; }
+  .code-block {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: rgba(0,0,0,0.28);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px 18px;
+    color: var(--accent-3);
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+  .code-block .muted { color: var(--text-dim); }
+  .req-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .req-list li {
+    font-size: 13.5px;
+    color: var(--text-soft);
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+  }
+  .req-list li::before { content: "—"; color: var(--text-dim); }
+
+  /* ---------- Footer ---------- */
+  footer { padding: 56px 0 40px; border-top: 1px solid var(--border); }
+  .footer-grid {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 32px;
+  }
+  .footer-brand { display: flex; align-items: center; gap: 10px; }
+  .footer-brand img { width: 24px; height: 24px; border-radius: 7px; }
+  .footer-brand span { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+  .footer-tag { color: var(--text-dim); font-size: 13px; margin-top: 6px; }
+  .footer-links { display: flex; gap: 28px; flex-wrap: wrap; }
+  .footer-links a { font-size: 14px; color: var(--text-soft); text-decoration: none; }
+  .footer-links a:hover { color: var(--accent); }
+  .footer-fine { margin-top: 36px; color: var(--text-dim); font-size: 12.5px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top">
+      <img src="icon-192.png" alt="">
+      <span>Freqcast</span>
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#screenshots">Screenshots</a>
+      <a href="#privacy">Privacy</a>
+      <a class="nav-cta" href="https://github.com/z0rats/freqcast/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <p class="eyebrow">Free &amp; open source · Android 10+</p>
+      <h1>Paste a station's <em>website</em>.<br>Not its stream URL.</h1>
+      <p class="lede">
+        Most radio apps expect you to hunt down a raw <code>.mp3</code> or <code>.m3u8</code> link.
+        Freqcast checks the Radio Browser directory, then scans the site itself, finds the
+        playable stream, and verifies it works — before it ever touches your library.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/z0rats/freqcast/releases/latest">Download APK</a>
+        <a class="btn btn-ghost" href="https://github.com/z0rats/freqcast">View source on GitHub</a>
+      </div>
+      <p class="hero-meta">NO ACCOUNT · NO ADS · NO CATALOG LOCK-IN · GPL-3.0</p>
+    </div>
+    <div class="hero-visual">
+      <div class="glow-field"></div>
+      <div class="phone">
+        <div class="phone-screen">
+          <img src="screenshots/3.jpg" alt="Freqcast now-playing screen for KURS Radio, showing the live timeshift scrubber, rewind shortcuts and sleep timer">
+        </div>
+      </div>
+      <canvas id="eq" width="120" height="34" aria-hidden="true"></canvas>
+    </div>
+  </div>
+</header>
+
+<hr class="hr">
+
+<section id="how">
+  <div class="wrap how">
+    <div>
+      <p class="kicker">The core idea</p>
+      <h2>Adding a station shouldn't require a URL inspector</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div>
+            <h3>Paste the link</h3>
+            <p>Drop in a station's homepage. That's the only input Freqcast needs.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div>
+            <h3>Freqcast goes looking</h3>
+            <p>It checks the Radio Browser directory first, then scans the page itself for a playable stream.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div>
+            <h3>Verified, then saved</h3>
+            <p>The stream is probed before it's written to your library, so dead links never make it in.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="demo-frame">
+      <img src="demo.gif" alt="Screen recording of adding a station by pasting its website link in Freqcast" loading="lazy">
+    </div>
+  </div>
+</section>
+
+<hr class="hr">
+
+<section id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">Everything included</p>
+      <h2>One player, no compromises</h2>
+      <p>Every feature below ships in the same free build — nothing is metered, gated, or upsold.</p>
+    </div>
+    <div class="features">
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l9-2v12"></path><circle cx="6" cy="18" r="3"></circle><circle cx="15" cy="16" r="3"></circle></svg>
+        </div>
+        <h3>No stream-URL hunting</h3>
+        <p>Paste a station's website and Freqcast discovers and verifies the playable stream on its own.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        </div>
+        <h3>Discover stations</h3>
+        <p>Search the Radio Browser directory by name, genre, country, language, or stations near you.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path><path d="M3 21v-5h5"></path></svg>
+        </div>
+        <h3>Reconnects on its own</h3>
+        <p>Background playback with capped exponential-backoff retry when the network drops — not an infinite hammer.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 19 2 12 11 5 11 19"></polygon><polygon points="22 19 13 12 22 5 22 19"></polygon></svg>
+        </div>
+        <h3>Timeshift</h3>
+        <p>Rewind live radio on compatible streams — missed something? Step back 15, 30 or 60 seconds.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"></path></svg>
+        </div>
+        <h3>Live track metadata</h3>
+        <p>ICY metadata surfaces the current track title in real time, copyable with one tap.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"></path></svg>
+        </div>
+        <h3>Sleep timer &amp; alarms</h3>
+        <p>Fade out and stop after a set time, or wake up to any station with multiple daily alarms.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>
+        </div>
+        <h3>Widget &amp; Android Auto</h3>
+        <p>A home-screen widget for one-tap play, and a browsable station list on the car head unit.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M4 19h16"></path></svg>
+        </div>
+        <h3>Import &amp; export</h3>
+        <p>Move your library in and out via JSON, OPML, M3U or PLS — switch devices without rebuilding it.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"></path></svg>
+        </div>
+        <h3>Built for every screen</h3>
+        <p>Two-pane layouts on tablets and foldables, and the interface is localized into English, Russian, Spanish and Simplified Chinese.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<hr class="hr">
+
+<section id="screenshots">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">Inside the app</p>
+      <h2>A look inside</h2>
+      <p>Always-dark by design — a warm amber-on-charcoal palette built to read at a glance, day or night.</p>
+    </div>
+    <div class="shots">
+      <figure class="shot">
+        <div class="phone">
+          <div class="phone-screen">
+            <img src="screenshots/1.png" alt="Freqcast library screen listing saved stations with play buttons and an add button" loading="lazy">
+          </div>
+        </div>
+        <figcaption><b>Your library.</b> Drag to reorder, swipe to share or delete.</figcaption>
+      </figure>
+      <figure class="shot">
+        <div class="phone">
+          <div class="phone-screen">
+            <img src="screenshots/2.jpg" alt="Freqcast Discover screen showing Jazz search results from the Radio Browser directory" loading="lazy">
+          </div>
+        </div>
+        <figcaption><b>Discover.</b> Search a global directory of stations by name, genre, country or language.</figcaption>
+      </figure>
+      <figure class="shot">
+        <div class="phone">
+          <div class="phone-screen">
+            <img src="screenshots/3.jpg" alt="Freqcast now-playing screen with timeshift scrubber, sleep timer and clip sharing" loading="lazy">
+          </div>
+        </div>
+        <figcaption><b>Now playing.</b> Timeshift, live track title, sleep timer and clip sharing — one screen.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<hr class="hr">
+
+<section id="privacy">
+  <div class="wrap philosophy">
+    <div>
+      <p class="kicker">Why Freqcast</p>
+      <h2>No account. No ads. No catalog lock-in.</h2>
+      <p style="color:var(--text-soft); font-size:15px; line-height:1.65; margin:0;">
+        Internet radio has quietly survived for decades, but the Android apps around it have grown
+        fragmented — ads, proprietary station catalogs, accounts you never asked for. Freqcast stores
+        everything locally and works with any station that has a public HTTP/HTTPS or HLS stream.
+      </p>
+      <div class="pillars">
+        <div class="pillar">
+          <div class="pillar-mark"></div>
+          <div>
+            <h4>Fully local</h4>
+            <p>Your station list lives in an on-device database. Nothing is synced to a server you don't control.</p>
+          </div>
+        </div>
+        <div class="pillar">
+          <div class="pillar-mark"></div>
+          <div>
+            <h4>Open source, GPL-3.0</h4>
+            <p>The full source is on GitHub. Modified or redistributed versions must stay open, too.</p>
+          </div>
+        </div>
+        <div class="pillar">
+          <div class="pillar-mark"></div>
+          <div>
+            <h4>Permissions you can audit</h4>
+            <p>Every permission below maps to a feature you can see. Nothing is requested speculatively.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="perms-wrap">
+      <table class="perms">
+        <thead>
+          <tr><th>Permission</th><th>What it's for</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>INTERNET<br>ACCESS_NETWORK_STATE</td><td>Stream playback and connectivity checks.</td></tr>
+          <tr><td>FOREGROUND_SERVICE<br>_MEDIA_PLAYBACK</td><td>Keeps audio playing in the background.</td></tr>
+          <tr><td>POST_NOTIFICATIONS</td><td>Shows the media playback notification (Android 13+).</td></tr>
+          <tr><td>WAKE_LOCK</td><td>Keeps the network alive while playing with the screen off.</td></tr>
+          <tr><td>RECEIVE_BOOT_COMPLETED<br>SCHEDULE_EXACT_ALARM</td><td>Lets wake-up alarms survive a reboot and fire on time.</td></tr>
+          <tr><td>ACCESS_COARSE_LOCATION</td><td>Only for Discover's "near me" search — sent for that one search, never stored.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<hr class="hr">
+
+<section id="download">
+  <div class="wrap">
+    <div class="download-card">
+      <div>
+        <h2>Get Freqcast</h2>
+        <p>Grab the latest signed APK from GitHub Releases — no Play Store account, no sign-in.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://github.com/z0rats/freqcast/releases/latest">Download APK →</a>
+        </div>
+        <ul class="req-list" style="margin-top:24px;">
+          <li>Requires Android 10 (API 29) or later</li>
+          <li>Signed release build, reproducible from source</li>
+          <li>Licensed under GPL-3.0</li>
+        </ul>
+      </div>
+      <div>
+        <p class="kicker" style="margin-bottom:10px;">Build it yourself</p>
+        <div class="code-block">
+<span class="muted"># clone &amp; run on a connected device</span><br>
+git clone https://github.com/z0rats/freqcast.git<br>
+cd freqcast<br>
+./gradlew installDebug
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand">
+          <img src="icon-192.png" alt="">
+          <span>Freqcast</span>
+        </div>
+        <p class="footer-tag">Internet radio, without the stream-URL hunt.</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/z0rats/freqcast">GitHub</a>
+        <a href="https://github.com/z0rats/freqcast/releases">Releases</a>
+        <a href="https://github.com/z0rats/freqcast/blob/master/LICENSE">License (GPL-3.0)</a>
+        <a href="https://github.com/z0rats/freqcast/blob/master/FUNDING.md">Support</a>
+      </div>
+    </div>
+    <p class="footer-fine">Built on ExoPlayer/Media3. Station streams belong to their respective broadcasters — Freqcast just plays them. Not affiliated with any station or directory it connects to.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var canvas = document.getElementById('eq');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var bars = 9;
+  var barWidth = 6;
+  var gap = 6;
+  var base = [10, 18, 26, 34, 22, 30, 16, 24, 12];
+  var t = 0;
+
+  function draw() {
+    var w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    var totalWidth = bars * barWidth + (bars - 1) * gap;
+    var startX = (w - totalWidth) / 2;
+    for (var i = 0; i < bars; i++) {
+      var phase = reduceMotion ? 0 : Math.sin(t / 260 + i * 0.7);
+      var height = Math.max(6, base[i] + phase * 6);
+      var x = startX + i * (barWidth + gap);
+      var y = h - height;
+      var grad = ctx.createLinearGradient(0, y, 0, h);
+      grad.addColorStop(0, '#ffd772');
+      grad.addColorStop(1, '#ffb870');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, barWidth, height, 3);
+      } else {
+        ctx.rect(x, y, barWidth, height);
+      }
+      ctx.fill();
+    }
+  }
+
+  draw();
+  if (!reduceMotion) {
+    (function loop() {
+      t += 16;
+      draw();
+      requestAnimationFrame(loop);
+    })();
+  }
+})();
+</script>
+
+</body>
+</html>

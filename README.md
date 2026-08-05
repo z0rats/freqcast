@@ -6,6 +6,8 @@
 
 [![codecov](https://codecov.io/gh/z0rats/freqcast/branch/master/graph/badge.svg)](https://codecov.io/gh/z0rats/freqcast)
 
+🌐 **[freqcast website & feature docs](https://z0rats.github.io/freqcast/)**
+
 A modern open-source Android internet radio player that finds streams from station websites.
 
 I built Freqcast because I couldn't find a radio app that stayed simple. Most alternatives either include ads, depend on proprietary station catalogs, or make adding custom stations harder than it should be.
