@@ -337,20 +337,35 @@ class RadioPlaybackService : MediaLibraryService() {
             .build()
     }
 
-    private fun startForegroundWithNotification(notification: android.app.Notification) {
+    private fun startForegroundWithNotification(notification: android.app.Notification): Boolean =
         startForegroundWithNotification(NOTIFICATION_ID, notification)
-    }
 
+    /**
+     * Android 12+ can refuse this promotion outright (`ForegroundServiceStartNotAllowedException`,
+     * API 31+) when the call isn't backed by a currently-valid background-start exemption - hit in
+     * practice from both of this service's own background-triggered restarts: [applyPlayback]'s
+     * network-recovery retry (a `Handler`/`NetworkCallback` callback, not a user-visible action) and
+     * `onStartCommand`'s null-intent process-death resume. Caught as a plain `Exception` rather than
+     * that specific type - referencing an API-31-only exception class in a `catch` can trip ART's
+     * eager verifier below minSdk 31 (this app's minSdk is 29) even on a code path that never
+     * actually runs there. Returns false instead of crashing so callers can fail the attempt safely
+     * (see call sites) rather than proceed as if playback had actually started.
+     */
     private fun startForegroundWithNotification(
         notificationId: Int,
         notification: android.app.Notification,
-    ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        } else {
-            startForeground(notificationId, notification)
+    ): Boolean =
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(notificationId, notification)
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "startForegroundWithNotification: system refused the foreground promotion", e)
+            false
         }
-    }
 
     private fun initializePlayer() {
         val audioAttributes =
@@ -516,8 +531,8 @@ class RadioPlaybackService : MediaLibraryService() {
                             notification: android.app.Notification,
                             ongoing: Boolean,
                         ) {
-                            if (ongoing) {
-                                startForegroundWithNotification(notificationId, notification)
+                            if (ongoing && !startForegroundWithNotification(notificationId, notification)) {
+                                stopPlayback()
                             }
                         }
                     },
@@ -559,8 +574,15 @@ class RadioPlaybackService : MediaLibraryService() {
         timeshift.stop()
         registerNetworkCallback()
 
-        // Start foreground immediately so notification and lock screen controls appear right away
-        startForegroundWithNotification(createConnectingNotification())
+        // Start foreground immediately so notification and lock screen controls appear right away.
+        // The system can refuse this (see startForegroundWithNotification's doc) when this call
+        // came from a background trigger (network-recovery retry, process-death resume) - bail out
+        // via the same cleanup a give-up retry decision uses, rather than build out a player/media
+        // session pipeline with no foreground promotion behind it.
+        if (!startForegroundWithNotification(createConnectingNotification())) {
+            stopPlayback()
+            return
+        }
 
         val mediaItemBuilder =
             MediaItem
