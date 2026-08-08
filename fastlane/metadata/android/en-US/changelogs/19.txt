@@ -1,0 +1,7 @@
+Adding a station by pasting its website now works for more JavaScript-heavy sites — including ones that only reveal their stream through a backend API call, not the page itself. Station icons are picked up the same way.
+
+When a homepage matches several stations in the directory, you can now pick the right one from a list instead of getting a generic error.
+
+Clearer error message when a stream seems to be blocking connections specifically from a VPN.
+
+Fixed a crash that could happen when playback resumed in the background after a dropped connection or a system-triggered restart.
