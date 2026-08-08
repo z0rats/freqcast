@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 /**
  * Probes a stream URL before it's saved, so a typo'd or dead URL is caught immediately instead
@@ -41,7 +42,20 @@ class StreamValidator(
      */
     suspend fun probe(url: String): Probe =
         withContext(Dispatchers.IO) {
-            attempt(url, "HEAD").takeIf { it.reachable } ?: attempt(url, "GET")
+            val head = attempt(url, "HEAD")
+            if (head.reachable) {
+                head
+            } else {
+                val get = attempt(url, "GET")
+                if (get.reachable) {
+                    get
+                } else {
+                    get.copy(
+                        tlsHandshakeFailed =
+                            head.tlsHandshakeFailed || get.tlsHandshakeFailed,
+                    )
+                }
+            }
         }
 
     private fun attempt(
@@ -57,6 +71,12 @@ class StreamValidator(
                     .header("User-Agent", STREAM_USER_AGENT)
                     .build()
             client.newCall(request).execute().use { Probe(it.isSuccessful, it.header("Content-Type")) }
+        } catch (e: SSLException) {
+            // Distinct from a plain unreachable host/timeout: a TLS handshake specifically being
+            // reset is the shape of some site-side (or upstream network) blocks that target
+            // VPN-looking traffic - a caller that also knows a VPN is active can turn this into a
+            // more actionable hint than a generic "unreachable" error.
+            Probe(reachable = false, contentType = null, tlsHandshakeFailed = true)
         } catch (e: Exception) {
             Probe(reachable = false, contentType = null)
         }
@@ -64,6 +84,7 @@ class StreamValidator(
     data class Probe(
         val reachable: Boolean,
         val contentType: String?,
+        val tlsHandshakeFailed: Boolean = false,
     ) {
         /** No Content-Type at all is common for bare Icecast/Shoutcast mounts, so it's treated as a stream, not ruled out. */
         val looksLikeAudio: Boolean

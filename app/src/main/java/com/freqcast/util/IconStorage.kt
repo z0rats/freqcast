@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import java.io.File
 import java.util.UUID
 
@@ -16,6 +17,7 @@ import java.util.UUID
  * starts with that character.
  */
 object IconStorage {
+    private const val TAG = "IconStorage"
     private const val ICONS_DIR = "station_icons"
     private const val MAX_DIMENSION_PX = 512
 
@@ -62,19 +64,28 @@ object IconStorage {
         if (isIco(bytes)) {
             return try {
                 IcoDecoder.decode(bytes)?.let { persistBitmap(context, it) }
+                    ?: run {
+                        Log.w(TAG, "saveImageBytes: IcoDecoder returned null for ${bytes.size} .ico bytes")
+                        null
+                    }
             } catch (e: Exception) {
                 // Same broad-catch rationale as below: malformed bytes from an external host we
                 // don't control should just mean "no icon", not a crash.
+                Log.w(TAG, "saveImageBytes: .ico decode threw", e)
                 null
             }
         }
         val tempFile = File.createTempFile("icon_src", null, context.cacheDir)
         return try {
             tempFile.outputStream().use { it.write(bytes) }
-            persistDownscaled(context, tempFile)
+            persistDownscaled(context, tempFile) ?: run {
+                Log.w(TAG, "saveImageBytes: BitmapFactory couldn't decode ${bytes.size} downloaded bytes")
+                null
+            }
         } catch (e: Exception) {
             // Same broad-catch rationale as saveImage: a favicon URL is an external host we don't
             // control, and any failure here should just mean "no icon", not a crash.
+            Log.w(TAG, "saveImageBytes: failed", e)
             null
         } finally {
             tempFile.delete()

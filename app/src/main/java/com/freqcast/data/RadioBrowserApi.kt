@@ -1,5 +1,6 @@
 package com.freqcast.data
 
+import android.util.Log
 import com.freqcast.util.APP_USER_AGENT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -200,10 +201,14 @@ class RadioBrowserApi(
                         .header("User-Agent", APP_USER_AGENT)
                         .build()
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@use null
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "downloadFavicon: HTTP ${response.code} for $url")
+                        return@use null
+                    }
                     response.body?.bytes()
                 }
             } catch (e: Exception) {
+                Log.w(TAG, "downloadFavicon: failed for $url", e)
                 null
             }
         }
@@ -239,6 +244,7 @@ class RadioBrowserApi(
     }
 
     companion object {
+        private const val TAG = "RadioBrowserApi"
         private const val DEFAULT_BASE_URL = "https://all.api.radio-browser.info/"
         private const val DEFAULT_CACHE_TTL_MS = 15 * 60 * 1000L
 

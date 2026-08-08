@@ -9,6 +9,7 @@
     <string name="stage_checking_url">Comprobando el enlace…</string>
     <string name="stage_searching_directory">Buscando en el directorio de emisoras…</string>
     <string name="stage_scanning_page">Buscando un flujo en la página…</string>
+    <string name="stage_rendering_page">Renderizando la página…</string>
     <string name="stage_downloading_icon">Descargando el icono de la emisora…</string>
     <string name="play">Reproducir</string>
     <string name="stop">Detener</string>
@@ -28,6 +29,7 @@
     <string name="error_duplicate_name">Ya existe una emisora con ese nombre</string>
     <string name="error_duplicate_url">Ya existe una emisora con esa URL</string>
     <string name="error_stream_unreachable">No se pudo conectar con este flujo. Comprueba la URL e inténtalo de nuevo</string>
+    <string name="error_stream_blocked_vpn">No se pudo conectar. Es posible que esta emisora bloquee las conexiones mediante VPN. Prueba a desactivarla y añade la emisora de nuevo</string>
     <string name="station_updated">Emisora actualizada</string>
     <string name="edit_station">Editar emisora</string>
     <string name="edit">Editar</string>
@@ -96,6 +98,8 @@
     <string name="discover_location_unavailable">No se pudo determinar tu ubicación. Comprueba que la ubicación esté activada e inténtalo de nuevo</string>
     <string name="discover_ssl_warning">El certificado HTTPS de esta emisora no superó la validación y puede que no se reproduzca de forma fiable</string>
     <string name="visit_website">Visitar sitio web</string>
+    <string name="candidate_picker_title">Se encontraron varias coincidencias</string>
+    <string name="candidate_picker_hint">Varias emisoras usan esta página web. Toca la que buscas:</string>
     <string name="shortcut_last_played">Continuar: %1$s</string>
     <string name="shortcut_first_station">Reproducción rápida: %1$s</string>
     <string name="alarms">Alarmas</string>

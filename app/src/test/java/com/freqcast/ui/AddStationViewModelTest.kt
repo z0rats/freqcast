@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.room.Room
 import com.freqcast.R
 import com.freqcast.data.AppDatabase
+import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.StationUrlResolver
@@ -18,6 +19,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -35,6 +37,17 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.InetAddress
+import javax.net.ssl.SSLHandshakeException
+
+/**
+ * [MockWebServer] doesn't care what Host header a request arrives with, only the socket it's
+ * bound to - so tests that need a real multi-label hostname (to exercise
+ * [StationUrlResolver]'s domain-label-based directory search, see [StationUrlResolverTest]'s
+ * identical rationale) route every hostname to loopback via a custom [Dns] rather than depending
+ * on real DNS resolving a fake domain.
+ */
+private val LOOPBACK_DNS = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
 
 /**
  * [StreamValidator] hops onto the real `Dispatchers.IO` for its MockWebServer round-trip, off the
@@ -80,17 +93,60 @@ class AddStationViewModelTest {
     private fun createViewModel(
         scheduler: TestCoroutineScheduler,
         editingStationId: Long? = null,
+        streamValidator: StreamValidator? = null,
         stationUrlResolver: StationUrlResolver? = null,
+        checkVpnActive: (() -> Boolean)? = null,
     ): AddStationViewModel {
         Dispatchers.setMain(StandardTestDispatcher(scheduler))
-        val streamValidator = StreamValidator(client = OkHttpClient())
+        val effectiveStreamValidator = streamValidator ?: StreamValidator(client = OkHttpClient())
         return AddStationViewModel(
-            repository,
-            editingStationId,
-            RuntimeEnvironment.getApplication(),
-            streamValidator,
-            stationUrlResolver ?: StationUrlResolver(streamValidator = streamValidator),
+            repository = repository,
+            editingStationId = editingStationId,
+            appContext = RuntimeEnvironment.getApplication(),
+            streamValidator = effectiveStreamValidator,
+            stationUrlResolver = stationUrlResolver ?: StationUrlResolver(streamValidator = effectiveStreamValidator),
+            checkVpnActive = checkVpnActive ?: { false },
         )
+    }
+
+    /**
+     * Sets up the ambiguous-directory-match scenario shared by the candidate-picker tests below:
+     * a homepage ([homepageServer]) whose reachable-but-non-audio probe falls through to
+     * [StationUrlResolver], whose directory search ([radioBrowserServer]) returns two stations
+     * both listing that same homepage. [candidateAUrl]/[candidateBUrl] default to placeholder
+     * hosts that are never actually dialed - the ambiguous branch stops before resolving either
+     * candidate - callers that need one reachable (e.g. via [LOOPBACK_DNS]) pass a real one in.
+     * Returns the ready-to-save view model plus every server the caller must shut down.
+     */
+    private fun setUpAmbiguousViewModel(
+        scheduler: TestCoroutineScheduler,
+        candidateAUrl: String = "http://nova-paris.example/stream",
+        candidateBUrl: String = "http://nova-lyon.example/stream",
+    ): Pair<AddStationViewModel, List<MockWebServer>> {
+        val homepageServer = MockWebServer().apply { start() }
+        val radioBrowserServer = MockWebServer().apply { start() }
+        val homepageUrl = "http://myradio.test:${homepageServer.port}/"
+        homepageServer.enqueue(MockResponse().setHeader("Content-Type", "text/html"))
+        val searchBody =
+            """
+            [{"name":"Nova FM Paris","url":"$candidateAUrl","homepage":"$homepageUrl","favicon":"http://nova-paris.example/icon.png"},
+             {"name":"Nova FM Lyon","url":"$candidateBUrl","homepage":"$homepageUrl","favicon":"http://nova-lyon.example/icon.png"}]
+            """.trimIndent()
+        radioBrowserServer.enqueue(MockResponse().setBody(searchBody))
+
+        val loopbackClient = OkHttpClient.Builder().dns(LOOPBACK_DNS).build()
+        val streamValidator = StreamValidator(client = loopbackClient)
+        val resolver =
+            StationUrlResolver(
+                radioBrowserApi = RadioBrowserApi(baseUrl = radioBrowserServer.url("/")),
+                streamValidator = streamValidator,
+                client = loopbackClient,
+            )
+        val viewModel =
+            createViewModel(scheduler, streamValidator = streamValidator, stationUrlResolver = resolver)
+        viewModel.onNameChange("Nova FM")
+        viewModel.onUrlChange(homepageUrl)
+        return viewModel to listOf(homepageServer, radioBrowserServer)
     }
 
     private fun pngBytesFor(
@@ -402,6 +458,164 @@ class AddStationViewModelTest {
                 homepageServer.shutdown()
             }
         }
+
+    @Test
+    fun `pasting a homepage with multiple directory candidates shows the picker instead of the unreachable error`() =
+        runTest {
+            val (viewModel, servers) = setUpAmbiguousViewModel(testScheduler)
+            try {
+                viewModel.save()
+
+                awaitTrue { viewModel.uiState.value.candidateStations != null }
+                assertEquals(
+                    2,
+                    viewModel.uiState.value.candidateStations
+                        ?.size,
+                )
+                assertNull(viewModel.uiState.value.urlErrorRes)
+                assertTrue(!viewModel.uiState.value.isSaving)
+                assertTrue(database.radioStationDao().getAllStations().isEmpty())
+            } finally {
+                servers.forEach { it.shutdown() }
+            }
+        }
+
+    @Test
+    fun `selectCandidate finalizes and saves the chosen station`() =
+        runTest {
+            val streamServer = MockWebServer().apply { start() }
+            streamServer.enqueue(MockResponse().setResponseCode(200))
+            val (viewModel, servers) =
+                setUpAmbiguousViewModel(
+                    testScheduler,
+                    candidateAUrl = "http://nova-paris.test:${streamServer.port}/stream",
+                )
+            try {
+                viewModel.save()
+                awaitTrue { viewModel.uiState.value.candidateStations != null }
+                val chosen =
+                    viewModel.uiState.value.candidateStations!!
+                        .first { it.name == "Nova FM Paris" }
+
+                viewModel.selectCandidate(chosen)
+
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertNull(viewModel.uiState.value.candidateStations)
+                val saved = database.radioStationDao().getAllStations().single()
+                // The typed name ("Nova FM", set by setUpAmbiguousViewModel) wins over the
+                // candidate's own name - same ifEmpty{} precedence finalizeSave always applies.
+                assertEquals("Nova FM", saved.name)
+                assertEquals("http://nova-paris.test:${streamServer.port}/stream", saved.streamUrl)
+            } finally {
+                servers.forEach { it.shutdown() }
+                streamServer.shutdown()
+            }
+        }
+
+    @Test
+    fun `selectCandidate surfaces error_stream_unreachable when the chosen candidate has gone dead`() =
+        runTest {
+            val (viewModel, servers) =
+                setUpAmbiguousViewModel(testScheduler, candidateAUrl = "http://127.0.0.1:1/stream.mp3")
+            try {
+                viewModel.save()
+                awaitTrue { viewModel.uiState.value.candidateStations != null }
+                val dead =
+                    viewModel.uiState.value.candidateStations!!
+                        .first { it.name == "Nova FM Paris" }
+
+                viewModel.selectCandidate(dead)
+
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertEquals(R.string.error_stream_unreachable, viewModel.uiState.value.urlErrorRes)
+                assertTrue(database.radioStationDao().getAllStations().isEmpty())
+            } finally {
+                servers.forEach { it.shutdown() }
+            }
+        }
+
+    @Test
+    fun `dismissCandidates clears the picker without saving anything`() =
+        runTest {
+            val (viewModel, servers) = setUpAmbiguousViewModel(testScheduler)
+            try {
+                viewModel.save()
+                awaitTrue { viewModel.uiState.value.candidateStations != null }
+
+                viewModel.dismissCandidates()
+
+                assertNull(viewModel.uiState.value.candidateStations)
+                assertEquals("Nova FM", viewModel.uiState.value.name)
+                assertTrue(database.radioStationDao().getAllStations().isEmpty())
+            } finally {
+                servers.forEach { it.shutdown() }
+            }
+        }
+
+    @Test
+    fun `pasting a homepage whose TLS handshake fails shows the VPN-blocked error when a VPN is active`() =
+        runTest {
+            val homepageServer = MockWebServer()
+            homepageServer.start()
+            try {
+                homepageServer.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
+                val throwingValidator = StreamValidator(client = throwingSslClient())
+                val viewModel =
+                    createViewModel(
+                        testScheduler,
+                        streamValidator = throwingValidator,
+                        stationUrlResolver = StationUrlResolver(streamValidator = throwingValidator),
+                        checkVpnActive = { true },
+                    )
+                viewModel.onNameChange("New FM")
+                viewModel.onUrlChange(homepageServer.url("/").toString())
+
+                viewModel.save()
+
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertEquals(R.string.error_stream_blocked_vpn, viewModel.uiState.value.urlErrorRes)
+            } finally {
+                homepageServer.shutdown()
+            }
+        }
+
+    @Test
+    fun `pasting a homepage whose TLS handshake fails shows the generic unreachable error when no VPN is active`() =
+        runTest {
+            val homepageServer = MockWebServer()
+            homepageServer.start()
+            try {
+                homepageServer.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
+                val throwingValidator = StreamValidator(client = throwingSslClient())
+                val viewModel =
+                    createViewModel(
+                        testScheduler,
+                        streamValidator = throwingValidator,
+                        stationUrlResolver = StationUrlResolver(streamValidator = throwingValidator),
+                        checkVpnActive = { false },
+                    )
+                viewModel.onNameChange("New FM")
+                viewModel.onUrlChange(homepageServer.url("/").toString())
+
+                viewModel.save()
+
+                awaitTrue { viewModel.uiState.value.isSaving }
+                awaitTrue { !viewModel.uiState.value.isSaving }
+                assertEquals(R.string.error_stream_unreachable, viewModel.uiState.value.urlErrorRes)
+            } finally {
+                homepageServer.shutdown()
+            }
+        }
+
+    /** An [OkHttpClient] that fails every call the way a VPN-targeted TLS reset would. */
+    private fun throwingSslClient(): OkHttpClient =
+        OkHttpClient
+            .Builder()
+            .addInterceptor { throw SSLHandshakeException("simulated handshake reset") }
+            .build()
 
     @Test
     fun `editing a station keeps its manual list position after save`() =

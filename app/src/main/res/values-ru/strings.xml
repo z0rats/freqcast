@@ -9,6 +9,7 @@
     <string name="stage_checking_url">Проверяем ссылку…</string>
     <string name="stage_searching_directory">Ищем в каталоге станций…</string>
     <string name="stage_scanning_page">Сканируем страницу в поисках потока…</string>
+    <string name="stage_rendering_page">Загружаем страницу…</string>
     <string name="stage_downloading_icon">Загружаем иконку станции…</string>
     <string name="play">Воспроизвести</string>
     <string name="stop">Стоп</string>
@@ -28,6 +29,7 @@
     <string name="error_duplicate_name">Станция с таким названием уже существует</string>
     <string name="error_duplicate_url">Станция с таким URL уже существует</string>
     <string name="error_stream_unreachable">Не удалось подключиться к этому потоку. Проверьте URL и попробуйте снова</string>
+    <string name="error_stream_blocked_vpn">Не удалось подключиться — возможно, этот поток блокирует соединения через VPN. Попробуйте отключить VPN и добавить станцию снова</string>
     <string name="station_updated">Станция обновлена</string>
     <string name="edit_station">Редактировать станцию</string>
     <string name="edit">Редактировать</string>
@@ -96,6 +98,8 @@
     <string name="discover_location_unavailable">Не удалось определить местоположение. Проверьте, включена ли геолокация, и попробуйте снова</string>
     <string name="discover_ssl_warning">HTTPS-сертификат этой станции не прошёл проверку — она может воспроизводиться нестабильно</string>
     <string name="visit_website">Открыть сайт</string>
+    <string name="candidate_picker_title">Найдено несколько совпадений</string>
+    <string name="candidate_picker_hint">На этом сайте зарегистрировано несколько станций. Нажмите на нужную:</string>
     <string name="shortcut_last_played">Продолжить: %1$s</string>
     <string name="shortcut_first_station">Быстрый запуск: %1$s</string>
     <string name="alarms">Будильники</string>

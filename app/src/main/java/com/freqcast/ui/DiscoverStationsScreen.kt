@@ -584,7 +584,7 @@ private fun openWebsite(
     }
 }
 
-private fun stationSubtitle(station: RadioBrowserStation): String {
+internal fun stationSubtitle(station: RadioBrowserStation): String {
     val distancePart =
         station.distanceKm?.let { km -> "📍 " + String.format(Locale.getDefault(), "%.1f km", km) }
     val countryPart = CountryFlagEmoji.from(station.countryCode)

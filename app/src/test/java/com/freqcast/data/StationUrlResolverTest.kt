@@ -10,6 +10,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -46,12 +47,15 @@ class StationUrlResolverTest {
         server.shutdown()
     }
 
-    private fun resolver(radioBrowserApi: RadioBrowserApi = RadioBrowserApi(baseUrl = server.url("/"))) =
-        StationUrlResolver(
-            radioBrowserApi = radioBrowserApi,
-            streamValidator = StreamValidator(client = loopbackClient),
-            client = loopbackClient,
-        )
+    private fun resolver(
+        radioBrowserApi: RadioBrowserApi = RadioBrowserApi(baseUrl = server.url("/")),
+        webViewSniff: (suspend (String) -> List<SniffedRequest>)? = null,
+    ) = StationUrlResolver(
+        radioBrowserApi = radioBrowserApi,
+        streamValidator = StreamValidator(client = loopbackClient),
+        client = loopbackClient,
+        webViewSniff = webViewSniff,
+    )
 
     @Test
     fun `resolve returns the directory match when its homepage matches the target host`() =
@@ -125,6 +129,120 @@ class StationUrlResolverTest {
             val result = resolver().resolve(homepageUrl)
 
             assertEquals("http://myradio.test:${server.port}/favicon.png", result?.favicon)
+        }
+
+    @Test
+    fun `resolve reports ambiguous candidates and stops instead of falling through to page scan`() =
+        runTest {
+            // Community-submitted data: two distinct stations (e.g. regional affiliates of the
+            // same network) both declaring the same parent-brand homepage. Picking whichever has
+            // more votes would silently resolve to a plausible-looking but possibly wrong station,
+            // and guessing via the scraping stages could land on a third, unrelated result -
+            // surfacing the ambiguous set to the caller instead is the safer failure mode.
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            val searchBody =
+                """
+                [{"name":"Myradio Affiliate A","url":"http://a.example/stream","homepage":"$homepageUrl"},
+                 {"name":"Myradio Affiliate B","url":"http://b.example/stream","homepage":"$homepageUrl"}]
+                """.trimIndent()
+            server.enqueue(MockResponse().setBody(searchBody))
+            var captured: List<RadioBrowserStation>? = null
+
+            val result = resolver().resolve(homepageUrl, onAmbiguous = { captured = it })
+
+            assertNull(result)
+            assertEquals(setOf("Myradio Affiliate A", "Myradio Affiliate B"), captured?.map { it.name }?.toSet())
+            // Only the directory search fired - no page fetch. Locks in that an ambiguous match
+            // stops the pipeline rather than falling through to a scraped guess.
+            assertEquals(1, server.requestCount)
+        }
+
+    @Test
+    fun `resolve reports only the directory stage when candidates are ambiguous`() =
+        runTest {
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            val searchBody =
+                """
+                [{"name":"Myradio Affiliate A","url":"http://a.example/stream","homepage":"$homepageUrl"},
+                 {"name":"Myradio Affiliate B","url":"http://b.example/stream","homepage":"$homepageUrl"}]
+                """.trimIndent()
+            server.enqueue(MockResponse().setBody(searchBody))
+            val stages = mutableListOf<ResolveStage>()
+
+            resolver().resolve(homepageUrl, onStage = { stages += it })
+
+            assertEquals(listOf(ResolveStage.SEARCHING_DIRECTORY), stages)
+        }
+
+    @Test
+    fun `resolve falls through to page scan when the single directory match turns out unplayable`() =
+        runTest {
+            // Distinct from the ambiguous case above: exactly one host-matching candidate, but its
+            // stream is dead. This must still fall through to the scraping stages (DirectoryResult
+            // .NoMatch), not be treated as a one-row ambiguous set.
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            val searchBody =
+                """
+                [{"name":"Dead Station","url":"http://127.0.0.1:1/stream","homepage":"$homepageUrl",
+                  "favicon":"http://dead.example/icon.png"}]
+                """.trimIndent()
+            server.enqueue(MockResponse().setBody(searchBody))
+            server.enqueue(
+                MockResponse().setBody(
+                    """<html><body><audio src="/stream.mp3"></audio></body></html>""",
+                ),
+            )
+            server.enqueue(MockResponse().setResponseCode(200))
+
+            val result = resolver().resolve(homepageUrl)
+
+            assertEquals("http://myradio.test:${server.port}/stream.mp3", result?.streamUrl)
+        }
+
+    @Test
+    fun `resolveCandidate resolves a playable candidate directly`() =
+        runTest {
+            val candidate =
+                RadioBrowserStation(
+                    uuid = "abc-123",
+                    name = "Silver Rain",
+                    url = server.url("/stream").toString(),
+                    country = "",
+                    tags = "",
+                    bitrate = 0,
+                    hls = true,
+                    homepage = "https://www.myradio.test/",
+                    favicon = "https://www.myradio.test/logo.png",
+                )
+            server.enqueue(MockResponse().setResponseCode(200))
+
+            val result = resolver().resolveCandidate(candidate)
+
+            assertEquals(server.url("/stream").toString(), result?.streamUrl)
+            assertEquals("abc-123", result?.radioBrowserUuid)
+            assertEquals("Silver Rain", result?.name)
+            assertEquals("https://www.myradio.test/logo.png", result?.favicon)
+            assertTrue(result?.isHls == true)
+        }
+
+    @Test
+    fun `resolveCandidate returns null for a candidate that is no longer reachable`() =
+        runTest {
+            val candidate =
+                RadioBrowserStation(
+                    uuid = "abc-123",
+                    name = "Dead Station",
+                    url = "http://127.0.0.1:1/stream.mp3",
+                    country = "",
+                    tags = "",
+                    bitrate = 0,
+                    homepage = "https://www.myradio.test/",
+                    favicon = "https://www.myradio.test/logo.png",
+                )
+
+            val result = resolver().resolveCandidate(candidate)
+
+            assertNull(result)
         }
 
     @Test
@@ -410,6 +528,176 @@ class StationUrlResolverTest {
 
             assertNull(result)
         }
+
+    @Test
+    fun `resolve reaches stage 5 and returns a station when stages 1-4 find nothing`() =
+        runTest {
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
+            server.enqueue(MockResponse().setResponseCode(200))
+
+            val result =
+                resolver(webViewSniff = { listOf(SniffedRequest(server.url("/webview-stream.mp3").toString())) })
+                    .resolve(homepageUrl)
+
+            assertEquals(server.url("/webview-stream.mp3").toString(), result?.streamUrl)
+        }
+
+    @Test
+    fun `resolve does not invoke the webview sniffer when the page scan already succeeds`() =
+        runTest {
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(
+                MockResponse().setBody(
+                    """<html><body><audio src="/stream.mp3"></audio></body></html>""",
+                ),
+            )
+            server.enqueue(MockResponse().setResponseCode(200))
+            var sniffInvoked = false
+
+            val result =
+                resolver(
+                    webViewSniff = {
+                        sniffInvoked = true
+                        emptyList()
+                    },
+                ).resolve(homepageUrl)
+
+            assertEquals("http://myradio.test:${server.port}/stream.mp3", result?.streamUrl)
+            assertFalse(sniffInvoked)
+        }
+
+    @Test
+    fun `resolve backfills the homepage's own title and favicon when only stage 5 finds the stream`() =
+        runTest {
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    <html><head><title>My Cool Radio</title><link rel="icon" href="/favicon.png"></head>
+                    <body><p>Just a website, no player here.</p></body></html>
+                    """.trimIndent(),
+                ),
+            )
+            server.enqueue(MockResponse().setResponseCode(200))
+
+            val result =
+                resolver(webViewSniff = { listOf(SniffedRequest(server.url("/webview-stream.mp3").toString())) })
+                    .resolve(homepageUrl)
+
+            assertEquals("My Cool Radio", result?.name)
+            assertEquals("http://myradio.test:${server.port}/favicon.png", result?.favicon)
+        }
+
+    @Test
+    fun `resolve discards a stage 5 candidate that fails the stream validator`() =
+        runTest {
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
+
+            val result =
+                resolver(webViewSniff = { listOf(SniffedRequest("http://127.0.0.1:1/stream.mp3")) })
+                    .resolve(homepageUrl)
+
+            assertNull(result)
+        }
+
+    @Test
+    fun `resolve reports all three stages in order when stage 5 is reached`() =
+        runTest {
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
+            server.enqueue(MockResponse().setResponseCode(200))
+            val stages = mutableListOf<ResolveStage>()
+
+            resolver(webViewSniff = { listOf(SniffedRequest(server.url("/webview-stream.mp3").toString())) })
+                .resolve(homepageUrl) { stages += it }
+
+            assertEquals(
+                listOf(ResolveStage.SEARCHING_DIRECTORY, ResolveStage.SCANNING_PAGE, ResolveStage.RENDERING_PAGE),
+                stages,
+            )
+        }
+
+    @Test
+    fun `resolve extracts a stream_url embedded in a webview-captured json api response body`() =
+        runTest {
+            // Confirmed real-world shape (surprise.fm): the WebView passively captures a request
+            // to a Supabase-style PostgREST endpoint, but that URL itself just serves JSON, not
+            // audio - the real stream_url is inside its response body, discoverable only by
+            // re-fetching it (with the same apikey header the page sent) and re-running the same
+            // extractCandidates regex used on plain HTML/JS.
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
+            // No body on this one: it's answered to the direct-probe HEAD request, and MockWebServer
+            // sends a queued response's body bytes onto the wire even for HEAD (HTTP forbids a HEAD
+            // response body) - leftover unread bytes on the kept-alive connection corrupt the next
+            // response's status line otherwise.
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json"))
+            server.enqueue(
+                MockResponse().setHeader("Content-Type", "application/json").setBody(
+                    """[{"stream_url":"${server.url("/actual-stream.mp3")}"}]""",
+                ),
+            )
+            server.enqueue(MockResponse().setResponseCode(200))
+            val apiUrl = server.url("/rest/v1/station_settings?select=stream_url").toString()
+
+            val result =
+                resolver(webViewSniff = { listOf(SniffedRequest(apiUrl, headers = mapOf("apikey" to "test-key"))) })
+                    .resolve(homepageUrl)
+
+            assertEquals(server.url("/actual-stream.mp3").toString(), result?.streamUrl)
+            // Requests: directory search, homepage GET, apiUrl HEAD (direct-probe), apiUrl GET
+            // (the header-replayed body fetch) - the header must survive that replay.
+            val requests = (1..4).map { server.takeRequest() }
+            assertEquals("test-key", requests[3].getHeader("apikey"))
+        }
+
+    @Test
+    fun `resolve backfills a favicon from a logo_url field in the same webview-captured json body`() =
+        runTest {
+            // Confirmed real-world shape (surprise.fm): the exact same station_settings row that
+            // names stream_url also names logo_url - resolve() must not need a second request to
+            // pick it up, since the static-HTML favicon backfill (pageFavicon) never sees a JSON
+            // body at all.
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json"))
+            server.enqueue(
+                MockResponse().setHeader("Content-Type", "application/json").setBody(
+                    """[{"stream_url":"${server.url(
+                        "/actual-stream.mp3",
+                    )}","logo_url":"${server.url("/logo.png")}"}]""",
+                ),
+            )
+            server.enqueue(MockResponse().setResponseCode(200))
+            val apiUrl = server.url("/rest/v1/station_settings?select=stream_url,logo_url").toString()
+
+            val result =
+                resolver(webViewSniff = { listOf(SniffedRequest(apiUrl)) }).resolve(homepageUrl)
+
+            assertEquals(server.url("/actual-stream.mp3").toString(), result?.streamUrl)
+            assertEquals(server.url("/logo.png").toString(), result?.favicon)
+        }
+
+    @Test
+    fun `extractJsonFavicon finds a logo_url field in a json body`() {
+        val body = """[{"stream_url":"https://example.com/stream.mp3","logo_url":"https://example.com/logo.png"}]"""
+
+        assertEquals("https://example.com/logo.png", resolver().extractJsonFavicon(body))
+    }
+
+    @Test
+    fun `extractJsonFavicon returns null when the body has no favicon-shaped field`() {
+        assertNull(resolver().extractJsonFavicon("""[{"stream_url":"https://example.com/stream.mp3"}]"""))
+    }
 
     @Test
     fun `extractCandidates finds a stream_url json value and captures its context`() {

@@ -1,6 +1,7 @@
 package com.freqcast.util
 
 import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
@@ -10,6 +11,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import javax.net.ssl.SSLHandshakeException
 
 class StreamValidatorTest {
     private lateinit var server: MockWebServer
@@ -69,5 +71,30 @@ class StreamValidatorTest {
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
 
             assertFalse(validator.isReachable(server.url("/stream").toString()))
+        }
+
+    @Test
+    fun `probe flags a TLS handshake failure distinctly from a plain unreachable host`() =
+        runTest {
+            val throwingClient =
+                OkHttpClient
+                    .Builder()
+                    .addInterceptor { throw SSLHandshakeException("simulated handshake reset") }
+                    .build()
+            val throwingValidator = StreamValidator(client = throwingClient)
+
+            val probe = throwingValidator.probe("https://example.test/stream")
+
+            assertFalse(probe.reachable)
+            assertTrue(probe.tlsHandshakeFailed)
+        }
+
+    @Test
+    fun `probe does not flag a TLS handshake failure for a plain connection refusal`() =
+        runTest {
+            val probe = validator.probe("http://127.0.0.1:1/stream")
+
+            assertFalse(probe.reachable)
+            assertFalse(probe.tlsHandshakeFailed)
         }
 }

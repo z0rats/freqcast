@@ -9,6 +9,7 @@
     <string name="stage_checking_url">Checking link…</string>
     <string name="stage_searching_directory">Searching station directory…</string>
     <string name="stage_scanning_page">Scanning page for a stream…</string>
+    <string name="stage_rendering_page">Rendering page…</string>
     <string name="stage_downloading_icon">Downloading station icon…</string>
     <string name="play">Play</string>
     <string name="stop">Stop</string>
@@ -28,6 +29,7 @@
     <string name="error_duplicate_name">Station with this name already exists</string>
     <string name="error_duplicate_url">Station with this URL already exists</string>
     <string name="error_stream_unreachable">Could not connect to this stream. Check the URL and try again</string>
+    <string name="error_stream_blocked_vpn">Could not connect — this stream may be blocking connections from your VPN. Try disabling it and adding the station again</string>
     <string name="station_updated">Station updated</string>
     <string name="edit_station">Edit station</string>
     <string name="edit">Edit</string>
@@ -96,6 +98,8 @@
     <string name="discover_location_unavailable">Couldn\'t determine your location. Check that location services are on and try again</string>
     <string name="discover_ssl_warning">This station\'s HTTPS certificate failed validation and it may not play reliably</string>
     <string name="visit_website">Visit website</string>
+    <string name="candidate_picker_title">Multiple matches found</string>
+    <string name="candidate_picker_hint">Several stations use this homepage. Tap the one you meant:</string>
     <string name="shortcut_last_played">Continue: %1$s</string>
     <string name="shortcut_first_station">Quick play: %1$s</string>
     <string name="alarms">Alarms</string>

@@ -31,6 +31,18 @@ data class ResolvedStation(
     val favicon: String? = null,
 )
 
+/**
+ * One request [com.freqcast.util.WebViewStreamSniffer] observed while sniffing a page - just
+ * enough for [StationUrlResolver.fromWebView] to replay it via plain OkHttp when the captured URL
+ * itself doesn't validate as a stream (e.g. a Supabase-style JSON REST endpoint whose body, not
+ * its own URL, contains the real `stream_url` - the headers are needed since such endpoints
+ * commonly gate on an `apikey`/`Authorization` header the page's JS sent).
+ */
+data class SniffedRequest(
+    val url: String,
+    val headers: Map<String, String> = emptyMap(),
+)
+
 /** Which step of [StationUrlResolver.resolve] is currently running, for a caller to show as progress. */
 enum class ResolveStage {
     /** Stage 1: checking whether the station is already cataloged in the Radio Browser directory. */
@@ -38,6 +50,9 @@ enum class ResolveStage {
 
     /** Stage 2 (+3+4): scraping the homepage itself, then its linked scripts or iframes if empty. */
     SCANNING_PAGE,
+
+    /** Stage 5: headless-WebView last resort, only reached when [webViewSniff] is non-null and stages 1-4 found nothing. */
+    RENDERING_PAGE,
 }
 
 /**
@@ -56,6 +71,10 @@ enum class ResolveStage {
  *    and 3 found nothing - fetched and re-scanned the same way, with common non-player embeds
  *    (social/video/ads/maps/captcha) filtered out, falling back to the same AzuraCast/Icecast
  *    panel probe as step 3 against the iframe's own origin.
+ * 5. If [webViewSniff] is supplied and steps 1-4 still found nothing - a JS-executing last resort
+ *    for sites whose stream URL only exists as the result of a runtime `fetch()`, never as a
+ *    literal string anywhere in the static HTML/JS (steps 2-4 are pure regex-over-text and can
+ *    never find those). Not guaranteed - see [com.freqcast.util.WebViewStreamSniffer].
  *
  * Every URL this produces is still checked with [StreamValidator.isPlayableStream] before being
  * returned, same as a manually typed stream URL - a resolved candidate that turns out unreachable
@@ -73,9 +92,18 @@ class StationUrlResolver(
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .build(),
+    /**
+     * Stage 5 fallback: a plain suspend function rather than a WebView/Context type, so this class
+     * stays pure and [StationUrlResolverTest] never needs Robolectric's non-functional
+     * `ShadowWebView`. Defaults to null (stage 5 skipped) - only
+     * [com.freqcast.ui.AddStationViewModel], which already holds a `Context`, wires in a real
+     * [com.freqcast.util.WebViewStreamSniffer].
+     */
+    private val webViewSniff: (suspend (String) -> List<SniffedRequest>)? = null,
 ) {
     suspend fun resolve(
         homepageUrl: String,
+        onAmbiguous: (List<RadioBrowserStation>) -> Unit = {},
         onStage: (ResolveStage) -> Unit = {},
     ): ResolvedStation? =
         withContext(Dispatchers.IO) {
@@ -83,24 +111,94 @@ class StationUrlResolver(
                 val normalizedUrl = withScheme(homepageUrl)
                 val host = hostOf(normalizedUrl) ?: return@withTimeoutOrNull null
                 onStage(ResolveStage.SEARCHING_DIRECTORY)
-                fromDirectory(host) ?: run {
-                    onStage(ResolveStage.SCANNING_PAGE)
-                    fromHtml(normalizedUrl, host)
+                when (val directoryResult = fromDirectory(host)) {
+                    is DirectoryResult.Match -> {
+                        directoryResult.station
+                    }
+
+                    is DirectoryResult.Ambiguous -> {
+                        onAmbiguous(directoryResult.candidates)
+                        // Stop here rather than falling through to a scraped guess that might land
+                        // on a third, unrelated station - the caller now has the real candidate set
+                        // and surfaces it for the user to pick from directly.
+                        null
+                    }
+
+                    DirectoryResult.NoMatch -> {
+                        onStage(ResolveStage.SCANNING_PAGE)
+                        val html = fetchText(normalizedUrl)
+                        val pageName = html?.let(::extractTitle)
+                        val pageFavicon = html?.let { extractFavicon(it, normalizedUrl) }
+                        val htmlResult = html?.let { fromHtml(it, normalizedUrl, host) }
+                        htmlResult ?: webViewSniff?.let { sniff ->
+                            onStage(ResolveStage.RENDERING_PAGE)
+                            // The static scan found no stream, but its already-fetched <title>/favicon
+                            // are still the best name/icon candidates available - don't lose them just
+                            // because the regex scan itself came up empty.
+                            fromWebView(sniff, normalizedUrl, host)?.let { resolved ->
+                                resolved.copy(
+                                    name = resolved.name ?: pageName,
+                                    favicon =
+                                        resolved.favicon ?: pageFavicon,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
 
-    /** Stage 1: the directory may already carry this station, discoverable via its homepage field. */
-    private suspend fun fromDirectory(host: String): ResolvedStation? {
-        val keyword = searchKeyword(host) ?: return null
+    /**
+     * Resolves a single candidate the caller picked from [ResolveStage]'s [onAmbiguous] set - the
+     * same playability probe + favicon lookup [fromDirectory] runs for an unambiguous match, just
+     * invoked directly instead of via a fresh directory search. Budgeted far tighter than
+     * [RESOLVE_TIMEOUT_MS] (one stream probe + one favicon fetch, not a whole multi-stage pipeline);
+     * a timeout maps to null the same as any other "candidate turned out unreachable" outcome - the
+     * caller can't tell the difference and doesn't need to.
+     */
+    suspend fun resolveCandidate(station: RadioBrowserStation): ResolvedStation? =
+        withContext(Dispatchers.IO) {
+            withTimeoutOrNull(RESOLVE_CANDIDATE_TIMEOUT_MS) { toResolvedStation(station) }
+        }
+
+    /**
+     * Stage 1: the directory may already carry this station, discoverable via its homepage field.
+     * Requires the exact-host match to be unique among the candidate set - Radio Browser is
+     * community-submitted data, and it's common for several distinct stations (e.g. regional
+     * affiliates of the same network) to all list the same parent-brand homepage. Picking
+     * whichever one happens to have the most votes in that case would silently resolve to a
+     * plausible-looking but possibly wrong station; surfacing the ambiguous set to the caller
+     * ([DirectoryResult.Ambiguous]) instead of guessing is the safer failure mode. A single match
+     * that turns out unplayable is [DirectoryResult.NoMatch], not ambiguous - it's a different
+     * failure mode (falls through to the scraping stages) from "several plausible candidates".
+     */
+    private suspend fun fromDirectory(host: String): DirectoryResult {
+        val keyword = searchKeyword(host) ?: return DirectoryResult.NoMatch
         val candidates =
             try {
                 radioBrowserApi.search(keyword, RadioBrowserApi.SearchBy.NAME, limit = 50)
             } catch (e: Exception) {
-                return null
+                return DirectoryResult.NoMatch
             }
-        val match = candidates.firstOrNull { hostOf(it.homepage) == host } ?: return null
-        return coroutineScope {
+        val matches = candidates.filter { hostOf(it.homepage) == host }
+        return when {
+            matches.isEmpty() -> {
+                DirectoryResult.NoMatch
+            }
+
+            matches.size == 1 -> {
+                toResolvedStation(matches.single())?.let { DirectoryResult.Match(it) } ?: DirectoryResult.NoMatch
+            }
+
+            else -> {
+                DirectoryResult.Ambiguous(matches)
+            }
+        }
+    }
+
+    /** The stream-playability probe + favicon lookup for a single known directory listing - shared by [fromDirectory]'s unambiguous-match case and [resolveCandidate]. */
+    private suspend fun toResolvedStation(match: RadioBrowserStation): ResolvedStation? =
+        coroutineScope {
             // The stream-playability probe and the (possible) homepage favicon fetch are
             // independent round-trips once match is known - run them concurrently instead of one
             // after the other, same rationale as fromHtml's parallel candidate validation below.
@@ -123,6 +221,18 @@ class StationUrlResolver(
                 favicon = faviconDeferred.await(),
             )
         }
+
+    /** [fromDirectory]'s outcome: a unique playable match, several plausible candidates, or nothing usable. */
+    private sealed interface DirectoryResult {
+        data class Match(
+            val station: ResolvedStation,
+        ) : DirectoryResult
+
+        data class Ambiguous(
+            val candidates: List<RadioBrowserStation>,
+        ) : DirectoryResult
+
+        data object NoMatch : DirectoryResult
     }
 
     /**
@@ -142,12 +252,19 @@ class StationUrlResolver(
         return extractFavicon(html, normalized)
     }
 
-    /** Stage 2 (+3+4): scrape the homepage itself, then its linked scripts or iframes if that comes up empty. */
+    /**
+     * Stage 2 (+3+4): scrape already-fetched [html] for a stream url, then its linked scripts or
+     * iframes if that comes up empty. Takes the HTML rather than fetching it itself since
+     * [resolve] now needs the page's `<title>`/favicon regardless of whether a stream url is found
+     * here (stage 5 backfill) - [extractTitle]/[extractFavicon] are cheap pure regex work, so
+     * re-running them here too (rather than threading values down from [resolve]) keeps this
+     * function's own contract and existing test coverage unchanged.
+     */
     private suspend fun fromHtml(
+        html: String,
         homepageUrl: String,
         host: String,
     ): ResolvedStation? {
-        val html = fetchText(homepageUrl) ?: return null
         val pageName = extractTitle(html)
         val pageFavicon = extractFavicon(html, homepageUrl)
         val direct = extractCandidates(html, homepageUrl)
@@ -176,6 +293,88 @@ class StationUrlResolver(
             )
         }
     }
+
+    /**
+     * Stage 5: last resort for a JS-only SPA where the stream URL never appears as literal text -
+     * [sniff] renders the page in a headless WebView and returns whatever stream-shaped network
+     * requests it actually made. Reuses [materialize] (in case a captured request was a `.pls`/
+     * `.m3u` playlist rather than the raw stream) and [rank] - WebView-sourced candidates carry no
+     * surrounding textual context (unlike a regex match in HTML/JS text), so only rank's
+     * host-based half does anything useful here, which is expected. A captured request that isn't
+     * itself a playable stream (e.g. a Supabase-style JSON REST endpoint the page's JS called to
+     * fetch its `stream_url`) is re-fetched via [fromJsonApiResponse] before being given up on -
+     * [resolve]'s static-HTML favicon backfill (`pageFavicon`) never sees this JSON body, so any
+     * `logo_url`/`favicon_url` field [fromJsonApiResponse] notices in it is threaded through here too
+     * (confirmed real shape on surprise.fm: the same `station_settings` row that names `stream_url`
+     * also carries a `logo_url`).
+     */
+    private suspend fun fromWebView(
+        sniff: suspend (String) -> List<SniffedRequest>,
+        homepageUrl: String,
+        host: String,
+    ): ResolvedStation? {
+        val rawRequests =
+            try {
+                sniff(homepageUrl)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        val headersByUrl = rawRequests.associate { it.url to it.headers }
+        val candidates = rawRequests.map { Candidate(it.url, context = "") }
+        val ranked = rank(candidates, host)
+        val match =
+            ranked.firstNotNullOfOrNull { url ->
+                materialize(url)?.takeIf { streamValidator.isPlayableStream(it) }?.let { WebViewMatch(it) }
+                    ?: fromJsonApiResponse(url, headersByUrl[url].orEmpty(), host)
+            }
+        return match?.let {
+            ResolvedStation(
+                it.streamUrl,
+                isHls = it.streamUrl.contains(".m3u8", ignoreCase = true),
+                favicon = it.favicon,
+            )
+        }
+    }
+
+    /** A stream URL [fromWebView] resolved, plus a favicon candidate if [fromJsonApiResponse] happened to notice one in the same body. */
+    private data class WebViewMatch(
+        val streamUrl: String,
+        val favicon: String? = null,
+    )
+
+    /**
+     * A captured request whose own URL didn't validate as a stream might still be an API response
+     * whose *body* names the real stream (the confirmed Supabase case: a `station_settings` REST
+     * row with a `stream_url` field, fetched with an `apikey` header the WebView captured onto
+     * [headers]). Replays the request outside the WebView via plain OkHttp - the same
+     * [extractCandidates]/[rank] machinery the static-HTML stages already use works unchanged on a
+     * JSON body, since [STREAM_KEY_REGEX] matches `"stream_url":"https://..."` in any text. Also
+     * scans the same already-fetched body for a `logo_url`/`favicon_url`-shaped field
+     * ([extractJsonFavicon]) rather than firing a second request for it - not every JSON candidate
+     * carries one, but when the row that names the stream also names a logo (surprise.fm does),
+     * this is the only place that body is ever in hand to check.
+     */
+    private suspend fun fromJsonApiResponse(
+        url: String,
+        headers: Map<String, String>,
+        host: String,
+    ): WebViewMatch? {
+        val body = fetchText(url, headers) ?: return null
+        val nested = rank(extractCandidates(body, url), host)
+        val streamUrl =
+            nested.firstNotNullOfOrNull { nestedUrl ->
+                materialize(nestedUrl)?.takeIf { streamValidator.isPlayableStream(it) }
+            } ?: return null
+        return WebViewMatch(streamUrl, extractJsonFavicon(body))
+    }
+
+    /**
+     * A favicon/logo candidate straight out of a JSON API body already fetched for
+     * [fromJsonApiResponse] - same rationale as [extractFavicon] for the static-HTML stages, just a
+     * different shape of source text. Not verified reachable, same as [extractFavicon].
+     */
+    internal fun extractJsonFavicon(body: String): String? =
+        JSON_ICON_KEY_REGEX.find(body.replace("\\/", "/"))?.groupValues?.get(1)
 
     /**
      * A candidate favicon for [baseUrl]'s page: one of its `<link rel="icon">`/`<link
@@ -470,15 +669,18 @@ class StationUrlResolver(
      * directory-search false positive) is unbounded, and peeking rather than reading the full
      * body means this returns instead of hanging on one.
      */
-    private fun fetchText(url: String): String? =
+    private fun fetchText(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+    ): String? =
         try {
-            val request =
+            val requestBuilder =
                 Request
                     .Builder()
                     .url(url)
                     .header("User-Agent", STREAM_USER_AGENT)
-                    .build()
-            client.newCall(request).execute().use { response ->
+            headers.forEach { (name, value) -> requestBuilder.header(name, value) }
+            client.newCall(requestBuilder.build()).execute().use { response ->
                 if (!response.isSuccessful) null else response.peekBody(MAX_FETCH_BYTES).string()
             }
         } catch (e: Exception) {
@@ -496,8 +698,16 @@ class StationUrlResolver(
         private const val MAX_IFRAMES = 4
         private const val MAX_FETCH_BYTES = 2_000_000L
 
-        /** Overall budget for one [resolve] call, however many network round-trips it takes. */
-        private const val RESOLVE_TIMEOUT_MS = 20_000L
+        /**
+         * Overall budget for one [resolve] call, however many network round-trips it takes. Wide
+         * enough to let stage 5 (headless WebView, itself budgeted up to
+         * [com.freqcast.util.WebViewStreamSniffer.DEFAULT_TIMEOUT_MS]) run with real room left even
+         * in the worst case where stages 1-4 already consumed a meaningful chunk of it.
+         */
+        private const val RESOLVE_TIMEOUT_MS = 45_000L
+
+        /** Budget for [resolveCandidate] - one stream probe + one favicon fetch, not a whole multi-stage pipeline. */
+        private const val RESOLVE_CANDIDATE_TIMEOUT_MS = 15_000L
 
         private val TITLE_REGEX = Regex("""<title\b[^>]*>([^<]+)</title>""", RegexOption.IGNORE_CASE)
         private val HTML_ENTITIES =
@@ -564,6 +774,13 @@ class StationUrlResolver(
         private val STREAM_KEY_REGEX =
             Regex(
                 """"(?:stream_url|streamUrl|stream|audio_url|audioUrl|mp3Url|radioUrl)"\s*:\s*"(https?:[^"]+)"""",
+                RegexOption.IGNORE_CASE,
+            )
+
+        /** [extractJsonFavicon]'s key alternation - same convention as [STREAM_KEY_REGEX], for a favicon/logo field instead of the stream. */
+        private val JSON_ICON_KEY_REGEX =
+            Regex(
+                """"(?:favicon_url|faviconUrl|logo_url|logoUrl|icon_url|iconUrl)"\s*:\s*"(https?:[^"]+)"""",
                 RegexOption.IGNORE_CASE,
             )
         private val EXTENSION_URL_REGEX =

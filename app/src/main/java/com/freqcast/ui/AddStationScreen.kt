@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.freqcast.R
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.ui.components.CandidateStationPickerSheet
 import com.freqcast.ui.components.StationIconPickerDialog
 import com.freqcast.ui.components.rememberStationIconBitmap
 import com.freqcast.ui.theme.FreqcastTheme
@@ -357,6 +358,14 @@ fun AddStationScreen(
                 viewModel.onRemoveIcon()
                 iconPickerOpen = false
             },
+        )
+    }
+
+    uiState.candidateStations?.let { candidates ->
+        CandidateStationPickerSheet(
+            candidates = candidates,
+            onSelect = viewModel::selectCandidate,
+            onDismiss = viewModel::dismissCandidates,
         )
     }
 }
