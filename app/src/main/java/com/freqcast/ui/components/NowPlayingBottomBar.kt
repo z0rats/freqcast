@@ -318,7 +318,7 @@ private fun MiniPlayerCardFull(
                         if (playbackStatus == PlaybackStatus.PLAYING) {
                             EqualizerBars()
                         }
-                        Text(
+                        MarqueeText(
                             text =
                                 when {
                                     playbackStatus == PlaybackStatus.PLAYING && trackTitle != null -> trackTitle
@@ -329,8 +329,6 @@ private fun MiniPlayerCardFull(
                                 },
                             style = MaterialTheme.typography.bodySmall,
                             color = text_hint,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

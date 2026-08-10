@@ -76,6 +76,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.freqcast.R
 import com.freqcast.data.RadioBrowserStation
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.ui.components.MarqueeText
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
 import com.freqcast.ui.theme.background_gradient_start
@@ -491,12 +492,10 @@ private fun DiscoverResultCard(
                     modifier = Modifier.size(36.dp),
                 )
 
-                Text(
+                MarqueeText(
                     text = station.name,
                     style = MaterialTheme.typography.titleMedium,
                     color = text_primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
 

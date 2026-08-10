@@ -266,6 +266,16 @@ class RadioPlaybackService : MediaLibraryService() {
                 // register it as a "click" with the directory if this station came from Discover.
                 station?.radioBrowserUuid?.let { uuid -> radioBrowserApi.registerClick(uuid) }
             }
+        } else if (player?.playbackState != Player.STATE_IDLE) {
+            // A genuine process-death restart always finds the player IDLE (onCreate() just built a
+            // fresh one). A non-IDLE player here means something else delivered this null/extra-less
+            // intent while playback was already active - blindly "restoring" would tear down and
+            // re-request the stream that's already buffering/playing. Log (with what triggered it,
+            // since the actual source of these calls isn't confirmed yet) and ignore instead.
+            Log.d(
+                TAG,
+                "onStartCommand: ignoring stray intent=$intent action=${intent?.action}, playback already active",
+            )
         } else {
             // Null intent means the system killed and restarted this service (START_STICKY);
             // resume whatever was last playing instead of just stopping silently.

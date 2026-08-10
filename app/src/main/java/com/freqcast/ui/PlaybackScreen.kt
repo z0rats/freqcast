@@ -21,6 +21,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -918,6 +919,7 @@ private fun TrackTitleRow(trackTitle: String) {
         color = text_primary.copy(alpha = 0.8f),
         textAlign = TextAlign.Center,
         maxLines = 1,
+        marquee = true,
     )
 }
 
@@ -925,6 +927,12 @@ private fun TrackTitleRow(trackTitle: String) {
  * Text label that copies [valueToCopy] to the clipboard on long-press (no visible copy button -
  * long-press is the whole affordance, same gesture as everywhere else in the OS for "copy this
  * text"). Tap is a no-op (indication disabled) since these labels have no other click action.
+ *
+ * [marquee] scrolls single-line overflow instead of truncating with an ellipsis - pass `true`
+ * for a value users need to read in full (e.g. track title). Kept as a flag on this shared
+ * composable rather than an inline `Modifier.basicMarquee(...)` at each call site: that inline
+ * pattern was silently dropped from every text spot that had it (twice here, once in
+ * NowPlayingBottomBar, once in DiscoverStationsScreen) across full-composable-rewrite redesigns.
  */
 @Composable
 private fun CopyableLabel(
@@ -937,6 +945,7 @@ private fun CopyableLabel(
     modifier: Modifier = Modifier,
     maxLines: Int = 1,
     textAlign: TextAlign? = null,
+    marquee: Boolean = false,
 ) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
@@ -947,20 +956,22 @@ private fun CopyableLabel(
         color = color,
         textAlign = textAlign,
         maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis,
+        overflow = if (marquee) TextOverflow.Clip else TextOverflow.Ellipsis,
         modifier =
-            modifier.combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onLongClickLabel = longClickLabel,
-                onLongClick = {
-                    clipboardManager.setText(AnnotatedString(valueToCopy))
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                        Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onClick = {},
-            ),
+            modifier
+                .let { if (marquee) it.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE) else it }
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onLongClickLabel = longClickLabel,
+                    onLongClick = {
+                        clipboardManager.setText(AnnotatedString(valueToCopy))
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                            Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onClick = {},
+                ),
     )
 }
 
