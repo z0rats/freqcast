@@ -1,0 +1,3 @@
+Fixed scrolling for long station names and track titles that don't fit on one line — it had stopped animating on the Now Playing screen, mini player, and Discover search results.
+
+Fixed a bug where playback could briefly restart itself right after starting.
