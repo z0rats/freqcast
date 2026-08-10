@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Freqcast — Internet radio, without the stream-URL hunt</title>
-<meta name="description" content="Freqcast is a free, open-source Android radio player. Paste a station's website and it finds, verifies, and adds the playable stream for you. No account, no ads, no catalog lock-in.">
-<link rel="icon" href="icon-192.png" type="image/png">
+<title>Freqcast — интернет-радио без поиска ссылки на поток</title>
+<meta name="description" content="Freqcast — бесплатный радиоплеер для Android с открытым исходным кодом. Вставьте ссылку на сайт станции — приложение само найдёт, проверит и добавит рабочий поток. Без аккаунта, без рекламы, без привязки к чужому каталогу.">
+<link rel="icon" href="../icon-192.png" type="image/png">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -528,19 +528,19 @@
 <nav class="nav">
   <div class="wrap nav-inner">
     <a class="brand" href="#top">
-      <img src="icon-192.png" alt="">
+      <img src="../icon-192.png" alt="">
       <span>Freqcast</span>
     </a>
     <div class="nav-right">
-      <div class="lang-switch" role="group" aria-label="Language">
-        <a href="index.html" class="lang-active">EN</a>
-        <a href="ru/index.html">RU</a>
+      <div class="lang-switch" role="group" aria-label="Язык">
+        <a href="../index.html">EN</a>
+        <a href="index.html" class="lang-active">RU</a>
       </div>
       <div class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#screenshots">Screenshots</a>
-        <a href="#privacy">Privacy</a>
-        <a class="nav-cta" href="https://github.com/z0rats/freqcast/releases/latest">Download</a>
+        <a href="#features">Возможности</a>
+        <a href="#screenshots">Скриншоты</a>
+        <a href="#privacy">Приватность</a>
+        <a class="nav-cta" href="https://github.com/z0rats/freqcast/releases/latest">Скачать</a>
       </div>
     </div>
   </div>
@@ -549,24 +549,25 @@
 <header class="hero" id="top">
   <div class="wrap hero-grid">
     <div>
-      <p class="eyebrow">Free &amp; open source · Android 10+</p>
-      <h1>Paste a station's <em>website</em>.<br>Not its stream URL.</h1>
+      <p class="eyebrow">Бесплатно и с открытым кодом · Android 10+</p>
+      <h1>Вставьте <em>сайт</em> станции.<br>Не ссылку на поток.</h1>
       <p class="lede">
-        Most radio apps expect you to hunt down a raw <code>.mp3</code> or <code>.m3u8</code> link.
-        Freqcast checks the Radio Browser directory, then scans the site itself, finds the
-        playable stream, and verifies it works — before it ever touches your library.
+        Большинство радиоприложений ждут, что вы сами найдёте прямую ссылку на <code>.mp3</code>
+        или <code>.m3u8</code>. Freqcast сначала проверяет каталог Radio Browser, затем сканирует
+        сам сайт, находит рабочий поток и убеждается, что он действительно играет — прежде чем
+        добавить его в библиотеку.
       </p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="https://github.com/z0rats/freqcast/releases/latest">Download APK</a>
-        <a class="btn btn-ghost" href="https://github.com/z0rats/freqcast">View source on GitHub</a>
+        <a class="btn btn-primary" href="https://github.com/z0rats/freqcast/releases/latest">Скачать APK</a>
+        <a class="btn btn-ghost" href="https://github.com/z0rats/freqcast">Исходный код на GitHub</a>
       </div>
-      <p class="hero-meta">NO ACCOUNT · NO ADS · NO CATALOG LOCK-IN · GPL-3.0</p>
+      <p class="hero-meta">БЕЗ АККАУНТА · БЕЗ РЕКЛАМЫ · БЕЗ ПРИВЯЗКИ К КАТАЛОГУ · GPL-3.0</p>
     </div>
     <div class="hero-visual">
       <div class="glow-field"></div>
       <div class="phone">
         <div class="phone-screen">
-          <img src="screenshots/3.jpg" alt="Freqcast now-playing screen for KURS Radio, showing the live timeshift scrubber, rewind shortcuts and sleep timer">
+          <img src="../screenshots/3.jpg" alt="Экран воспроизведения Freqcast для радиостанции KURS: живой таймшифт-скраббер, кнопки перемотки и таймер сна">
         </div>
       </div>
       <canvas id="eq" width="120" height="34" aria-hidden="true"></canvas>
@@ -579,34 +580,34 @@
 <section id="how">
   <div class="wrap how">
     <div>
-      <p class="kicker">The core idea</p>
-      <h2>Adding a station shouldn't require a URL inspector</h2>
+      <p class="kicker">Главная идея</p>
+      <h2>Добавление станции не должно требовать инспектора ссылок</h2>
       <div class="steps">
         <div class="step">
           <div class="step-num">1</div>
           <div>
-            <h3>Paste the link</h3>
-            <p>Drop in a station's homepage. That's the only input Freqcast needs.</p>
+            <h3>Вставьте ссылку</h3>
+            <p>Вставьте адрес сайта станции — это всё, что нужно Freqcast.</p>
           </div>
         </div>
         <div class="step">
           <div class="step-num">2</div>
           <div>
-            <h3>Freqcast goes looking</h3>
-            <p>It checks the Radio Browser directory first, then scans the page itself for a playable stream.</p>
+            <h3>Freqcast начинает поиск</h3>
+            <p>Сначала проверяется каталог Radio Browser, затем сама страница — в поисках рабочего потока.</p>
           </div>
         </div>
         <div class="step">
           <div class="step-num">3</div>
           <div>
-            <h3>Verified, then saved</h3>
-            <p>The stream is probed before it's written to your library, so dead links never make it in.</p>
+            <h3>Проверено, затем сохранено</h3>
+            <p>Поток тестируется перед тем, как попасть в библиотеку, — нерабочие ссылки туда не проникнут.</p>
           </div>
         </div>
       </div>
     </div>
     <div class="demo-frame">
-      <img src="demo.gif" alt="Screen recording of adding a station by pasting its website link in Freqcast" loading="lazy">
+      <img src="../demo.gif" alt="Запись экрана: добавление станции по ссылке на её сайт в Freqcast" loading="lazy">
     </div>
   </div>
 </section>
@@ -616,38 +617,38 @@
 <section id="gripes">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">Grounded in real feedback</p>
-      <h2>Real complaints, actually fixed</h2>
-      <p>Not hypothetical gaps — recurring frustrations with internet radio apps, gathered from public reviews and forum threads.</p>
+      <p class="kicker">На основе реальных отзывов</p>
+      <h2>Реальные жалобы, реально исправленные</h2>
+      <p>Не гипотетические проблемы, а повторяющиеся жалобы на радиоприложения, собранные из публичных отзывов и форумов.</p>
     </div>
     <div class="gripe-list">
       <div class="gripe">
-        <p class="gripe-complaint">"Ads cut into the stream every 5&ndash;10 minutes &mdash; sometimes restarting playback entirely."</p>
-        <span class="gripe-fix">Zero ads. Always.</span>
+        <p class="gripe-complaint">«Реклама врезается в поток каждые 5–10 минут — иногда просто обрывая воспроизведение.»</p>
+        <span class="gripe-fix">Ноль рекламы. Всегда.</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"No way to back up a station list, or move it to a new phone."</p>
-        <span class="gripe-fix">Export &amp; import — JSON, OPML, M3U, PLS</span>
+        <p class="gripe-complaint">«Нет способа сохранить список станций или перенести его на новый телефон.»</p>
+        <span class="gripe-fix">Экспорт и импорт — JSON, OPML, M3U, PLS</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"Favorites can't be reordered — you're stuck with whatever order you added them in."</p>
-        <span class="gripe-fix">Drag to reorder, any time</span>
+        <p class="gripe-complaint">«Избранное нельзя переупорядочить — остаётся тот порядок, в котором добавляли.»</p>
+        <span class="gripe-fix">Перетаскивание для сортировки в любой момент</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"Turned out the 'radio' app was quietly running dozens of third-party trackers."</p>
-        <span class="gripe-fix">Zero trackers. GPL-3.0, on F-Droid.</span>
+        <p class="gripe-complaint">«Оказалось, что «радио»-приложение втихую гоняло десятки трекеров.»</p>
+        <span class="gripe-fix">Ноль трекеров. GPL-3.0, на F-Droid.</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"Adding a stream by hand either isn't supported, or the app crashes trying to reconnect."</p>
-        <span class="gripe-fix">Manual add + capped-backoff reconnect</span>
+        <p class="gripe-complaint">«Добавить поток вручную либо нельзя, либо приложение падает при переподключении.»</p>
+        <span class="gripe-fix">Ручное добавление + переподключение с растущими паузами</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"No Android Auto — a gap open-source radio apps have left unfilled for years."</p>
-        <span class="gripe-fix">Android Auto, from day one</span>
+        <p class="gripe-complaint">«Нет Android Auto — пробел, который open-source радиоприложения не могли закрыть годами.»</p>
+        <span class="gripe-fix">Android Auto — с первого дня</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"No home-screen widget — every play needs opening the app first."</p>
-        <span class="gripe-fix">Home screen widget included</span>
+        <p class="gripe-complaint">«Нет виджета на главном экране — каждое включение начинается с открытия приложения.»</p>
+        <span class="gripe-fix">Виджет на главном экране включён</span>
       </div>
     </div>
   </div>
@@ -658,9 +659,9 @@
 <section id="features">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">Everything included</p>
-      <h2>One player, no compromises</h2>
-      <p>Every feature below ships in the same free build — nothing is metered, gated, or upsold.</p>
+      <p class="kicker">Всё включено</p>
+      <h2>Один плеер, без компромиссов</h2>
+      <p>Все функции ниже доступны в одной и той же бесплатной сборке — ничего не ограничено, не закрыто и не продаётся отдельно.</p>
     </div>
     <div class="features">
 
@@ -668,72 +669,72 @@
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l9-2v12"></path><circle cx="6" cy="18" r="3"></circle><circle cx="15" cy="16" r="3"></circle></svg>
         </div>
-        <h3>No stream-URL hunting</h3>
-        <p>Paste a station's website and Freqcast discovers and verifies the playable stream on its own.</p>
+        <h3>Не нужно искать ссылку на поток</h3>
+        <p>Вставьте сайт станции — Freqcast сам найдёт и проверит рабочий поток.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
         </div>
-        <h3>Discover stations</h3>
-        <p>Search the Radio Browser directory by name, genre, country, language, or stations near you.</p>
+        <h3>Поиск станций</h3>
+        <p>Ищите в каталоге Radio Browser по названию, жанру, стране, языку или станции рядом с вами.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path><path d="M3 21v-5h5"></path></svg>
         </div>
-        <h3>Reconnects on its own</h3>
-        <p>Background playback with capped exponential-backoff retry when the network drops — not an infinite hammer.</p>
+        <h3>Само переподключается</h3>
+        <p>Фоновое воспроизведение с постепенно растущей паузой при обрыве сети — а не бесконечный долбёж.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 19 2 12 11 5 11 19"></polygon><polygon points="22 19 13 12 22 5 22 19"></polygon></svg>
         </div>
-        <h3>Timeshift</h3>
-        <p>Rewind live radio on compatible streams — missed something? Step back 15, 30 or 60 seconds.</p>
+        <h3>Таймшифт</h3>
+        <p>Перемотка живого эфира на поддерживаемых потоках — пропустили момент? Отмотайте на 15, 30 или 60 секунд.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"></path></svg>
         </div>
-        <h3>Live track metadata</h3>
-        <p>ICY metadata surfaces the current track title in real time, copyable with one tap.</p>
+        <h3>Метаданные трека в реальном времени</h3>
+        <p>ICY-метаданные показывают текущий трек, копируются одним касанием.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"></path></svg>
         </div>
-        <h3>Sleep timer &amp; alarms</h3>
-        <p>Fade out and stop after a set time, or wake up to any station with multiple daily alarms.</p>
+        <h3>Таймер сна и будильники</h3>
+        <p>Плавное затухание и остановка по таймеру, или пробуждение под любую станцию с несколькими ежедневными будильниками.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>
         </div>
-        <h3>Widget &amp; Android Auto</h3>
-        <p>A home-screen widget for one-tap play, and a browsable station list on the car head unit.</p>
+        <h3>Виджет и Android Auto</h3>
+        <p>Виджет на главном экране для запуска в одно касание и список станций на экране автомобиля.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M4 19h16"></path></svg>
         </div>
-        <h3>Import &amp; export</h3>
-        <p>Move your library in and out via JSON, OPML, M3U or PLS — switch devices without rebuilding it.</p>
+        <h3>Импорт и экспорт</h3>
+        <p>Переносите библиотеку через JSON, OPML, M3U или PLS — смена устройства без пересборки списка.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"></path></svg>
         </div>
-        <h3>Built for every screen</h3>
-        <p>Two-pane layouts on tablets and foldables, and the interface is localized into English, Russian, Spanish and Simplified Chinese.</p>
+        <h3>Адаптировано под любой экран</h3>
+        <p>Двухпанельный интерфейс для планшетов и складных устройств, локализация на английский, русский, испанский и упрощённый китайский.</p>
       </div>
 
     </div>
@@ -745,34 +746,34 @@
 <section id="screenshots">
   <div class="wrap">
     <div class="section-head">
-      <p class="kicker">Inside the app</p>
-      <h2>A look inside</h2>
-      <p>Always-dark by design — a warm amber-on-charcoal palette built to read at a glance, day or night.</p>
+      <p class="kicker">Внутри приложения</p>
+      <h2>Взгляд изнутри</h2>
+      <p>Всегда тёмная тема по дизайну — тёплая янтарная палитра на угольном фоне, которую легко читать в любое время суток.</p>
     </div>
     <div class="shots">
       <figure class="shot">
         <div class="phone">
           <div class="phone-screen">
-            <img src="screenshots/1.png" alt="Freqcast library screen listing saved stations with play buttons and an add button" loading="lazy">
+            <img src="../screenshots/1.png" alt="Экран библиотеки Freqcast со списком сохранённых станций, кнопками воспроизведения и добавления" loading="lazy">
           </div>
         </div>
-        <figcaption><b>Your library.</b> Drag to reorder, swipe to share or delete.</figcaption>
+        <figcaption><b>Ваша библиотека.</b> Перетаскивание для сортировки, свайп для отправки или удаления.</figcaption>
       </figure>
       <figure class="shot">
         <div class="phone">
           <div class="phone-screen">
-            <img src="screenshots/2.jpg" alt="Freqcast Discover screen showing Jazz search results from the Radio Browser directory" loading="lazy">
+            <img src="../screenshots/2.jpg" alt="Экран Discover в Freqcast с результатами поиска джазовых станций в каталоге Radio Browser" loading="lazy">
           </div>
         </div>
-        <figcaption><b>Discover.</b> Search a global directory of stations by name, genre, country or language.</figcaption>
+        <figcaption><b>Discover.</b> Поиск по глобальному каталогу станций — по названию, жанру, стране или языку.</figcaption>
       </figure>
       <figure class="shot">
         <div class="phone">
           <div class="phone-screen">
-            <img src="screenshots/3.jpg" alt="Freqcast now-playing screen with timeshift scrubber, sleep timer and clip sharing" loading="lazy">
+            <img src="../screenshots/3.jpg" alt="Экран воспроизведения Freqcast с таймшифт-скраббером, таймером сна и отправкой отрывков" loading="lazy">
           </div>
         </div>
-        <figcaption><b>Now playing.</b> Timeshift, live track title, sleep timer and clip sharing — one screen.</figcaption>
+        <figcaption><b>Сейчас играет.</b> Таймшифт, название трека, таймер сна и отправка отрывков — на одном экране.</figcaption>
       </figure>
     </div>
   </div>
@@ -783,33 +784,34 @@
 <section id="privacy">
   <div class="wrap philosophy">
     <div>
-      <p class="kicker">Why Freqcast</p>
-      <h2>No account. No ads. No catalog lock-in.</h2>
+      <p class="kicker">Почему Freqcast</p>
+      <h2>Без аккаунта. Без рекламы. Без привязки к каталогу.</h2>
       <p style="color:var(--text-soft); font-size:15px; line-height:1.65; margin:0;">
-        Internet radio has quietly survived for decades, but the Android apps around it have grown
-        fragmented — ads, proprietary station catalogs, accounts you never asked for. Freqcast stores
-        everything locally and works with any station that has a public HTTP/HTTPS or HLS stream.
+        Интернет-радио незаметно живёт уже несколько десятилетий, но Android-приложения вокруг него
+        стали фрагментированными — реклама, закрытые каталоги станций, аккаунты, которые никто не
+        просил. Freqcast хранит всё локально и работает с любой станцией, у которой есть публичный
+        HTTP/HTTPS или HLS поток.
       </p>
       <div class="pillars">
         <div class="pillar">
           <div class="pillar-mark"></div>
           <div>
-            <h4>Fully local</h4>
-            <p>Your station list lives in an on-device database. Nothing is synced to a server you don't control.</p>
+            <h4>Полностью локально</h4>
+            <p>Список станций хранится в базе данных на устройстве. Ничего не синхронизируется с серверами вне вашего контроля.</p>
           </div>
         </div>
         <div class="pillar">
           <div class="pillar-mark"></div>
           <div>
-            <h4>Open source, GPL-3.0</h4>
-            <p>The full source is on GitHub. Modified or redistributed versions must stay open, too.</p>
+            <h4>Открытый код, GPL-3.0</h4>
+            <p>Весь исходный код на GitHub. Изменённые или распространяемые версии тоже обязаны оставаться открытыми.</p>
           </div>
         </div>
         <div class="pillar">
           <div class="pillar-mark"></div>
           <div>
-            <h4>Permissions you can audit</h4>
-            <p>Every permission below maps to a feature you can see. Nothing is requested speculatively.</p>
+            <h4>Разрешения, которые можно проверить</h4>
+            <p>Каждое разрешение ниже соответствует конкретной функции. Ничего не запрашивается «про запас».</p>
           </div>
         </div>
       </div>
@@ -817,15 +819,15 @@
     <div class="perms-wrap">
       <table class="perms">
         <thead>
-          <tr><th>Permission</th><th>What it's for</th></tr>
+          <tr><th>Разрешение</th><th>Для чего</th></tr>
         </thead>
         <tbody>
-          <tr><td>INTERNET<br>ACCESS_NETWORK_STATE</td><td>Stream playback and connectivity checks.</td></tr>
-          <tr><td>FOREGROUND_SERVICE<br>_MEDIA_PLAYBACK</td><td>Keeps audio playing in the background.</td></tr>
-          <tr><td>POST_NOTIFICATIONS</td><td>Shows the media playback notification (Android 13+).</td></tr>
-          <tr><td>WAKE_LOCK</td><td>Keeps the network alive while playing with the screen off.</td></tr>
-          <tr><td>RECEIVE_BOOT_COMPLETED<br>SCHEDULE_EXACT_ALARM</td><td>Lets wake-up alarms survive a reboot and fire on time.</td></tr>
-          <tr><td>ACCESS_COARSE_LOCATION</td><td>Only for Discover's "near me" search — sent for that one search, never stored.</td></tr>
+          <tr><td>INTERNET<br>ACCESS_NETWORK_STATE</td><td>Воспроизведение потока и проверка соединения.</td></tr>
+          <tr><td>FOREGROUND_SERVICE<br>_MEDIA_PLAYBACK</td><td>Поддерживает воспроизведение звука в фоне.</td></tr>
+          <tr><td>POST_NOTIFICATIONS</td><td>Показывает уведомление о воспроизведении (Android 13+).</td></tr>
+          <tr><td>WAKE_LOCK</td><td>Не даёт сети «уснуть», пока играет музыка при выключенном экране.</td></tr>
+          <tr><td>RECEIVE_BOOT_COMPLETED<br>SCHEDULE_EXACT_ALARM</td><td>Позволяет будильникам переживать перезагрузку и срабатывать точно вовремя.</td></tr>
+          <tr><td>ACCESS_COARSE_LOCATION</td><td>Только для поиска «рядом со мной» в Discover — передаётся один раз для этого запроса и нигде не сохраняется.</td></tr>
         </tbody>
       </table>
     </div>
@@ -838,21 +840,21 @@
   <div class="wrap">
     <div class="download-card">
       <div>
-        <h2>Get Freqcast</h2>
-        <p>Grab the latest signed APK from GitHub Releases — no Play Store account, no sign-in.</p>
+        <h2>Установить Freqcast</h2>
+        <p>Скачайте последний подписанный APK из GitHub Releases — без аккаунта Play Store, без входа.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/z0rats/freqcast/releases/latest">Download APK →</a>
+          <a class="btn btn-primary" href="https://github.com/z0rats/freqcast/releases/latest">Скачать APK →</a>
         </div>
         <ul class="req-list" style="margin-top:24px;">
-          <li>Requires Android 10 (API 29) or later</li>
-          <li>Signed release build, reproducible from source</li>
-          <li>Licensed under GPL-3.0</li>
+          <li>Требуется Android 10 (API 29) или новее</li>
+          <li>Подписанная релизная сборка, воспроизводимая из исходников</li>
+          <li>Лицензия GPL-3.0</li>
         </ul>
       </div>
       <div>
-        <p class="kicker" style="margin-bottom:10px;">Build it yourself</p>
+        <p class="kicker" style="margin-bottom:10px;">Собрать самому</p>
         <div class="code-block">
-<span class="muted"># clone &amp; run on a connected device</span><br>
+<span class="muted"># клонируйте и запустите на подключённом устройстве</span><br>
 git clone https://github.com/z0rats/freqcast.git<br>
 cd freqcast<br>
 ./gradlew installDebug
@@ -867,19 +869,19 @@ cd freqcast<br>
     <div class="footer-grid">
       <div>
         <div class="footer-brand">
-          <img src="icon-192.png" alt="">
+          <img src="../icon-192.png" alt="">
           <span>Freqcast</span>
         </div>
-        <p class="footer-tag">Internet radio, without the stream-URL hunt.</p>
+        <p class="footer-tag">Интернет-радио без поиска ссылки на поток.</p>
       </div>
       <div class="footer-links">
         <a href="https://github.com/z0rats/freqcast">GitHub</a>
-        <a href="https://github.com/z0rats/freqcast/releases">Releases</a>
-        <a href="https://github.com/z0rats/freqcast/blob/master/LICENSE">License (GPL-3.0)</a>
-        <a href="https://github.com/z0rats/freqcast/blob/master/FUNDING.md">Support</a>
+        <a href="https://github.com/z0rats/freqcast/releases">Релизы</a>
+        <a href="https://github.com/z0rats/freqcast/blob/master/LICENSE">Лицензия (GPL-3.0)</a>
+        <a href="https://github.com/z0rats/freqcast/blob/master/FUNDING.md">Поддержать</a>
       </div>
     </div>
-    <p class="footer-fine">Built on ExoPlayer/Media3. Station streams belong to their respective broadcasters — Freqcast just plays them. Not affiliated with any station or directory it connects to.</p>
+    <p class="footer-fine">Построено на ExoPlayer/Media3. Потоки станций принадлежат соответствующим вещателям — Freqcast лишь их воспроизводит. Не аффилировано ни с одной станцией или каталогом, к которым подключается.</p>
   </div>
 </footer>
 
