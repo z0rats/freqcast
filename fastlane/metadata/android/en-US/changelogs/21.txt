@@ -1,0 +1,3 @@
+Discover no longer opens to a blank "search the directory" prompt — it now shows popular stations for your region by default.
+
+Added quick-select genre chips on Discover's Genre tab, so you can tap a genre instead of typing one.
