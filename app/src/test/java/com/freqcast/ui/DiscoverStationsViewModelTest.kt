@@ -4,6 +4,8 @@ import android.Manifest
 import android.graphics.Bitmap
 import android.location.Location
 import android.location.LocationManager
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import androidx.room.Room
 import com.freqcast.R
 import com.freqcast.data.AppDatabase
@@ -85,6 +87,9 @@ class DiscoverStationsViewModelTest {
         database.close()
         server.shutdown()
         Dispatchers.resetMain()
+        // AppCompatDelegate's application-locale override is process-global state, not scoped to
+        // this test — leaving it set would leak into whichever test runs next.
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
     }
 
     private fun pngBytesFor(
@@ -101,6 +106,10 @@ class DiscoverStationsViewModelTest {
     private fun createViewModel(
         scheduler: TestCoroutineScheduler,
         locationProvider: LocationProvider = LocationProvider(RuntimeEnvironment.getApplication()),
+        // Most tests assert an exact server.requestCount/response ordering for their own action —
+        // defaulting this off keeps init a pure-DB no-network step for them. The dedicated
+        // `loadDefaultBrowse` tests below opt back in explicitly.
+        autoLoadDefaultBrowse: Boolean = false,
     ): DiscoverStationsViewModel {
         Dispatchers.setMain(StandardTestDispatcher(scheduler))
         return DiscoverStationsViewModel(
@@ -108,6 +117,7 @@ class DiscoverStationsViewModelTest {
             RuntimeEnvironment.getApplication(),
             RadioBrowserApi(baseUrl = server.url("/")),
             locationProvider,
+            autoLoadDefaultBrowse,
         )
     }
 
@@ -166,6 +176,68 @@ class DiscoverStationsViewModelTest {
                 viewModel.uiState.value.results[0]
                     .name,
             )
+        }
+
+    @Test
+    fun `searchGenre searches the tag directly without echoing it into the visible query`() =
+        runTest {
+            // GenreCatalog's chips are labeled in the user's language but search on an English
+            // queryTag — searchGenre must not route through onQueryChange, or that English word
+            // would show up in the (differently-labeled) query field.
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+
+            viewModel.searchGenre("jazz")
+            awaitTrue { viewModel.uiState.value.hasSearched }
+
+            val request = server.takeRequest(5, TimeUnit.SECONDS)
+            assertTrue(request?.path?.contains("tag=jazz") == true)
+            assertEquals("", viewModel.uiState.value.query)
+            assertEquals("jazz", viewModel.uiState.value.selectedGenreTag)
+            assertEquals(1, viewModel.uiState.value.results.size)
+        }
+
+    @Test
+    fun `searchGenre after an earlier genre pick searches the new tag, not the old one`() =
+        runTest {
+            // Regression coverage: genre chips must stay tappable after a first pick, not get
+            // replaced by results with no way back to choose a different genre.
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            server.enqueue(MockResponse().setBody("""[{"name":"Rock FM","url":"http://example.com/rock"}]"""))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+            viewModel.searchGenre("jazz")
+            awaitTrue { viewModel.uiState.value.hasSearched }
+            server.takeRequest(5, TimeUnit.SECONDS)
+
+            viewModel.searchGenre("rock")
+            awaitTrue {
+                viewModel.uiState.value.results
+                    .firstOrNull()
+                    ?.name == "Rock FM"
+            }
+
+            val request = server.takeRequest(5, TimeUnit.SECONDS)
+            assertTrue(request?.path?.contains("tag=rock") == true)
+            assertEquals("rock", viewModel.uiState.value.selectedGenreTag)
+        }
+
+    @Test
+    fun `onQueryChange clears the selected genre chip highlight`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("[]"))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+            viewModel.searchGenre("jazz")
+            awaitTrue { viewModel.uiState.value.hasSearched }
+
+            viewModel.onQueryChange("blues")
+
+            assertNull(viewModel.uiState.value.selectedGenreTag)
         }
 
     @Test
@@ -479,6 +551,71 @@ class DiscoverStationsViewModelTest {
 
             val names = database.radioStationDao().getAllStations().map { it.name }
             assertTrue(names.contains("Radio X (2)"))
+        }
+
+    @Test
+    fun `loadDefaultBrowse fetches country-scoped top stations for the device region`() =
+        runTest {
+            // Robolectric's default locale is en-US, so CountryCatalog.englishNameForRegion("US")
+            // resolves to "United States" — what radio-browser.info's `country` filter expects.
+            server.enqueue(MockResponse().setBody("""[{"name":"USA FM","url":"http://example.com/usa"}]"""))
+            val viewModel = createViewModel(testScheduler, autoLoadDefaultBrowse = true)
+
+            awaitTrue {
+                viewModel.uiState.value.defaultBrowseResults
+                    .isNotEmpty()
+            }
+
+            val request = server.takeRequest(5, TimeUnit.SECONDS)
+            assertTrue(request?.path?.contains("country=United%20States") == true)
+            assertEquals("US", viewModel.uiState.value.defaultBrowseRegionCode)
+            assertEquals(
+                "USA FM",
+                viewModel.uiState.value.defaultBrowseResults[0]
+                    .name,
+            )
+            assertFalse(viewModel.uiState.value.isLoadingDefaultBrowse)
+        }
+
+    @Test
+    fun `loadDefaultBrowse falls back to worldwide top stations when the country search is empty`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setBody("""[{"name":"Global FM","url":"http://example.com/global"}]"""))
+            val viewModel = createViewModel(testScheduler, autoLoadDefaultBrowse = true)
+
+            awaitTrue {
+                viewModel.uiState.value.defaultBrowseResults
+                    .isNotEmpty()
+            }
+
+            assertEquals(2, server.requestCount)
+            assertNull(viewModel.uiState.value.defaultBrowseRegionCode)
+            assertEquals(
+                "Global FM",
+                viewModel.uiState.value.defaultBrowseResults[0]
+                    .name,
+            )
+        }
+
+    @Test
+    fun `loadDefaultBrowse prioritizes an explicit app-language override over the device's system region`() =
+        runTest {
+            // Settings' language picker sets language only, no region ("ru", not "ru-RU") — this
+            // confirms the RU region still comes from LANGUAGE_TO_DEFAULT_REGION, not a blank
+            // fallback to the (Robolectric-default en-US) system region.
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru"))
+            server.enqueue(MockResponse().setBody("""[{"name":"Russian FM","url":"http://example.com/ru"}]"""))
+            val viewModel = createViewModel(testScheduler, autoLoadDefaultBrowse = true)
+
+            awaitTrue {
+                viewModel.uiState.value.defaultBrowseResults
+                    .isNotEmpty()
+            }
+
+            val request = server.takeRequest(5, TimeUnit.SECONDS)
+            assertTrue(request?.path?.contains("country=Russia") == true)
+            assertEquals("RU", viewModel.uiState.value.defaultBrowseRegionCode)
         }
 
     @Test

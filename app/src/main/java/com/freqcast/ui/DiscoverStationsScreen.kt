@@ -91,6 +91,7 @@ import com.freqcast.util.Country
 import com.freqcast.util.CountryCatalog
 import com.freqcast.util.CountryFlagEmoji
 import com.freqcast.util.EmojiGenerator
+import com.freqcast.util.GenreCatalog
 import com.freqcast.util.VoteCountFormatter
 import java.util.Locale
 
@@ -288,6 +289,16 @@ fun DiscoverStationsScreen(
                                 ),
                             shape = MaterialTheme.shapes.medium,
                         )
+                        // Always visible (not just before the first search) — like the COUNTRY
+                        // tab's flag picker, this is a persistent quick-select, not one-shot
+                        // default-browse content, so the user can pick a different genre without
+                        // having to clear their current results/selection first.
+                        if (uiState.mode == DiscoverSearchMode.GENRE) {
+                            PopularGenresChips(
+                                selectedGenreTag = uiState.selectedGenreTag,
+                                onGenreClick = viewModel::searchGenre,
+                            )
+                        }
                     }
                 }
 
@@ -390,6 +401,55 @@ private fun CountryFlagRow(
     }
 }
 
+/**
+ * GENRE tab's persistent quick-select — tappable chips for [GenreCatalog]'s curated, localized
+ * genre list, always shown below the search field (not just before the first search) so the user
+ * can pick a different genre without losing/clearing their current results first. [Genre.queryTag]
+ * (an English word) is what's sent to the search, [Genre.labelRes] is what's shown, so the chip
+ * row always reads in a single language regardless of query text. A single horizontally-scrolling
+ * row (same Spotify/Apple Music/YouTube Music "genre pill bar" shape as [CountryFlagRow]) rather
+ * than a multi-row wrap — this sits in the persistent header above results, not a one-off empty
+ * state, so it needs to stay a slim strip rather than eating several rows of vertical space; no
+ * header label, same reasoning as [CountryFlagPicker] going label-less.
+ */
+@Composable
+private fun PopularGenresChips(
+    selectedGenreTag: String?,
+    onGenreClick: (String) -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        GenreCatalog.genres.forEach { genre ->
+            val selected = genre.queryTag == selectedGenreTag
+            FilterChip(
+                selected = selected,
+                onClick = { onGenreClick(genre.queryTag) },
+                label = { Text(stringResource(genre.labelRes)) },
+                colors =
+                    FilterChipDefaults.filterChipColors(
+                        containerColor = card_surface,
+                        labelColor = text_secondary,
+                        selectedContainerColor = glass_accent,
+                        selectedLabelColor = background_gradient_start,
+                    ),
+                border =
+                    FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = selected,
+                        borderColor = card_border,
+                        selectedBorderColor = glass_accent,
+                    ),
+            )
+        }
+    }
+}
+
 @Composable
 private fun CenteredHint(
     text: String,
@@ -421,7 +481,38 @@ private fun DiscoverResultsContent(
         }
 
         !uiState.hasSearched -> {
-            CenteredMessage(stringResource(R.string.discover_prompt))
+            when {
+                uiState.defaultBrowseResults.isNotEmpty() -> {
+                    val headerText =
+                        uiState.defaultBrowseRegionCode
+                            ?.let { code ->
+                                val localizedName =
+                                    Locale
+                                        .Builder()
+                                        .setRegion(code)
+                                        .build()
+                                        .getDisplayCountry(Locale.getDefault())
+                                stringResource(R.string.discover_default_browse_header_country, localizedName)
+                            }
+                            ?: stringResource(R.string.discover_default_browse_header_global)
+                    StationResultsList(
+                        results = uiState.defaultBrowseResults,
+                        addedUrls = uiState.addedUrls,
+                        onAddClick = onAddClick,
+                        headerText = headerText,
+                    )
+                }
+
+                uiState.isLoadingDefaultBrowse -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = glass_accent)
+                    }
+                }
+
+                else -> {
+                    CenteredMessage(stringResource(R.string.discover_prompt))
+                }
+            }
         }
 
         uiState.results.isEmpty() -> {
@@ -429,20 +520,44 @@ private fun DiscoverResultsContent(
         }
 
         else -> {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                items(items = uiState.results, key = { it.uuid.ifBlank { it.url } }) { station ->
-                    DiscoverResultCard(
-                        station = station,
-                        isAdded = uiState.addedUrls.contains(station.url),
-                        onAddClick = { onAddClick(station) },
-                    )
-                }
+            StationResultsList(
+                results = uiState.results,
+                addedUrls = uiState.addedUrls,
+                onAddClick = onAddClick,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StationResultsList(
+    results: List<RadioBrowserStation>,
+    addedUrls: Set<String>,
+    onAddClick: (RadioBrowserStation) -> Unit,
+    headerText: String? = null,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (headerText != null) {
+            item {
+                Text(
+                    text = headerText,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = text_secondary,
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp).padding(bottom = Spacing.xs),
+                )
             }
+        }
+        items(items = results, key = { it.uuid.ifBlank { it.url } }) { station ->
+            DiscoverResultCard(
+                station = station,
+                isAdded = addedUrls.contains(station.url),
+                onAddClick = { onAddClick(station) },
+            )
         }
     }
 }

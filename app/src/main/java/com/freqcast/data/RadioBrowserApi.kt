@@ -84,6 +84,19 @@ class RadioBrowserApi(
         }
 
     /**
+     * Directory-wide top-voted stations with no name/tag/country filter — used by
+     * [com.freqcast.ui.DiscoverStationsViewModel]'s default browse as the fallback when the
+     * device's region can't be resolved to a country, or that country search comes back empty.
+     */
+    suspend fun topStations(limit: Int = 30): List<RadioBrowserStation> =
+        fetchStations {
+            addQueryParameter("limit", limit.toString())
+            addQueryParameter("hidebroken", "true")
+            addQueryParameter("order", "votes")
+            addQueryParameter("reverse", "true")
+        }
+
+    /**
      * Searches for stations near [latitude]/[longitude] (`geo_lat`/`geo_long`), sorted
      * server-side by proximity (`order=distance`) rather than by client-side computation —
      * matches [search]'s "let the directory do the ranking" approach. [radiusMeters] uses the

@@ -344,4 +344,19 @@ class RadioBrowserApiTest {
 
             assertEquals(null, result)
         }
+
+    @Test
+    fun `topStations sends no name, tag or country filter`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("[]"))
+
+            api.topStations()
+
+            val request = server.takeRequest()
+            assertTrue(request.path?.startsWith("/json/stations/search") == true)
+            assertTrue(request.path?.contains("order=votes") == true)
+            assertFalse(request.path?.contains("name=") == true)
+            assertFalse(request.path?.contains("tag=") == true)
+            assertFalse(request.path?.contains("country=") == true)
+        }
 }
