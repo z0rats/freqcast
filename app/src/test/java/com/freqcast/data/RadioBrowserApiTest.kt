@@ -346,6 +346,96 @@ class RadioBrowserApiTest {
         }
 
     @Test
+    fun `fetchTags parses tag name and station count`() =
+        runTest {
+            val body = """[{"name":"jazz","stationcount":1234},{"name":"rock","stationcount":987}]"""
+            server.enqueue(MockResponse().setBody(body))
+
+            val tags = api.fetchTags()
+
+            assertEquals(2, tags.size)
+            assertEquals("jazz", tags[0].name)
+            assertEquals(1234, tags[0].stationCount)
+            assertEquals("rock", tags[1].name)
+            assertEquals(987, tags[1].stationCount)
+        }
+
+    @Test
+    fun `fetchTags requests the tags endpoint`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("[]"))
+
+            api.fetchTags()
+
+            val request = server.takeRequest()
+            assertTrue(request.path?.startsWith("/json/tags") == true)
+        }
+
+    @Test
+    fun `fetchTags sends an explicit large limit so the real API doesn't silently truncate to its default 1000`() =
+        runTest {
+            // Confirmed against the live API: omitting `limit` caps the response at the server's
+            // default 1000 rows (alphabetically first, mostly punctuation-prefixed junk), which
+            // doesn't even include common tags like "jazz" - this must never regress back to a
+            // bare /json/tags call.
+            server.enqueue(MockResponse().setBody("[]"))
+
+            api.fetchTags()
+
+            val request = server.takeRequest()
+            assertTrue(request.path?.contains("limit=") == true)
+            val limitValue =
+                request.path
+                    ?.substringAfter("limit=")
+                    ?.substringBefore("&")
+                    ?.toIntOrNull()
+            assertTrue((limitValue ?: 0) >= 20_000)
+        }
+
+    @Test
+    fun `fetchTags skips entries missing a name`() =
+        runTest {
+            val body = """[{"name":"","stationcount":1},{"name":"valid","stationcount":2}]"""
+            server.enqueue(MockResponse().setBody(body))
+
+            val tags = api.fetchTags()
+
+            assertEquals(1, tags.size)
+            assertEquals("valid", tags[0].name)
+        }
+
+    @Test
+    fun `fetchTags defaults station count to zero when the field is absent`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"no count"}]"""))
+
+            val tags = api.fetchTags()
+
+            assertEquals(0, tags[0].stationCount)
+        }
+
+    @Test
+    fun `fetchTags retries after a failed attempt and returns the retry's results`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(503))
+            server.enqueue(MockResponse().setBody("""[{"name":"jazz","stationcount":1}]"""))
+
+            val tags = api.fetchTags()
+
+            assertEquals(2, server.requestCount)
+            assertEquals(1, tags.size)
+            assertEquals("jazz", tags[0].name)
+        }
+
+    @Test(expected = IOException::class)
+    fun `fetchTags throws once retries are exhausted on a persistently failing mirror`() =
+        runTest {
+            repeat(4) { server.enqueue(MockResponse().setResponseCode(500)) }
+
+            api.fetchTags()
+        }
+
+    @Test
     fun `topStations sends no name, tag or country filter`() =
         runTest {
             server.enqueue(MockResponse().setBody("[]"))

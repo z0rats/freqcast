@@ -6,9 +6,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.freqcast.R
 import com.freqcast.ui.RadioPlaybackService
 
 enum class PlaybackStatus { PLAYING, PAUSED, STARTING, ERROR }
+
+/**
+ * String resource for [status] - used to give the transport button a TalkBack `stateDescription`
+ * layered on top of its "Play"/"Pause" `contentDescription` action label, so buffering/error
+ * states are announced too, not just the two states the icon/action label themselves distinguish.
+ * Also reused by [com.freqcast.ui.components.NowPlayingBottomBar]'s status text so both surfaces
+ * agree on the same wording per [PlaybackStatus].
+ */
+internal fun playbackStateDescriptionRes(status: PlaybackStatus): Int =
+    when (status) {
+        PlaybackStatus.PLAYING -> R.string.playing
+        PlaybackStatus.STARTING -> R.string.starting
+        PlaybackStatus.PAUSED -> R.string.paused
+        PlaybackStatus.ERROR -> R.string.connection_failed
+    }
 
 /**
  * Pure decision table for the mini/full player's status pill - the single place

@@ -13,6 +13,8 @@ import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioBrowserStation
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.data.RadioTag
+import com.freqcast.data.RadioTagRepository
 import com.freqcast.util.LocationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -62,6 +64,7 @@ import java.util.concurrent.TimeUnit
 class DiscoverStationsViewModelTest {
     private lateinit var database: AppDatabase
     private lateinit var repository: RadioStationRepository
+    private lateinit var tagRepository: RadioTagRepository
     private lateinit var server: MockWebServer
 
     @Before
@@ -78,6 +81,7 @@ class DiscoverStationsViewModelTest {
                 .setTransactionExecutor { it.run() }
                 .build()
         repository = RadioStationRepository(database.radioStationDao())
+        tagRepository = RadioTagRepository(database.radioTagDao())
         server = MockWebServer()
         server.start()
     }
@@ -107,9 +111,10 @@ class DiscoverStationsViewModelTest {
         scheduler: TestCoroutineScheduler,
         locationProvider: LocationProvider = LocationProvider(RuntimeEnvironment.getApplication()),
         // Most tests assert an exact server.requestCount/response ordering for their own action —
-        // defaulting this off keeps init a pure-DB no-network step for them. The dedicated
-        // `loadDefaultBrowse` tests below opt back in explicitly.
+        // defaulting these off keeps init a pure-DB no-network step for them. The dedicated
+        // `loadDefaultBrowse`/tag-sync tests below opt back in explicitly.
         autoLoadDefaultBrowse: Boolean = false,
+        autoSyncTags: Boolean = false,
     ): DiscoverStationsViewModel {
         Dispatchers.setMain(StandardTestDispatcher(scheduler))
         return DiscoverStationsViewModel(
@@ -117,7 +122,9 @@ class DiscoverStationsViewModelTest {
             RuntimeEnvironment.getApplication(),
             RadioBrowserApi(baseUrl = server.url("/")),
             locationProvider,
+            tagRepository,
             autoLoadDefaultBrowse,
+            autoSyncTags,
         )
     }
 
@@ -142,6 +149,17 @@ class DiscoverStationsViewModelTest {
             shadowOf(locationManager).setLastKnownLocation(LocationManager.NETWORK_PROVIDER, fix)
         }
         return LocationProvider(context, locationManager)
+    }
+
+    /**
+     * A `/json/tags` response body large enough to clear [DiscoverStationsViewModel]'s internal
+     * "healthy cache" threshold (2000 - a too-small response, like a single tag, is treated as a
+     * truncated/incomplete fetch and left uncommitted, matching the real regression this
+     * simulates: the live API silently caps an unbounded `/json/tags` call at 1000 rows).
+     */
+    private fun healthyTagsResponseBody(includeTag: String = "jazz"): String {
+        val filler = (1..2000).joinToString(",") { """{"name":"filler$it","stationcount":1}""" }
+        return """[{"name":"$includeTag","stationcount":10},$filler]"""
     }
 
     private suspend fun TestScope.awaitTrue(
@@ -630,5 +648,198 @@ class DiscoverStationsViewModelTest {
                 viewModel.uiState.value.addedUrls
                     .contains("http://example.com/already")
             }
+        }
+
+    @Test
+    fun `onQueryChange in GENRE mode surfaces matching cached tag suggestions`() =
+        runTest {
+            tagRepository.replaceAll(listOf(RadioTag("jazz", 100), RadioTag("jazzy", 5), RadioTag("rock", 50)))
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+
+            viewModel.onQueryChange("ja")
+            awaitTrue {
+                viewModel.uiState.value.tagSuggestions
+                    .isNotEmpty()
+            }
+
+            assertEquals(listOf("jazz", "jazzy"), viewModel.uiState.value.tagSuggestions)
+        }
+
+    @Test
+    fun `onQueryChange outside GENRE mode does not populate tag suggestions`() =
+        runTest {
+            tagRepository.replaceAll(listOf(RadioTag("jazz", 100)))
+            val viewModel = createViewModel(testScheduler)
+            // mode defaults to NAME
+
+            viewModel.onQueryChange("ja")
+            advanceUntilIdle()
+
+            assertTrue(
+                viewModel.uiState.value.tagSuggestions
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `clearing the query in GENRE mode clears tag suggestions`() =
+        runTest {
+            tagRepository.replaceAll(listOf(RadioTag("jazz", 100)))
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+            viewModel.onQueryChange("ja")
+            awaitTrue {
+                viewModel.uiState.value.tagSuggestions
+                    .isNotEmpty()
+            }
+
+            viewModel.onQueryChange("")
+
+            assertTrue(
+                viewModel.uiState.value.tagSuggestions
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `onTagSuggestionSelected fills the query, runs the search and clears suggestions`() =
+        runTest {
+            // Deliberately not going through onQueryChange to set up suggestions first - it also
+            // fires the normal free-text search debounce, which would race the assertion below
+            // for the single enqueued response. onTagSuggestionSelected's own behavior is what's
+            // under test here, not how suggestions got populated (see the dedicated
+            // `onQueryChange in GENRE mode surfaces...` test for that).
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+
+            viewModel.onTagSuggestionSelected("jazz")
+            awaitTrue { viewModel.uiState.value.hasSearched }
+
+            val request = server.takeRequest(5, TimeUnit.SECONDS)
+            assertTrue(request?.path?.contains("tag=jazz") == true)
+            assertEquals("jazz", viewModel.uiState.value.query)
+            assertEquals("jazz", viewModel.uiState.value.selectedGenreTag)
+            assertTrue(
+                viewModel.uiState.value.tagSuggestions
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `tapping a genre chip clears any pending tag suggestions`() =
+        runTest {
+            tagRepository.replaceAll(listOf(RadioTag("jazz", 100)))
+            server.enqueue(MockResponse().setBody("[]"))
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+            viewModel.onQueryChange("ja")
+            awaitTrue {
+                viewModel.uiState.value.tagSuggestions
+                    .isNotEmpty()
+            }
+
+            viewModel.searchGenre("rock")
+
+            assertTrue(
+                viewModel.uiState.value.tagSuggestions
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `switching mode clears any pending tag suggestions`() =
+        runTest {
+            tagRepository.replaceAll(listOf(RadioTag("jazz", 100)))
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+            viewModel.onQueryChange("ja")
+            awaitTrue {
+                viewModel.uiState.value.tagSuggestions
+                    .isNotEmpty()
+            }
+
+            viewModel.onModeChange(DiscoverSearchMode.NAME)
+
+            assertTrue(
+                viewModel.uiState.value.tagSuggestions
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `tags sync from the directory on init when the local cache is empty`() =
+        runTest {
+            server.enqueue(MockResponse().setBody(healthyTagsResponseBody("jazz")))
+            val viewModel = createViewModel(testScheduler, autoSyncTags = true)
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+
+            // onQueryChange's suggestion lookup is a one-shot read of whatever's in the cache
+            // *right now* - it never re-fires on its own once the background sync (a real network
+            // round trip) finishes filling the cache. Re-issuing it on every poll iteration is
+            // what actually detects the sync landing, rather than sampling once too early and
+            // waiting forever on a value that would never change again.
+            awaitTrue {
+                viewModel.onQueryChange("ja")
+                viewModel.uiState.value.tagSuggestions
+                    .isNotEmpty()
+            }
+
+            assertEquals(listOf("jazz"), viewModel.uiState.value.tagSuggestions)
+        }
+
+    @Test
+    fun `tag sync is skipped when the local cache already clears the healthy threshold`() =
+        runTest {
+            tagRepository.replaceAll((1..2500).map { RadioTag("existing$it", it) })
+            createViewModel(testScheduler, autoSyncTags = true)
+            advanceUntilIdle()
+
+            assertEquals(0, server.requestCount)
+        }
+
+    @Test
+    fun `tag sync re-runs when the cache is smaller than the healthy threshold`() =
+        runTest {
+            // Simulates the real regression this threshold check exists for: an earlier
+            // truncated fetch (e.g. before fetchTags started passing an explicit `limit`) left
+            // only a handful of tags cached - a plain isEmpty() check would treat that as
+            // "already synced" forever and never retry.
+            tagRepository.replaceAll(listOf(RadioTag("stale", 1)))
+            server.enqueue(MockResponse().setBody(healthyTagsResponseBody("jazz")))
+            val viewModel = createViewModel(testScheduler, autoSyncTags = true)
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+
+            awaitTrue {
+                viewModel.onQueryChange("ja")
+                viewModel.uiState.value.tagSuggestions
+                    .isNotEmpty()
+            }
+
+            assertEquals(listOf("jazz"), viewModel.uiState.value.tagSuggestions)
+            // replaceAll() fully replaces the cache rather than merging into it, so the stale
+            // pre-existing entry is gone.
+            assertTrue(tagRepository.searchByPrefix("stale").isEmpty())
+        }
+
+    @Test
+    fun `a failed tag sync leaves the cache empty without crashing`() =
+        runTest {
+            // fetchTags retries MAX_RETRIES (3) times, so 4 total queued failures are needed for
+            // a persistently-failing mirror to actually be exhausted.
+            repeat(4) { server.enqueue(MockResponse().setResponseCode(500)) }
+            val viewModel = createViewModel(testScheduler, autoSyncTags = true)
+
+            awaitTrue { server.requestCount >= 4 }
+
+            viewModel.onModeChange(DiscoverSearchMode.GENRE)
+            viewModel.onQueryChange("ja")
+            advanceUntilIdle()
+
+            assertTrue(
+                viewModel.uiState.value.tagSuggestions
+                    .isEmpty(),
+            )
         }
 }

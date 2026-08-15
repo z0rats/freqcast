@@ -7,11 +7,13 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RadioStation::class, WakeAlarm::class], version = 10, exportSchema = true)
+@Database(entities = [RadioStation::class, WakeAlarm::class, RadioTag::class], version = 11, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun radioStationDao(): RadioStationDao
 
     abstract fun wakeAlarmDao(): WakeAlarmDao
+
+    abstract fun radioTagDao(): RadioTagDao
 
     companion object {
         /**
@@ -187,6 +189,21 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        /**
+         * Adds the `radio_tags` cache table backing the Discover GENRE tab's offline tag
+         * autocomplete (see [RadioTagRepository]) - empty until [RadioTagRepository] first syncs
+         * it from the directory's `/json/tags` endpoint.
+         */
+        val MIGRATION_10_11 =
+            object : Migration(10, 11) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS radio_tags (" +
+                            "`tag` TEXT NOT NULL PRIMARY KEY, `stationCount` INTEGER NOT NULL)",
+                    )
+                }
+            }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -207,6 +224,7 @@ abstract class AppDatabase : RoomDatabase() {
                             MIGRATION_7_8,
                             MIGRATION_8_9,
                             MIGRATION_9_10,
+                            MIGRATION_10_11,
                         )
                         // Safety net only for schema jumps with no explicit migration
                         // (e.g. pre-1.0 installs skipping straight to a future version).

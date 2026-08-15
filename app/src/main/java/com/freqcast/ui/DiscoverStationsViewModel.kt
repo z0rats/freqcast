@@ -12,6 +12,8 @@ import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioBrowserStation
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.data.RadioTag
+import com.freqcast.data.RadioTagRepository
 import com.freqcast.util.CountryCatalog
 import com.freqcast.util.IconStorage
 import com.freqcast.util.LocationProvider
@@ -42,6 +44,7 @@ data class DiscoverStationsUiState(
     val defaultBrowseRegionCode: String? = null,
     val isLoadingDefaultBrowse: Boolean = false,
     val selectedGenreTag: String? = null,
+    val tagSuggestions: List<String> = emptyList(),
 )
 
 class DiscoverStationsViewModel(
@@ -49,15 +52,19 @@ class DiscoverStationsViewModel(
     private val appContext: Context,
     private val api: RadioBrowserApi = RadioBrowserApi(),
     private val locationProvider: LocationProvider = LocationProvider(appContext),
+    private val tagRepository: RadioTagRepository = RadioTagRepository.create(appContext),
     // Off by default in tests (see DiscoverStationsViewModelTest.createViewModel) so the many
     // tests asserting an exact server.requestCount/response ordering for their own action don't
     // also have to account for this unconditional init-time network call.
     private val autoLoadDefaultBrowse: Boolean = true,
+    // Same rationale as autoLoadDefaultBrowse - off by default in tests.
+    private val autoSyncTags: Boolean = true,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DiscoverStationsUiState())
     val uiState: StateFlow<DiscoverStationsUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var suggestJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -65,6 +72,42 @@ class DiscoverStationsViewModel(
             _uiState.value = _uiState.value.copy(addedUrls = existingUrls)
         }
         if (autoLoadDefaultBrowse) loadDefaultBrowse()
+        if (autoSyncTags) syncTagsIfNeeded()
+    }
+
+    /**
+     * One-time-per-app-launch background sync of the directory's full tag catalog into
+     * [tagRepository]'s local cache, so the GENRE tab's autocomplete ([updateTagSuggestions])
+     * works offline afterwards. Gated on the cache holding at least [MIN_HEALTHY_TAG_COUNT] rows,
+     * not just being non-empty: the real directory currently has ~11.9k tags, but a bare
+     * `/json/tags` call with no `limit` silently truncates to the server's default 1000 rows
+     * (confirmed against the live API - see [RadioBrowserApi.fetchTags]'s doc) - an
+     * emptiness-only check would treat that stale, truncated cache as "already synced" forever
+     * and never retry, which is exactly what happened before [RadioBrowserApi.fetchTags] started
+     * passing an explicit limit. A failed/incomplete fetch just leaves the count below threshold,
+     * so the next launch retries automatically without needing any separate "last synced" flag.
+     */
+    private fun syncTagsIfNeeded() {
+        viewModelScope.launch {
+            val cachedCount = tagRepository.count()
+            if (cachedCount >= MIN_HEALTHY_TAG_COUNT) {
+                Log.d(TAG, "syncTagsIfNeeded: cache already has $cachedCount tags, skipping")
+                return@launch
+            }
+            Log.d(TAG, "syncTagsIfNeeded: cache has only $cachedCount tags, (re)fetching from directory")
+            try {
+                val tags = api.fetchTags()
+                Log.d(TAG, "syncTagsIfNeeded: fetched ${tags.size} tags")
+                if (tags.size >= MIN_HEALTHY_TAG_COUNT) {
+                    tagRepository.replaceAll(tags.map { RadioTag(tag = it.name, stationCount = it.stationCount) })
+                    Log.d(TAG, "syncTagsIfNeeded: cache populated with ${tags.size} tags")
+                } else {
+                    Log.w(TAG, "syncTagsIfNeeded: fetched only ${tags.size} tags, leaving stale cache in place")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "syncTagsIfNeeded failed", e)
+            }
+        }
     }
 
     /**
@@ -141,7 +184,36 @@ class DiscoverStationsViewModel(
         // Typing free text supersedes any earlier chip tap — clear the highlight so it doesn't
         // keep pointing at a genre that's no longer what's actually being searched.
         _uiState.value = _uiState.value.copy(query = value, selectedGenreTag = null)
+        if (_uiState.value.mode == DiscoverSearchMode.GENRE) updateTagSuggestions(value)
         scheduleSearch()
+    }
+
+    /**
+     * Looks up [prefix] against [tagRepository]'s local tag cache as the user types in the GENRE
+     * tab, showing real matching tags (see [com.freqcast.ui.DiscoverStationsScreen]'s
+     * `TagSuggestionsList`) instead of guessing. A plain local DB read (no network), so unlike
+     * [scheduleSearch] this needs no debounce — each keystroke just cancels and replaces the
+     * previous lookup.
+     */
+    private fun updateTagSuggestions(prefix: String) {
+        suggestJob?.cancel()
+        val trimmed = prefix.trim()
+        if (trimmed.isEmpty()) {
+            _uiState.value = _uiState.value.copy(tagSuggestions = emptyList())
+            return
+        }
+        suggestJob =
+            viewModelScope.launch {
+                val matches = tagRepository.searchByPrefix(trimmed)
+                Log.d(TAG, "updateTagSuggestions: prefix=\"$trimmed\" matched ${matches.size} cached tags")
+                _uiState.value = _uiState.value.copy(tagSuggestions = matches.map { it.tag })
+            }
+    }
+
+    /** Called when the user taps a suggestion from [updateTagSuggestions]'s dropdown. */
+    fun onTagSuggestionSelected(tag: String) {
+        _uiState.value = _uiState.value.copy(query = tag)
+        searchGenre(tag)
     }
 
     /**
@@ -156,13 +228,15 @@ class DiscoverStationsViewModel(
      */
     fun searchGenre(tag: String) {
         searchJob?.cancel()
-        _uiState.value = _uiState.value.copy(selectedGenreTag = tag)
+        suggestJob?.cancel()
+        _uiState.value = _uiState.value.copy(selectedGenreTag = tag, tagSuggestions = emptyList())
         searchJob = viewModelScope.launch { runSearch(tag) }
     }
 
     fun onModeChange(mode: DiscoverSearchMode) {
         if (mode == _uiState.value.mode) return
         searchJob?.cancel()
+        suggestJob?.cancel()
         _uiState.value =
             _uiState.value.copy(
                 mode = mode,
@@ -176,6 +250,7 @@ class DiscoverStationsViewModel(
                 errorRes = null,
                 locationPermissionDenied = false,
                 selectedGenreTag = null,
+                tagSuggestions = emptyList(),
             )
         // NEARBY has no text query to debounce on — the screen checks/requests location
         // permission first, then calls searchNearby() directly once granted.
@@ -331,6 +406,12 @@ class DiscoverStationsViewModel(
         private const val SEARCH_DEBOUNCE_MS = 400L
         private const val NEARBY_RADIUS_METERS = 50_000
         private const val DEFAULT_BROWSE_LIMIT = 30
+
+        /**
+         * Comfortably below the real tag catalog's current ~11.9k size but well above the ~1000
+         * rows a truncated/no-limit fetch would produce - see [syncTagsIfNeeded]'s doc.
+         */
+        private const val MIN_HEALTHY_TAG_COUNT = 2000
 
         // "en" is deliberately absent — ambiguous across US/GB/etc, so it falls through to the
         // system region instead of guessing. "zh-CN" needs no entry: its tag already carries "CN".

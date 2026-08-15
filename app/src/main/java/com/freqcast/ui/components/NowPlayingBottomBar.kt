@@ -301,7 +301,10 @@ private fun MiniPlayerCardFull(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(
-                    modifier = Modifier.weight(1f, fill = false),
+                    // mergeDescendants: TalkBack reads the station name and status/track title
+                    // below as one combined stop instead of two - the rewind/live/play-pause
+                    // controls stay their own sibling stops outside this Column, unaffected.
+                    modifier = Modifier.weight(1f, fill = false).semantics(mergeDescendants = true) {},
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
@@ -320,12 +323,10 @@ private fun MiniPlayerCardFull(
                         }
                         MarqueeText(
                             text =
-                                when {
-                                    playbackStatus == PlaybackStatus.PLAYING && trackTitle != null -> trackTitle
-                                    playbackStatus == PlaybackStatus.PLAYING -> stringResource(R.string.playing)
-                                    playbackStatus == PlaybackStatus.STARTING -> stringResource(R.string.starting)
-                                    playbackStatus == PlaybackStatus.PAUSED -> stringResource(R.string.paused)
-                                    else -> stringResource(R.string.connection_failed)
+                                if (playbackStatus == PlaybackStatus.PLAYING && trackTitle != null) {
+                                    trackTitle
+                                } else {
+                                    stringResource(playbackStateDescriptionRes(playbackStatus))
                                 },
                             style = MaterialTheme.typography.bodySmall,
                             color = text_hint,

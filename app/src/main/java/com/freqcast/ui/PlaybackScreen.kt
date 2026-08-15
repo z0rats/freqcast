@@ -81,8 +81,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -96,6 +99,8 @@ import androidx.lifecycle.lifecycleScope
 import com.freqcast.R
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.components.PlaybackPresentation
+import com.freqcast.ui.components.PlaybackStatus
+import com.freqcast.ui.components.playbackStateDescriptionRes
 import com.freqcast.ui.components.rememberPlaybackPresentation
 import com.freqcast.ui.components.rememberStationIconBitmap
 import com.freqcast.ui.theme.FreqcastTheme
@@ -390,6 +395,7 @@ fun NowPlayingContent(
     val context = LocalContext.current
     val displayName = stationName ?: stringResource(R.string.unknown_station)
     val isPlaying = presentation.isPlaying
+    val status = presentation.status
     val trackTitle = presentation.trackTitle
     val hasTimeshift = presentation.hasTimeshift
     val isAtLive = presentation.isAtLive
@@ -473,7 +479,7 @@ fun NowPlayingContent(
                             onSeekToLive = { playbackService?.seekToLive() },
                         )
                     }
-                    PlayPauseButton(isPlaying = isPlaying, onClick = onPlayStopClick, size = 60.dp)
+                    PlayPauseButton(status = status, onClick = onPlayStopClick, size = 60.dp)
                     PlayerDock {
                         SleepTimerControl(
                             sleepTimerRemainingMs = sleepTimerRemainingMs,
@@ -535,7 +541,7 @@ fun NowPlayingContent(
                 }
 
                 Spacer(modifier = Modifier.height(Spacing.xs))
-                PlayPauseButton(isPlaying = isPlaying, onClick = onPlayStopClick, size = 64.dp)
+                PlayPauseButton(status = status, onClick = onPlayStopClick, size = 64.dp)
                 Spacer(modifier = Modifier.height(Spacing.xs))
 
                 PlayerDock {
@@ -920,6 +926,10 @@ private fun TrackTitleRow(trackTitle: String) {
         textAlign = TextAlign.Center,
         maxLines = 1,
         marquee = true,
+        // ICY metadata changes the track title without any user action - a polite live region
+        // lets TalkBack announce the new title on its own instead of requiring the user to
+        // manually re-focus this label to discover the track changed.
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
     )
 }
 
@@ -989,11 +999,16 @@ private fun CopyableLabel(
  */
 @Composable
 private fun PlayPauseButton(
-    isPlaying: Boolean,
+    status: PlaybackStatus,
     onClick: () -> Unit,
     size: Dp,
 ) {
+    val isPlaying = status == PlaybackStatus.PLAYING
     val description = if (isPlaying) stringResource(R.string.pause) else stringResource(R.string.play)
+    // Layered on top of the Play/Pause action label above: those two only distinguish "is it
+    // currently playing", but TalkBack users also need to hear "Buffering"/"Connection failed"
+    // rather than just a bare "Play" that reads as if nothing is happening yet.
+    val stateLabel = stringResource(playbackStateDescriptionRes(status))
     Box(contentAlignment = Alignment.Center) {
         if (isPlaying) {
             val glowTransition = rememberInfiniteTransition(label = "playGlow")
@@ -1028,7 +1043,10 @@ private fun PlayPauseButton(
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary)
                     .clickable(onClick = onClick)
-                    .semantics { contentDescription = description },
+                    .semantics {
+                        contentDescription = description
+                        stateDescription = stateLabel
+                    },
             contentAlignment = Alignment.Center,
         ) {
             Icon(

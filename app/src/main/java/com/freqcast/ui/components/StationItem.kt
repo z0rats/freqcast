@@ -46,6 +46,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -323,7 +324,10 @@ private fun StationCard(
             }
 
             Column(
-                modifier = Modifier.weight(1f),
+                // mergeDescendants: TalkBack reads the name and status/subtitle below as one
+                // combined stop instead of two separate swipes - the play/pause icon stays its
+                // own sibling stop outside this Column, so it's unaffected.
+                modifier = Modifier.weight(1f).semantics(mergeDescendants = true) {},
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(

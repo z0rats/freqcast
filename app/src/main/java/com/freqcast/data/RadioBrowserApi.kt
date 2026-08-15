@@ -31,6 +31,12 @@ data class RadioBrowserStation(
     val sslError: Boolean = false,
 )
 
+/** A tag from the directory's full `/json/tags` catalog, with its worldwide station count. */
+data class RadioBrowserTag(
+    val name: String,
+    val stationCount: Int,
+)
+
 /**
  * Minimal client for the [Radio Browser API](https://api.radio-browser.info/) public station
  * directory, used for the "discover stations" search. `all.api.radio-browser.info` round-robins
@@ -117,6 +123,65 @@ class RadioBrowserApi(
             addQueryParameter("hidebroken", "true")
             addQueryParameter("order", "distance")
         }
+
+    /**
+     * The directory's full tag catalog (~11k entries worldwide), used to seed
+     * [com.freqcast.data.RadioTagRepository]'s local cache for the Discover GENRE tab's offline
+     * autocomplete - not filtered/sorted server-side, so callers get every tag and decide their
+     * own ranking (this app's [com.freqcast.data.RadioTagDao] sorts by station count at query time).
+     * The explicit `limit` is required, not cosmetic: confirmed against the real API that omitting
+     * it silently caps the response at the server's default 1000 rows (alphabetically first, i.e.
+     * mostly punctuation-prefixed junk tags) rather than the full catalog - common tags like
+     * "jazz"/"rock" don't even appear in that truncated slice, which would make the autocomplete
+     * look broken/empty for most real queries despite a successful sync.
+     */
+    suspend fun fetchTags(): List<RadioBrowserTag> =
+        withContext(Dispatchers.IO) {
+            val url =
+                baseUrl
+                    .newBuilder()
+                    .addPathSegments("json/tags")
+                    .addQueryParameter("limit", TAGS_FETCH_LIMIT.toString())
+                    .build()
+            executeTagsWithRetries(url)
+        }
+
+    /** Same mirror-eviction retry shape as [executeSearchWithRetries], for the tags endpoint. */
+    private fun executeTagsWithRetries(url: HttpUrl): List<RadioBrowserTag> {
+        repeat(MAX_RETRIES) {
+            try {
+                return executeTags(url)
+            } catch (e: IOException) {
+                client.connectionPool.evictAll()
+            }
+        }
+        return executeTags(url)
+    }
+
+    private fun executeTags(url: HttpUrl): List<RadioBrowserTag> {
+        val request =
+            Request
+                .Builder()
+                .url(url)
+                .header("User-Agent", APP_USER_AGENT)
+                .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            return parseTags(response.body?.string().orEmpty())
+        }
+    }
+
+    internal fun parseTags(json: String): List<RadioBrowserTag> {
+        val array = JSONArray(json)
+        val tags = mutableListOf<RadioBrowserTag>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val name = obj.optString("name").trim()
+            if (name.isEmpty()) continue
+            tags.add(RadioBrowserTag(name = name, stationCount = obj.optInt("stationcount", 0)))
+        }
+        return tags
+    }
 
     /** Shared GET+parse pipeline for the station-search endpoint; [buildQuery] adds this call's own query params. */
     private suspend fun fetchStations(buildQuery: HttpUrl.Builder.() -> Unit): List<RadioBrowserStation> =
@@ -263,5 +328,8 @@ class RadioBrowserApi(
 
         /** Total attempts = this + 1 — one initial try, then this many retries against a fresh connection. */
         private const val MAX_RETRIES = 3
+
+        /** Comfortably above the real catalog's current ~11.9k size (see [fetchTags]'s doc). */
+        private const val TAGS_FETCH_LIMIT = 50_000
     }
 }

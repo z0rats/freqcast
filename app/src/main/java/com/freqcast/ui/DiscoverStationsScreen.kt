@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -292,12 +293,21 @@ fun DiscoverStationsScreen(
                         // Always visible (not just before the first search) — like the COUNTRY
                         // tab's flag picker, this is a persistent quick-select, not one-shot
                         // default-browse content, so the user can pick a different genre without
-                        // having to clear their current results/selection first.
+                        // having to clear their current results/selection first. While the typed
+                        // text matches cached tags, those real suggestions replace the curated
+                        // chip row instead of competing with it for the same space below the field.
                         if (uiState.mode == DiscoverSearchMode.GENRE) {
-                            PopularGenresChips(
-                                selectedGenreTag = uiState.selectedGenreTag,
-                                onGenreClick = viewModel::searchGenre,
-                            )
+                            if (uiState.tagSuggestions.isNotEmpty()) {
+                                TagSuggestionsList(
+                                    suggestions = uiState.tagSuggestions,
+                                    onSuggestionClick = viewModel::onTagSuggestionSelected,
+                                )
+                            } else {
+                                PopularGenresChips(
+                                    selectedGenreTag = uiState.selectedGenreTag,
+                                    onGenreClick = viewModel::searchGenre,
+                                )
+                            }
                         }
                     }
                 }
@@ -446,6 +456,46 @@ private fun PopularGenresChips(
                         selectedBorderColor = glass_accent,
                     ),
             )
+        }
+    }
+}
+
+/**
+ * Real-tag matches for whatever's typed in the GENRE tab's search field, backed by
+ * [com.freqcast.data.RadioTagRepository]'s locally cached copy of the directory's full tag
+ * catalog (~11k entries) — offline and instant, unlike [DiscoverStationsViewModel.runSearch]'s
+ * debounced network search. Tapping a row searches that exact tag, same as a [PopularGenresChips]
+ * chip tap, just sourced from the real catalog instead of a small curated list.
+ */
+@Composable
+private fun TagSuggestionsList(
+    suggestions: List<String>,
+    onSuggestionClick: (String) -> Unit,
+) {
+    Card(
+        modifier =
+            Modifier.fillMaxWidth().widthIn(max = 600.dp).padding(horizontal = Spacing.md).border(
+                width = 1.dp,
+                color = card_border,
+                shape = MaterialTheme.shapes.medium,
+            ),
+        colors = CardDefaults.cardColors(containerColor = card_surface),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column {
+            suggestions.forEach { tag ->
+                Text(
+                    text = tag,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = text_primary,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onSuggestionClick(tag) }
+                            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                )
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.freqcast.ui.components
 
+import com.freqcast.R
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -81,5 +82,13 @@ class PlaybackPresentationTest {
                 isConnectionBroken = false,
             ),
         )
+    }
+
+    @Test
+    fun `playbackStateDescriptionRes maps every status to its own accessibility string`() {
+        assertEquals(R.string.playing, playbackStateDescriptionRes(PlaybackStatus.PLAYING))
+        assertEquals(R.string.starting, playbackStateDescriptionRes(PlaybackStatus.STARTING))
+        assertEquals(R.string.paused, playbackStateDescriptionRes(PlaybackStatus.PAUSED))
+        assertEquals(R.string.connection_failed, playbackStateDescriptionRes(PlaybackStatus.ERROR))
     }
 }

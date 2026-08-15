@@ -275,6 +275,40 @@ internal abstract class LegacyV9Database : RoomDatabase() {
     abstract fun radioStationDao(): LegacyV9RadioStationDao
 }
 
+// A standalone snapshot of the `radio_stations` table as it existed at schema version 10 (has
+// description, no radio_tags table yet) - see app/schemas/com.freqcast.data.AppDatabase/10.json.
+// Same rationale as the other Legacy* entities: the real AppDatabase now carries the radio_tags
+// table, which would defeat this migration test.
+@Entity(
+    tableName = "radio_stations",
+    indices = [
+        androidx.room.Index(value = ["name"], unique = true),
+        androidx.room.Index(value = ["streamUrl"], unique = true),
+    ],
+)
+internal data class LegacyV10RadioStation(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val name: String,
+    val streamUrl: String,
+    val customIcon: String? = null,
+    val sortOrder: Int = 0,
+    val description: String? = null,
+    val isHls: Boolean = false,
+    val radioBrowserUuid: String? = null,
+)
+
+@Dao
+internal interface LegacyV10RadioStationDao {
+    @Insert
+    suspend fun insertStation(station: LegacyV10RadioStation): Long
+}
+
+@Database(entities = [LegacyV10RadioStation::class, WakeAlarm::class], version = 10, exportSchema = false)
+internal abstract class LegacyV10Database : RoomDatabase() {
+    abstract fun radioStationDao(): LegacyV10RadioStationDao
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class AppDatabaseMigrationTest {
@@ -311,7 +345,7 @@ class AppDatabaseMigrationTest {
             // Reopen the same file through the real AppDatabase + migrations, deliberately without
             // fallbackToDestructiveMigration, so Room strictly validates the post-migration schema
             // against what AppDatabase actually expects - if a migration is wrong, this throws.
-            // All migrations must be registered since AppDatabase is now on version 8.
+            // All migrations must be registered since AppDatabase is now on version 11.
             val migratedDb =
                 Room
                     .databaseBuilder(context, AppDatabase::class.java, dbName)
@@ -324,6 +358,7 @@ class AppDatabaseMigrationTest {
                         AppDatabase.MIGRATION_7_8,
                         AppDatabase.MIGRATION_8_9,
                         AppDatabase.MIGRATION_9_10,
+                        AppDatabase.MIGRATION_10_11,
                     ).allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -375,6 +410,7 @@ class AppDatabaseMigrationTest {
                         AppDatabase.MIGRATION_7_8,
                         AppDatabase.MIGRATION_8_9,
                         AppDatabase.MIGRATION_9_10,
+                        AppDatabase.MIGRATION_10_11,
                     ).allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -409,6 +445,7 @@ class AppDatabaseMigrationTest {
                         AppDatabase.MIGRATION_7_8,
                         AppDatabase.MIGRATION_8_9,
                         AppDatabase.MIGRATION_9_10,
+                        AppDatabase.MIGRATION_10_11,
                     ).allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -445,6 +482,7 @@ class AppDatabaseMigrationTest {
                         AppDatabase.MIGRATION_7_8,
                         AppDatabase.MIGRATION_8_9,
                         AppDatabase.MIGRATION_9_10,
+                        AppDatabase.MIGRATION_10_11,
                     ).allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -481,6 +519,7 @@ class AppDatabaseMigrationTest {
                         AppDatabase.MIGRATION_7_8,
                         AppDatabase.MIGRATION_8_9,
                         AppDatabase.MIGRATION_9_10,
+                        AppDatabase.MIGRATION_10_11,
                     ).allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -523,8 +562,12 @@ class AppDatabaseMigrationTest {
             val migratedDb =
                 Room
                     .databaseBuilder(context, AppDatabase::class.java, dbName)
-                    .addMigrations(AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10)
-                    .allowMainThreadQueries()
+                    .addMigrations(
+                        AppDatabase.MIGRATION_7_8,
+                        AppDatabase.MIGRATION_8_9,
+                        AppDatabase.MIGRATION_9_10,
+                        AppDatabase.MIGRATION_10_11,
+                    ).allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
 
@@ -557,7 +600,7 @@ class AppDatabaseMigrationTest {
             val migratedDb =
                 Room
                     .databaseBuilder(context, AppDatabase::class.java, dbName)
-                    .addMigrations(AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10)
+                    .addMigrations(AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
                     .allowMainThreadQueries()
                     .build()
 
@@ -597,7 +640,7 @@ class AppDatabaseMigrationTest {
             val migratedDb =
                 Room
                     .databaseBuilder(context, AppDatabase::class.java, dbName)
-                    .addMigrations(AppDatabase.MIGRATION_9_10)
+                    .addMigrations(AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
                     .allowMainThreadQueries()
                     .build()
             val stations = migratedDb.radioStationDao().getAllStations()
@@ -608,6 +651,38 @@ class AppDatabaseMigrationTest {
 
             migratedDb.radioStationDao().updateStation(stations[0].copy(description = "Jazz"))
             assertEquals("Jazz", migratedDb.radioStationDao().getStationById(stations[0].id)?.description)
+
+            migratedDb.close()
+        }
+
+    @Test
+    fun `migration 10 to 11 adds an empty radio_tags table and preserves existing station data`() =
+        runTest {
+            val legacyDb =
+                Room
+                    .databaseBuilder(context, LegacyV10Database::class.java, dbName)
+                    .allowMainThreadQueries()
+                    .build()
+            legacyDb.radioStationDao().insertStation(
+                LegacyV10RadioStation(name = "Rock FM", streamUrl = "http://example.com/rock", description = "Rock"),
+            )
+            legacyDb.close()
+
+            val migratedDb =
+                Room
+                    .databaseBuilder(context, AppDatabase::class.java, dbName)
+                    .addMigrations(AppDatabase.MIGRATION_10_11)
+                    .allowMainThreadQueries()
+                    .build()
+
+            val stations = migratedDb.radioStationDao().getAllStations()
+            assertEquals(1, stations.size)
+            assertEquals("Rock FM", stations[0].name)
+            assertEquals("Rock", stations[0].description)
+
+            assertEquals(0, migratedDb.radioTagDao().count())
+            migratedDb.radioTagDao().insertAll(listOf(RadioTag(tag = "jazz", stationCount = 42)))
+            assertEquals(1, migratedDb.radioTagDao().count())
 
             migratedDb.close()
         }
