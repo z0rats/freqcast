@@ -1,0 +1,3 @@
+Discover's Genre tab now suggests real matching tags as you type, backed by an offline-cached copy of the full tag catalog — not just the curated genre chips.
+
+Improved screen reader support: playback status (playing/buffering/paused/error) is now announced, and station rows read as a single item.
