@@ -775,15 +775,32 @@ class DiscoverStationsViewModelTest {
             val viewModel = createViewModel(testScheduler, autoSyncTags = true)
             viewModel.onModeChange(DiscoverSearchMode.GENRE)
 
+            // syncTagsIfNeeded()'s fetchTags() (OkHttp) and replaceAll() (Room) both hop onto
+            // real background dispatchers, so advanceUntilIdle() alone can't wait for the sync
+            // to land - poll the repository directly with real time between attempts.
             // onQueryChange's suggestion lookup is a one-shot read of whatever's in the cache
-            // *right now* - it never re-fires on its own once the background sync (a real network
-            // round trip) finishes filling the cache. Re-issuing it on every poll iteration is
-            // what actually detects the sync landing, rather than sampling once too early and
-            // waiting forever on a value that would never change again.
-            awaitTrue {
-                viewModel.onQueryChange("ja")
-                viewModel.uiState.value.tagSuggestions
-                    .isNotEmpty()
+            // *right now*, so it does need to be re-issued after the sync lands - but doing that
+            // from inside awaitTrue's virtual-only poll (as this used to) turns an unrelated
+            // real-dispatcher wait into an unbounded, ever-more-expensive busy-loop (AGENTS.md's
+            // advanceUntilIdle() warning; see the "tag sync re-runs..." test below for the CI
+            // hang this caused).
+            val deadline = System.currentTimeMillis() + 5000
+            while (tagRepository.count() == 0 && System.currentTimeMillis() < deadline) {
+                advanceUntilIdle()
+                Thread.sleep(20)
+            }
+            viewModel.onQueryChange("ja")
+
+            // updateTagSuggestions() (triggered by onQueryChange above) is the same shape again -
+            // suggestJob launches on viewModelScope and searchByPrefix() hops onto Room's real
+            // executor - so this needs the same real-time wait. The poll body itself is a cheap
+            // StateFlow read with no side effects, unlike the call this replaced above.
+            val suggestDeadline = System.currentTimeMillis() + 5000
+            while (viewModel.uiState.value.tagSuggestions
+                    .isEmpty() && System.currentTimeMillis() < suggestDeadline
+            ) {
+                advanceUntilIdle()
+                Thread.sleep(20)
             }
 
             assertEquals(listOf("jazz"), viewModel.uiState.value.tagSuggestions)
@@ -811,10 +828,31 @@ class DiscoverStationsViewModelTest {
             val viewModel = createViewModel(testScheduler, autoSyncTags = true)
             viewModel.onModeChange(DiscoverSearchMode.GENRE)
 
-            awaitTrue {
-                viewModel.onQueryChange("ja")
-                viewModel.uiState.value.tagSuggestions
-                    .isNotEmpty()
+            // syncTagsIfNeeded()'s fetchTags() (OkHttp) and replaceAll() (Room) both hop onto
+            // real background dispatchers, so advanceUntilIdle() alone can't wait for the sync
+            // to land - poll the repository directly with real time between attempts instead of
+            // from inside awaitTrue's virtual-only poll. This used to call onQueryChange() from
+            // inside that poll lambda on every spin - each spin builds and cancels a new search
+            // Job, so a wait on unrelated real-dispatcher work turned into an unbounded,
+            // ever-more-expensive busy-loop (AGENTS.md's advanceUntilIdle() warning), which is
+            // what hung CI once Kover's coverage javaagent slowed both sides of the race down.
+            val deadline = System.currentTimeMillis() + 5000
+            while (tagRepository.count() == 1 && System.currentTimeMillis() < deadline) {
+                advanceUntilIdle()
+                Thread.sleep(20)
+            }
+            viewModel.onQueryChange("ja")
+
+            // updateTagSuggestions() (triggered by onQueryChange above) is the same shape again -
+            // suggestJob launches on viewModelScope and searchByPrefix() hops onto Room's real
+            // executor - so this needs the same real-time wait. The poll body itself is a cheap
+            // StateFlow read with no side effects, unlike the call this replaced above.
+            val suggestDeadline = System.currentTimeMillis() + 5000
+            while (viewModel.uiState.value.tagSuggestions
+                    .isEmpty() && System.currentTimeMillis() < suggestDeadline
+            ) {
+                advanceUntilIdle()
+                Thread.sleep(20)
             }
 
             assertEquals(listOf("jazz"), viewModel.uiState.value.tagSuggestions)

@@ -17,6 +17,7 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
@@ -36,18 +37,27 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
-      # Combined into a single invocation: test/verifyRoborazziDebug/koverXmlReportDebug all
-      # ultimately depend on the same :app:testDebugUnitTest task, and Gradle only executes a
-      # given task once per build graph. Running them as separate `./gradlew` invocations (as
-      # before) makes Gradle recompute that task's inputs differently each time (Roborazzi's
-      # verify-mode system properties, Kover's coverage javaagent), so it's considered dirty and
-      # the entire ~40-class Robolectric suite reruns 3x — one of those reruns (under Roborazzi's
-      # verify-mode properties) also runs ~5x slower than normal. Keeping this as one step cuts
-      # that to a single run.
-      - name: Run tests, verify screenshots, generate coverage
-        run: ./gradlew test verifyRoborazziDebug koverXmlReportDebug --no-daemon
+      # Combined into a single invocation: `test` and `verifyRoborazziDebug` both ultimately
+      # depend on :app:testDebugUnitTest, and running them as separate `./gradlew` invocations
+      # makes Gradle recompute that task's inputs differently each time (Roborazzi's verify-mode
+      # system properties), so it's considered dirty and reruns. koverXmlReportDebug is
+      # deliberately NOT included here — see the step below.
+      - name: Run tests, verify screenshots
+        run: ./gradlew test verifyRoborazziDebug --no-daemon
+
+      # Separate, best-effort step: Kover's coverage javaagent stacked on top of Robolectric's
+      # own bytecode-instrumenting classloader has been observed to hang :app:testDebugUnitTest
+      # indefinitely (confirmed: 27+ min with zero completed test classes, no progress at all —
+      # not just slow). Coverage is informational only (no koverVerify gate), so this must never
+      # block the pipeline: timeout + continue-on-error so a hang here can't hold up CI, and it's
+      # kept out of the merged step above so it can't take the actual test signal down with it.
+      - name: Generate coverage report
+        timeout-minutes: 8
+        continue-on-error: true
+        run: ./gradlew koverXmlReportDebug --no-daemon
 
       - name: Upload coverage to Codecov
+        if: always()
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: app/build/reports/kover/reportDebug.xml
