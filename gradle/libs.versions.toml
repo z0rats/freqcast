@@ -16,7 +16,7 @@ room = "2.8.4"
 
 media3 = "1.11.0"
 guava = "33.6.0-android"
-okhttp = "5.4.0"
+okhttp = "5.5.0"
 kotlinxCoroutines = "1.11.0"
 
 composeBom = "2026.08.00"
