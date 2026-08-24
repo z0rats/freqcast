@@ -1,0 +1,3 @@
+The media notification now has Previous/Next buttons to skip between your stations without opening the app.
+
+Fixed drag-and-drop list reordering visibly glitching when moving a station to the very top of the list.
