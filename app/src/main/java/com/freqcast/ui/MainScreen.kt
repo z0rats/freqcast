@@ -1,15 +1,12 @@
 package com.freqcast.ui
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
-import android.os.IBinder
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -84,6 +81,7 @@ import com.freqcast.R
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.StationBackupJson
+import com.freqcast.ui.components.ConnectionErrorToastEffect
 import com.freqcast.ui.components.NowPlayingBottomBar
 import com.freqcast.ui.components.PlaybackStatus
 import com.freqcast.ui.components.StationItem
@@ -92,6 +90,9 @@ import com.freqcast.ui.components.rememberDragDropState
 import com.freqcast.ui.components.rememberPlaybackPresentation
 import com.freqcast.ui.components.rememberRawPlaybackState
 import com.freqcast.ui.playback.SettingsStore
+import com.freqcast.ui.playback.controller.PlaybackController
+import com.freqcast.ui.playback.controller.ToggleResult
+import com.freqcast.ui.playback.controller.rememberPlaybackController
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
 import com.freqcast.ui.theme.card_border
@@ -108,26 +109,6 @@ import com.freqcast.util.isNetworkAvailable
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
-    private val playbackServiceState = mutableStateOf<RadioPlaybackService?>(null)
-    private var isBound = false
-
-    private val serviceConnection =
-        object : ServiceConnection {
-            override fun onServiceConnected(
-                name: ComponentName?,
-                service: IBinder?,
-            ) {
-                val binder = service as? RadioPlaybackService.LocalBinder
-                playbackServiceState.value = binder?.getService()
-                isBound = true
-            }
-
-            override fun onServiceDisconnected(name: ComponentName?) {
-                playbackServiceState.value = null
-                isBound = false
-            }
-        }
-
     private var viewModelRef: MainViewModel? = null
 
     private val addStationLauncher =
@@ -166,7 +147,8 @@ class MainActivity : AppCompatActivity() {
         val viewModelFactory = MainViewModel.provideFactory(repository)
 
         setContent {
-            val playbackService by playbackServiceState
+            val playbackController by rememberPlaybackController()
+            val coroutineScope = rememberCoroutineScope()
             FreqcastTheme {
                 val viewModel: MainViewModel = viewModel(factory = viewModelFactory)
                 viewModelRef = viewModel
@@ -181,34 +163,11 @@ class MainActivity : AppCompatActivity() {
                     onAddStationClick = {
                         addStationLauncher.launch(Intent(this, AddStationActivity::class.java))
                     },
-                    onDiscoverStationsClick = {
-                        discoverStationsLauncher.launch(Intent(this, DiscoverStationsActivity::class.java))
-                    },
-                    onAlarmClick = {
-                        startActivity(Intent(this, AlarmActivity::class.java))
-                    },
-                    onSettingsClick = {
-                        startActivity(Intent(this, SettingsActivity::class.java))
-                    },
-                    onStationEdit = { station ->
-                        val intent =
-                            Intent(this, AddStationActivity::class.java).apply {
-                                putExtra(AddStationActivity.EXTRA_STATION_ID, station.id)
-                            }
-                        addStationLauncher.launch(intent)
-                    },
                     onResume = {
                         viewModel.loadStations()
                     },
-                    onStationDelete = { station ->
-                        if (viewModel.getCurrentPlayingStationId() == station.id) {
-                            playbackServiceState.value?.stopPlayback()
-                            viewModel.updateCurrentPlayingStation(null)
-                        }
-                        viewModel.deleteStation(station)
-                    },
                     onPlayStation = { station ->
-                        playStation(station, viewModel)
+                        coroutineScope.launch { playStation(station, viewModel, playbackController) }
                     },
                     onNowPlayingClick = { station ->
                         val intent =
@@ -228,10 +187,36 @@ class MainActivity : AppCompatActivity() {
                             )
                         startActivity(intent, options.toBundle())
                     },
-                    playbackService = playbackService,
-                    onStopPlayback = {
-                        playbackServiceState.value?.stopPlayback()
-                    },
+                    playbackController = playbackController,
+                    stationListActions =
+                        StationListActions(
+                            onDiscoverStationsClick = {
+                                discoverStationsLauncher.launch(Intent(this, DiscoverStationsActivity::class.java))
+                            },
+                            onAlarmClick = {
+                                startActivity(Intent(this, AlarmActivity::class.java))
+                            },
+                            onSettingsClick = {
+                                startActivity(Intent(this, SettingsActivity::class.java))
+                            },
+                            onStationEdit = { station ->
+                                val intent =
+                                    Intent(this, AddStationActivity::class.java).apply {
+                                        putExtra(AddStationActivity.EXTRA_STATION_ID, station.id)
+                                    }
+                                addStationLauncher.launch(intent)
+                            },
+                            onStationDelete = { station ->
+                                if (viewModel.getCurrentPlayingStationId() == station.id) {
+                                    playbackController?.stopPlayback()
+                                    viewModel.updateCurrentPlayingStation(null)
+                                }
+                                viewModel.deleteStation(station)
+                            },
+                            onStopPlayback = {
+                                playbackController?.stopPlayback()
+                            },
+                        ),
                 )
             }
         }
@@ -246,60 +231,47 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        Intent(this, RadioPlaybackService::class.java).also { intent ->
-            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         // Reload stations when returning from AddStationActivity
         viewModelRef?.loadStations()
     }
 
-    override fun onStop() {
-        super.onStop()
-        if (isBound) {
-            unbindService(serviceConnection)
-            isBound = false
-        }
-    }
-
-    private fun playStation(
+    // Not yet bound (controller == null) only ever happens for a play tap that lands before
+    // rememberPlaybackController()'s ON_START bind completes - fire the start Intent directly,
+    // same fallback shape as PlaybackActivity.startServiceDirectly.
+    private suspend fun playStation(
         station: RadioStation,
         viewModel: MainViewModel,
+        controller: PlaybackController?,
     ) {
-        val isCurrentlyPlayingThis =
-            viewModelRef?.getCurrentPlayingStationId() == station.id &&
-                playbackServiceState.value?.isPlaying() == true
-        if (isCurrentlyPlayingThis) {
-            playbackServiceState.value?.stopPlayback()
+        if (controller == null) {
+            if (!isNetworkAvailable(this)) {
+                android.widget.Toast
+                    .makeText(this, getString(R.string.error_network), android.widget.Toast.LENGTH_SHORT)
+                    .show()
+                return
+            }
+            viewModel.updateCurrentPlayingStation(station.id)
+            Intent(this, RadioPlaybackService::class.java).apply {
+                putExtra(RadioPlaybackService.EXTRA_STATION_NAME, station.name)
+                putExtra(RadioPlaybackService.EXTRA_STREAM_URL, station.streamUrl)
+                startForegroundService(this)
+            }
             return
         }
 
-        if (!isNetworkAvailable(this)) {
-            android.widget.Toast
-                .makeText(
-                    this,
-                    getString(R.string.error_network),
-                    android.widget.Toast.LENGTH_SHORT,
-                ).show()
-            return
-        }
+        when (controller.toggle(station)) {
+            ToggleResult.STARTED -> {
+                viewModel.updateCurrentPlayingStation(station.id)
+            }
 
-        viewModel.updateCurrentPlayingStation(station.id)
+            ToggleResult.STOPPED -> {}
 
-        Intent(this, RadioPlaybackService::class.java).apply {
-            putExtra(RadioPlaybackService.EXTRA_STATION_NAME, station.name)
-            putExtra(RadioPlaybackService.EXTRA_STREAM_URL, station.streamUrl)
-            startForegroundService(this)
-        }
-
-        if (!isBound) {
-            Intent(this, RadioPlaybackService::class.java).also { intent ->
-                bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+            ToggleResult.NETWORK_UNAVAILABLE -> {
+                android.widget.Toast
+                    .makeText(this, getString(R.string.error_network), android.widget.Toast.LENGTH_SHORT)
+                    .show()
             }
         }
     }
@@ -310,16 +282,11 @@ class MainActivity : AppCompatActivity() {
 fun MainScreen(
     viewModel: MainViewModel,
     onAddStationClick: () -> Unit,
-    onDiscoverStationsClick: () -> Unit,
-    onAlarmClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onStationEdit: (RadioStation) -> Unit,
-    onStationDelete: (RadioStation) -> Unit,
     onPlayStation: (RadioStation) -> Unit,
     onNowPlayingClick: (RadioStation) -> Unit,
-    onStopPlayback: () -> Unit,
-    playbackService: RadioPlaybackService?,
+    playbackController: PlaybackController?,
     onResume: () -> Unit,
+    stationListActions: StationListActions,
 ) {
     val stations by viewModel.filteredStations.collectAsState(initial = emptyList())
     val allStations by viewModel.stations.collectAsState(initial = emptyList())
@@ -342,27 +309,14 @@ fun MainScreen(
             }
         }
 
-    val presentation = rememberPlaybackPresentation(playbackService, currentPlayingStation?.streamUrl)
+    val presentation = rememberPlaybackPresentation(playbackController, currentPlayingStation?.streamUrl)
     val isPlaying = presentation.isPlaying
     val hasTimeshift = presentation.hasTimeshift
     val isAtLive = presentation.isAtLive
     val offsetFromLiveMs = presentation.offsetFromLiveMs
     val trackTitle = presentation.trackTitle
 
-    val connectionErrorContext = LocalContext.current
-    var lastShownConnectionErrorAt by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(presentation.connectionErrorAt) {
-        val errorAt = presentation.connectionErrorAt
-        if (errorAt != null && errorAt != lastShownConnectionErrorAt) {
-            lastShownConnectionErrorAt = errorAt
-            Toast
-                .makeText(
-                    connectionErrorContext,
-                    connectionErrorContext.getString(R.string.connection_failed),
-                    Toast.LENGTH_LONG,
-                ).show()
-        }
-    }
+    ConnectionErrorToastEffect(presentation.connectionErrorAt)
 
     val playbackStatus = presentation.status
     val isStarting = playbackStatus == PlaybackStatus.STARTING
@@ -420,9 +374,9 @@ fun MainScreen(
     }
 
     // Sync current playing station from service (single source of truth: ViewModel). Keyed on the
-    // live rawPlaybackState (not (playbackService, allStations)) so it re-runs on every snapshot
-    // tick instead of only when the service instance or station list identity changes.
-    val rawPlaybackState = rememberRawPlaybackState(playbackService)
+    // live rawPlaybackState (not (playbackController, allStations)) so it re-runs on every snapshot
+    // tick instead of only when the controller instance or station list identity changes.
+    val rawPlaybackState = rememberRawPlaybackState(playbackController)
     LaunchedEffect(rawPlaybackState, allStations) {
         val currentMediaId = rawPlaybackState.currentMediaId
         if (currentMediaId != null && rawPlaybackState.isPlaying) {
@@ -467,12 +421,16 @@ fun MainScreen(
                             trackTitle = if (isStationPlaying) trackTitle else null,
                             offsetFromLiveMs = offsetFromLiveMs,
                             onPlayPauseClick = {
-                                if (isStationPlaying) onStopPlayback() else onPlayStation(station)
+                                if (isStationPlaying) stationListActions.onStopPlayback() else onPlayStation(station)
                             },
                             onCardClick = { onNowPlayingClick(station) },
                             onSwitchStation = onPlayStation,
-                            onRewind5s = { playbackService?.seekBackward(RadioPlaybackService.TIMESHIFT_SEEK_BACK_MS) },
-                            onReturnToLive = { playbackService?.seekToLive() },
+                            onRewind5s = {
+                                playbackController?.seekBackward(
+                                    RadioPlaybackService.TIMESHIFT_SEEK_BACK_MS,
+                                )
+                            },
+                            onReturnToLive = { playbackController?.seekToLive() },
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
@@ -483,6 +441,11 @@ fun MainScreen(
                 }
             },
         ) { paddingValues ->
+            val listActions =
+                stationListActions.copy(
+                    onStationShareClick = onStationShareClick,
+                    onStationItemPlayClick = onStationItemPlayClick,
+                )
             val listPane: @Composable (Modifier) -> Unit = { paneModifier ->
                 StationListPane(
                     viewModel = viewModel,
@@ -493,14 +456,7 @@ fun MainScreen(
                     isStarting = isStarting,
                     startError = startError,
                     trackTitle = trackTitle,
-                    onDiscoverStationsClick = onDiscoverStationsClick,
-                    onAlarmClick = onAlarmClick,
-                    onSettingsClick = onSettingsClick,
-                    onStationEdit = onStationEdit,
-                    onStationDelete = onStationDelete,
-                    onStationShareClick = onStationShareClick,
-                    onStationItemPlayClick = onStationItemPlayClick,
-                    onStopPlayback = onStopPlayback,
+                    actions = listActions,
                     modifier = paneModifier,
                 )
             }
@@ -530,10 +486,16 @@ fun MainScreen(
                                 stationName = currentPlayingStation.name,
                                 streamUrl = currentPlayingStation.streamUrl,
                                 customIcon = currentPlayingStation.customIcon,
-                                playbackService = playbackService,
+                                playbackController = playbackController,
                                 presentation = presentation,
                                 onPlayStopClick = {
-                                    if (isPlaying) onStopPlayback() else onPlayStation(currentPlayingStation)
+                                    if (isPlaying) {
+                                        stationListActions.onStopPlayback()
+                                    } else {
+                                        onPlayStation(
+                                            currentPlayingStation,
+                                        )
+                                    }
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )
@@ -582,6 +544,25 @@ fun MainScreen(
     }
 }
 
+/**
+ * The station-list actions [MainScreen]/[StationListPane] fire in response to a tap - everything
+ * [StationListPane] used to take as 8 separate callback parameters, nearly as much to read as its
+ * own body. [onStationShareClick]/[onStationItemPlayClick] can't come from [MainActivity] (they
+ * close over Compose state - `coroutineScope`, `settingsStore` - only [MainScreen]'s body has), so
+ * defaults let [MainActivity] build a partial instance and [MainScreen] `.copy()` those two in
+ * before handing it down.
+ */
+data class StationListActions(
+    val onDiscoverStationsClick: () -> Unit = {},
+    val onAlarmClick: () -> Unit = {},
+    val onSettingsClick: () -> Unit = {},
+    val onStationEdit: (RadioStation) -> Unit = {},
+    val onStationDelete: (RadioStation) -> Unit = {},
+    val onStationShareClick: (RadioStation) -> Unit = {},
+    val onStationItemPlayClick: (RadioStation) -> Unit = {},
+    val onStopPlayback: () -> Unit = {},
+)
+
 // The station list + its header row (Discover chip, overflow menu) and search field. Shared by
 // MainScreen's phone layout (fills the whole screen) and its wide-screen two-pane layout (the
 // left pane, alongside a persistent NowPlayingContent detail pane on the right).
@@ -596,14 +577,7 @@ private fun StationListPane(
     isStarting: Boolean,
     startError: Boolean,
     trackTitle: String?,
-    onDiscoverStationsClick: () -> Unit,
-    onAlarmClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onStationEdit: (RadioStation) -> Unit,
-    onStationDelete: (RadioStation) -> Unit,
-    onStationShareClick: (RadioStation) -> Unit,
-    onStationItemPlayClick: (RadioStation) -> Unit,
-    onStopPlayback: () -> Unit,
+    actions: StationListActions,
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -618,7 +592,7 @@ private fun StationListPane(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AssistChip(
-                onClick = onDiscoverStationsClick,
+                onClick = actions.onDiscoverStationsClick,
                 label = { Text(stringResource(R.string.discover_stations)) },
                 leadingIcon = {
                     Icon(
@@ -648,14 +622,14 @@ private fun StationListPane(
                         text = { Text(stringResource(R.string.alarms)) },
                         onClick = {
                             showMenu = false
-                            onAlarmClick()
+                            actions.onAlarmClick()
                         },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.settings)) },
                         onClick = {
                             showMenu = false
-                            onSettingsClick()
+                            actions.onSettingsClick()
                         },
                     )
                 }
@@ -730,12 +704,15 @@ private fun StationListPane(
                 itemsIndexed(
                     items = stations,
                     key = { _, station -> station.id },
-                ) { index, station ->
+                ) { _, station ->
                     val isActive = currentPlayingStationId == station.id
                     val isStationPlaying = isActive && isPlaying
                     val isStationStarting = isActive && isStarting
                     val isStationStartError = isActive && startError
-                    val isDragging = index == dragDropState.draggingItemIndex
+                    // Keyed off station.id, not `index` - see DragDropState's class doc for why an
+                    // index-based check can briefly point at the wrong station right after a swap
+                    // (this list arrives via a combine()'d Flow, one hop behind the drag state).
+                    val isDragging = station.id == dragDropState.draggingItemKey
                     StationItem(
                         station = station,
                         isActive = isActive,
@@ -745,11 +722,11 @@ private fun StationListPane(
                         isDragging = isDragging,
                         trackTitle = if (isStationPlaying) trackTitle else null,
                         onPlayClick = {
-                            if (isStationPlaying) onStopPlayback() else onStationItemPlayClick(station)
+                            if (isStationPlaying) actions.onStopPlayback() else actions.onStationItemPlayClick(station)
                         },
-                        onEditClick = { onStationEdit(station) },
-                        onDeleteClick = { onStationDelete(station) },
-                        onShareClick = { onStationShareClick(station) },
+                        onEditClick = { actions.onStationEdit(station) },
+                        onDeleteClick = { actions.onStationDelete(station) },
+                        onShareClick = { actions.onStationShareClick(station) },
                         modifier =
                             Modifier
                                 .fillMaxWidth()

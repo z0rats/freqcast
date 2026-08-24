@@ -11,6 +11,7 @@ import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.ResolveStage
 import com.freqcast.data.ResolvedStation
+import com.freqcast.data.SniffOutcome
 import com.freqcast.data.SniffedRequest
 import com.freqcast.data.StationUrlResolver
 import com.freqcast.util.IconStorage
@@ -26,7 +27,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicBoolean
 
 data class AddStationUiState(
     val name: String = "",
@@ -75,25 +75,17 @@ class AddStationViewModel(
     private val appContext: Context,
     private val streamValidator: StreamValidator = StreamValidator(),
     private val webViewStreamSniffer: WebViewStreamSniffer = WebViewStreamSniffer(appContext),
-    // A mutable *holder* (not a `var` property) referenced by the webViewSniff lambda default
-    // below: a constructor property default expression can only read an earlier parameter's
-    // value, not reassign a `var` property on `this` - `this` isn't fully constructed yet at that
-    // point ("Cannot access '<this>' before the instance has been initialized"). Mutating an
-    // already-constructed object's contents (same as calling webViewStreamSniffer.sniff() here)
-    // is fine; only reassigning the reference itself wouldn't be. Set by that lambda, reset at the
-    // top of every resolveStation() call.
-    private val lastSniffTlsFailure: AtomicBoolean = AtomicBoolean(false),
     private val stationUrlResolver: StationUrlResolver =
         StationUrlResolver(
             streamValidator = streamValidator,
-            // StationUrlResolver's webViewSniff contract is a plain (String) -> List<SniffedRequest>,
-            // so WebViewStreamSniffer.SniffResult's extra hadTlsFailure signal is captured into
-            // lastSniffTlsFailure here rather than threaded through that contract - keeps
-            // StationUrlResolver (and its tests) untouched by a signal only this class acts on.
+            // StationUrlResolver.SniffOutcome carries hadTlsFailure in the return value itself, so
+            // it reaches resolve()'s own onTlsBlocked callback directly - no side channel needed.
             webViewSniff = { url ->
                 val result = webViewStreamSniffer.sniff(url)
-                lastSniffTlsFailure.set(result.hadTlsFailure)
-                result.candidates.map { SniffedRequest(it.url, it.headers) }
+                SniffOutcome(
+                    candidates = result.candidates.map { SniffedRequest(it.url, it.headers) },
+                    hadTlsFailure = result.hadTlsFailure,
+                )
             },
         ),
     private val radioBrowserApi: RadioBrowserApi = RadioBrowserApi(),
@@ -383,16 +375,13 @@ class AddStationViewModel(
         onAmbiguous: (List<RadioBrowserStation>) -> Unit = {},
         onTlsBlocked: () -> Unit = {},
     ): ResolvedStation? {
-        // Stale from a previous, unrelated save() attempt otherwise - stage 5 (WebView) doesn't
-        // always run, so nothing else is guaranteed to overwrite this before it's read below.
-        lastSniffTlsFailure.set(false)
         _uiState.value = _uiState.value.copy(savingStageRes = R.string.stage_checking_url)
         val probe = streamValidator.probe(url)
         // A TLS handshake reset on this very first, direct connection attempt is already a strong
         // enough signal to act on. It is *not* the only place this can show up, though - the
         // pasted homepage can load over TLS just fine while a *different* host its JS talks to
         // (e.g. a separate API/backend domain) is the one actually getting blocked; that case only
-        // surfaces later, from stage 5's WebView load, via lastSniffHadTlsFailure below.
+        // surfaces later, from stage 5's WebView load - resolve()'s own onTlsBlocked below covers it.
         if (probe.tlsHandshakeFailed) onTlsBlocked()
         return if (probe.reachable && probe.looksLikeAudio) {
             // No favicon here: a bare stream URL never went through a homepage fetch, so there's
@@ -400,12 +389,12 @@ class AddStationViewModel(
             // [fromHtml] below have a page (or directory listing) to find one on.
             ResolvedStation(streamUrl = url, isHls = probe.contentType.orEmpty().contains("mpegurl", ignoreCase = true))
         } else {
-            val resolved =
-                stationUrlResolver.resolve(url, onAmbiguous = onAmbiguous) { stage ->
-                    _uiState.value = _uiState.value.copy(savingStageRes = stage.toStageRes())
-                }
-            if (resolved == null && lastSniffTlsFailure.get()) onTlsBlocked()
-            resolved
+            stationUrlResolver.resolve(
+                url,
+                onAmbiguous = onAmbiguous,
+                onStage = { stage -> _uiState.value = _uiState.value.copy(savingStageRes = stage.toStageRes()) },
+                onTlsBlocked = onTlsBlocked,
+            )
         }
     }
 

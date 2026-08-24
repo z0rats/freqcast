@@ -44,8 +44,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * No automated test coverage of the actual WebView orchestration is possible: Robolectric's
  * `ShadowWebView` doesn't execute real JS or fire `shouldInterceptRequest`/`onPageFinished`, and
- * this project has no `androidTest` module. Only [isCandidateStreamUrl] (a pure function) is unit
- * tested; everything else here needs manual verification on a real device.
+ * this project has no `androidTest` module - `runSniff`'s page-load/JS/touch-dispatch sequencing
+ * needs manual verification on a real device. What *is* pure and unit tested: [isCandidateStreamUrl],
+ * [shouldCaptureRequest] (the request-capture filter), [isTlsHandshakeError] (TLS-failure
+ * classification, same shape as [com.freqcast.ui.playback.ConnectionRetryPolicy.isRetryableNetworkError]),
+ * and [finalizeCandidates] (dedup+cap). That's genuinely everything decidable here without a real
+ * WebView - there's no larger hidden ranking/selection algorithm to extract beyond these.
  */
 class WebViewStreamSniffer(
     private val context: Context,
@@ -132,8 +136,7 @@ class WebViewStreamSniffer(
                         // name the real request will carry, never an actual apikey value. Left
                         // uncaptured so it can never win runSniff's distinctBy-by-url dedup over the
                         // real, credentialed request for the same URL.
-                        val isCandidate =
-                            isCandidateStreamUrl(requestUrl) && !request.method.equals("OPTIONS", ignoreCase = true)
+                        val isCandidate = shouldCaptureRequest(requestUrl, request.method)
                         if (isCandidate) captured += CapturedRequest(requestUrl, request.requestHeaders)
                         // Every request, not just candidates - the only visibility we get into
                         // what the page actually did over the network, for manual diagnosis (see
@@ -181,7 +184,7 @@ class WebViewStreamSniffer(
                             "onReceivedError: code=${error.errorCode} desc=${error.description} " +
                                 "isMainFrame=${request.isForMainFrame} url=${request.url}",
                         )
-                        if (error.errorCode == ERROR_FAILED_SSL_HANDSHAKE) tlsFailed.set(true)
+                        if (isTlsHandshakeError(error.errorCode)) tlsFailed.set(true)
                     }
                 }
             webView.webChromeClient =
@@ -218,7 +221,7 @@ class WebViewStreamSniffer(
                 Log.d(TAG, "after click + post-click settle: ${captured.size} candidate(s) captured")
             }
 
-            SniffResult(captured.distinctBy { it.url }.take(MAX_CANDIDATES), tlsFailed.get())
+            SniffResult(finalizeCandidates(captured), tlsFailed.get())
         } finally {
             webView.stopLoading()
             webView.destroy()
@@ -366,6 +369,25 @@ class WebViewStreamSniffer(
             val ext = path.substringAfterLast('/').substringAfterLast('.', "").lowercase()
             return ext !in STATIC_ASSET_EXTENSIONS
         }
+
+        /**
+         * Whether [shouldInterceptRequest] should capture a request for [url]/[method] - combines
+         * [isCandidateStreamUrl] with the CORS-preflight exclusion (see the call site's doc: an
+         * OPTIONS preflight hits the same URL as the real request that follows it, and must lose
+         * [finalizeCandidates]'s by-url dedup to that real, credentialed request).
+         */
+        internal fun shouldCaptureRequest(
+            url: String,
+            method: String,
+        ): Boolean = isCandidateStreamUrl(url) && !method.equals("OPTIONS", ignoreCase = true)
+
+        /** Whether [errorCode] (from [WebViewClient.onReceivedError]) is TLS-handshake-shaped, as opposed to a plain connect/timeout/DNS failure. */
+        internal fun isTlsHandshakeError(errorCode: Int): Boolean =
+            errorCode == WebViewClient.ERROR_FAILED_SSL_HANDSHAKE
+
+        /** Dedups by URL (keeping the first/real request over a same-URL preflight - see [shouldCaptureRequest]) and caps at [MAX_CANDIDATES]. */
+        internal fun finalizeCandidates(captured: List<CapturedRequest>): List<CapturedRequest> =
+            captured.distinctBy { it.url }.take(MAX_CANDIDATES)
 
         /**
          * Finds something that looks like a play control and returns its center point as `"x,y"`

@@ -43,6 +43,18 @@ data class SniffedRequest(
     val headers: Map<String, String> = emptyMap(),
 )
 
+/**
+ * What one [webViewSniff] call found - mirrors [com.freqcast.util.WebViewStreamSniffer.SniffResult]
+ * without depending on that (Context-holding) class, so this stays the pure/Context-free type
+ * [StationUrlResolver]'s constructor takes. Carrying [hadTlsFailure] in the return value here -
+ * rather than a side channel the caller has to set up separately - is what lets [resolve]'s own
+ * [onTlsBlocked] callback fire it directly.
+ */
+data class SniffOutcome(
+    val candidates: List<SniffedRequest>,
+    val hadTlsFailure: Boolean = false,
+)
+
 /** Which step of [StationUrlResolver.resolve] is currently running, for a caller to show as progress. */
 enum class ResolveStage {
     /** Stage 1: checking whether the station is already cataloged in the Radio Browser directory. */
@@ -99,12 +111,13 @@ class StationUrlResolver(
      * [com.freqcast.ui.AddStationViewModel], which already holds a `Context`, wires in a real
      * [com.freqcast.util.WebViewStreamSniffer].
      */
-    private val webViewSniff: (suspend (String) -> List<SniffedRequest>)? = null,
+    private val webViewSniff: (suspend (String) -> SniffOutcome)? = null,
 ) {
     suspend fun resolve(
         homepageUrl: String,
         onAmbiguous: (List<RadioBrowserStation>) -> Unit = {},
         onStage: (ResolveStage) -> Unit = {},
+        onTlsBlocked: () -> Unit = {},
     ): ResolvedStation? =
         withContext(Dispatchers.IO) {
             withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
@@ -135,7 +148,7 @@ class StationUrlResolver(
                             // The static scan found no stream, but its already-fetched <title>/favicon
                             // are still the best name/icon candidates available - don't lose them just
                             // because the regex scan itself came up empty.
-                            fromWebView(sniff, normalizedUrl, host)?.let { resolved ->
+                            fromWebView(sniff, normalizedUrl, host, onTlsBlocked)?.let { resolved ->
                                 resolved.copy(
                                     name = resolved.name ?: pageName,
                                     favicon =
@@ -309,16 +322,19 @@ class StationUrlResolver(
      * also carries a `logo_url`).
      */
     private suspend fun fromWebView(
-        sniff: suspend (String) -> List<SniffedRequest>,
+        sniff: suspend (String) -> SniffOutcome,
         homepageUrl: String,
         host: String,
+        onTlsBlocked: () -> Unit,
     ): ResolvedStation? {
-        val rawRequests =
+        val outcome =
             try {
                 sniff(homepageUrl)
             } catch (e: Exception) {
-                emptyList()
+                SniffOutcome(emptyList())
             }
+        if (outcome.hadTlsFailure) onTlsBlocked()
+        val rawRequests = outcome.candidates
         val headersByUrl = rawRequests.associate { it.url to it.headers }
         val candidates = rawRequests.map { Candidate(it.url, context = "") }
         val ranked = rank(candidates, host)

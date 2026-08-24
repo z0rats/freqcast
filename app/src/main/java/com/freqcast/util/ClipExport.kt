@@ -3,7 +3,7 @@ package com.freqcast.util
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
-import com.freqcast.ui.RadioPlaybackService
+import com.freqcast.ui.playback.controller.PlaybackController
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -12,7 +12,7 @@ import java.util.Locale
 /**
  * Exports the last [durationMs] of a station's live timeshift buffer and shares it as an audio
  * file attachment (e.g. to Telegram, email, etc.), mirroring [StationShare]'s pattern. Scoped to
- * MP3/AAC streams - see [RadioPlaybackService.currentClipFormat] and
+ * MP3/AAC streams - see [PlaybackController.currentClipFormat] and
  * `TimeshiftController.exportClip`'s docs for why Ogg/HLS aren't supported.
  */
 object ClipExport {
@@ -23,13 +23,13 @@ object ClipExport {
 
     fun export(
         context: Context,
-        service: RadioPlaybackService,
+        controller: PlaybackController,
         stationName: String,
         durationMs: Long,
         chooserTitle: String,
         onResult: (Boolean) -> Unit,
     ) {
-        val format = service.currentClipFormat()
+        val format = controller.currentClipFormat()
         if (format == null) {
             onResult(false)
             return
@@ -41,7 +41,7 @@ object ClipExport {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val destination = File(dir, "${sanitizeFileName(stationName)}_$timestamp.${format.extension}")
 
-        service.exportClip(durationMs, destination) { success ->
+        controller.exportClip(durationMs, destination) { success ->
             if (!success) {
                 onResult(false)
                 return@exportClip

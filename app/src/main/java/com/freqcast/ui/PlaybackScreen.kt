@@ -1,13 +1,10 @@
 package com.freqcast.ui
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.IBinder
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -97,12 +94,17 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.freqcast.R
+import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.ui.components.ConnectionErrorToastEffect
 import com.freqcast.ui.components.PlaybackPresentation
 import com.freqcast.ui.components.PlaybackStatus
 import com.freqcast.ui.components.playbackStateDescriptionRes
 import com.freqcast.ui.components.rememberPlaybackPresentation
 import com.freqcast.ui.components.rememberStationIconBitmap
+import com.freqcast.ui.playback.controller.PlaybackController
+import com.freqcast.ui.playback.controller.ToggleResult
+import com.freqcast.ui.playback.controller.rememberPlaybackController
 import com.freqcast.ui.theme.FreqcastTheme
 import com.freqcast.ui.theme.Spacing
 import com.freqcast.ui.theme.background_gradient_end
@@ -124,13 +126,11 @@ import com.freqcast.util.isNetworkAvailable
 import kotlinx.coroutines.launch
 
 class PlaybackActivity : AppCompatActivity() {
-    // Must be Compose-observable state (not a plain var): onServiceConnected fires asynchronously
-    // after the first composition, and a plain field mutation wouldn't trigger recomposition,
-    // leaving PlaybackScreen's playbackService parameter (and everything derived from it -
-    // isPlaying, track title, sleep timer countdown) permanently stuck at its initial null value.
-    private val playbackServiceState = mutableStateOf<RadioPlaybackService?>(null)
     private val customIconState = mutableStateOf<String?>(null)
-    private var isBound = false
+
+    // Backs rememberPlaybackController() below (see its doc) - read directly by onResume()/
+    // onNewIntent()'s syncFromService(), which run outside Compose.
+    private val playbackControllerState = mutableStateOf<PlaybackController?>(null)
     private var stationName: String? = null
     private var streamUrl: String? = null
     private val repository by lazy { RadioStationRepository.create(this) }
@@ -141,23 +141,6 @@ class PlaybackActivity : AppCompatActivity() {
         const val EXTRA_STREAM_URL = "stream_url"
         const val EXTRA_AUTO_PLAY = "auto_play"
     }
-
-    private val serviceConnection =
-        object : ServiceConnection {
-            override fun onServiceConnected(
-                name: ComponentName?,
-                service: IBinder?,
-            ) {
-                val binder = service as RadioPlaybackService.LocalBinder
-                playbackServiceState.value = binder.getService()
-                isBound = true
-            }
-
-            override fun onServiceDisconnected(name: ComponentName?) {
-                playbackServiceState.value = null
-                isBound = false
-            }
-        }
 
     private val requestPermissionLauncher =
         registerForActivityResult(
@@ -192,15 +175,15 @@ class PlaybackActivity : AppCompatActivity() {
 
         setContent {
             FreqcastTheme {
-                val playbackService by playbackServiceState
+                val playbackController by rememberPlaybackController(playbackControllerState)
                 val customIcon by customIconState
                 PlaybackScreen(
                     stationName = stationName,
                     streamUrl = streamUrl,
                     customIcon = customIcon,
-                    playbackService = playbackService,
+                    playbackController = playbackController,
                     onBackClick = { finish() },
-                    onPlayStopClick = { togglePlayback() },
+                    onPlayStopClick = { togglePlayback(playbackController) },
                 )
             }
         }
@@ -222,10 +205,10 @@ class PlaybackActivity : AppCompatActivity() {
             loadCustomIcon(intentStreamUrl)
             // Launched from an App Shortcut (long-press launcher icon): start playing immediately
             // instead of just showing the screen and waiting for the user to tap Play. At this
-            // point the service isn't bound yet, so togglePlayback() takes its "service == null"
+            // point the service isn't bound yet, so togglePlayback() takes its "controller == null"
             // branch and starts it directly, same as a cold-start play from the station list.
             if (intent.getBooleanExtra(EXTRA_AUTO_PLAY, false)) {
-                togglePlayback()
+                togglePlayback(playbackControllerState.value)
             }
             return
         }
@@ -248,37 +231,19 @@ class PlaybackActivity : AppCompatActivity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        Intent(this, RadioPlaybackService::class.java).also { intent ->
-            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         syncFromService()
     }
 
     private fun syncFromService(): Boolean {
-        val currentMediaId =
-            playbackServiceState.value
-                ?.getPlayer()
-                ?.currentMediaItem
-                ?.mediaId ?: return false
+        val controller = playbackControllerState.value ?: return false
+        val currentMediaId = controller.playbackSnapshot.value.currentMediaId ?: return false
         if (currentMediaId == streamUrl) return false
         streamUrl = currentMediaId
-        playbackServiceState.value?.getCurrentStationName()?.let { stationName = it }
+        controller.getCurrentStationName()?.let { stationName = it }
         loadCustomIcon(currentMediaId)
         return true
-    }
-
-    override fun onDestroy() {
-        if (isBound) {
-            unbindService(serviceConnection)
-            isBound = false
-        }
-        super.onDestroy()
     }
 
     // Mirrors the slide-up entrance MainScreen's onNowPlayingClick sets up (see there): slides
@@ -291,7 +256,7 @@ class PlaybackActivity : AppCompatActivity() {
         overridePendingTransition(R.anim.stay, R.anim.slide_down_out)
     }
 
-    private fun togglePlayback() {
+    private fun togglePlayback(controller: PlaybackController?) {
         if (!isNetworkAvailable(this)) {
             Toast.makeText(this, getString(R.string.error_network), Toast.LENGTH_SHORT).show()
             return
@@ -299,21 +264,27 @@ class PlaybackActivity : AppCompatActivity() {
 
         val url = streamUrl ?: return
 
-        if (playbackServiceState.value == null) {
-            startService(url)
+        if (controller == null) {
+            startServiceDirectly(url)
             return
         }
 
-        val service = playbackServiceState.value ?: return
-
-        if (service.isPlaying()) {
-            service.stopPlayback()
-        } else {
-            startService(url)
+        lifecycleScope.launch {
+            // stationName is nullable and, in the ordinary case, always set from an intent extra
+            // before this fires - matches the old startService(url)'s own EXTRA_STATION_NAME, which
+            // stayed null all the way to the service and only became "Unknown station" at render
+            // time. RadioStation.name isn't nullable, so this falls back the same way here instead.
+            val name = stationName ?: getString(R.string.unknown_station)
+            val result = controller.toggle(RadioStation(name = name, streamUrl = url))
+            if (result == ToggleResult.NETWORK_UNAVAILABLE) {
+                Toast.makeText(this@PlaybackActivity, getString(R.string.error_network), Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
-    private fun startService(url: String) {
+    // Only reached before the controller has finished binding (see togglePlayback's null branch
+    // above) - a plain Intent fire needs no service reference at all, unlike every other command.
+    private fun startServiceDirectly(url: String) {
         Intent(this, RadioPlaybackService::class.java).apply {
             putExtra(RadioPlaybackService.EXTRA_STATION_NAME, stationName)
             putExtra(RadioPlaybackService.EXTRA_STREAM_URL, url)
@@ -328,7 +299,7 @@ fun PlaybackScreen(
     stationName: String?,
     streamUrl: String?,
     customIcon: String?,
-    playbackService: RadioPlaybackService?,
+    playbackController: PlaybackController?,
     onBackClick: () -> Unit,
     onPlayStopClick: () -> Unit,
 ) {
@@ -355,23 +326,14 @@ fun PlaybackScreen(
                 )
             },
         ) { paddingValues ->
-            val presentation = rememberPlaybackPresentation(playbackService, streamUrl)
-
-            val context = LocalContext.current
-            var lastShownConnectionErrorAt by remember { mutableStateOf<Long?>(null) }
-            LaunchedEffect(presentation.connectionErrorAt) {
-                val errorAt = presentation.connectionErrorAt
-                if (errorAt != null && errorAt != lastShownConnectionErrorAt) {
-                    lastShownConnectionErrorAt = errorAt
-                    Toast.makeText(context, context.getString(R.string.connection_failed), Toast.LENGTH_LONG).show()
-                }
-            }
+            val presentation = rememberPlaybackPresentation(playbackController, streamUrl)
+            ConnectionErrorToastEffect(presentation.connectionErrorAt)
 
             NowPlayingContent(
                 stationName = stationName,
                 streamUrl = streamUrl,
                 customIcon = customIcon,
-                playbackService = playbackService,
+                playbackController = playbackController,
                 presentation = presentation,
                 onPlayStopClick = onPlayStopClick,
                 modifier = Modifier.fillMaxSize().padding(paddingValues),
@@ -387,7 +349,7 @@ fun NowPlayingContent(
     stationName: String?,
     streamUrl: String?,
     customIcon: String?,
-    playbackService: RadioPlaybackService?,
+    playbackController: PlaybackController?,
     presentation: PlaybackPresentation,
     onPlayStopClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -474,23 +436,23 @@ fun NowPlayingContent(
                             isAtLive = isAtLive,
                             bufferedDurationMs = bufferedDurationMs,
                             offsetFromLiveMs = offsetFromLiveMs,
-                            onSeekToOffset = { playbackService?.seekToOffsetFromLive(it) },
-                            onRewind = { playbackService?.seekBackward(it) },
-                            onSeekToLive = { playbackService?.seekToLive() },
+                            onSeekToOffset = { playbackController?.seekToOffsetFromLive(it) },
+                            onRewind = { playbackController?.seekBackward(it) },
+                            onSeekToLive = { playbackController?.seekToLive() },
                         )
                     }
                     PlayPauseButton(status = status, onClick = onPlayStopClick, size = 60.dp)
                     PlayerDock {
                         SleepTimerControl(
                             sleepTimerRemainingMs = sleepTimerRemainingMs,
-                            playbackService = playbackService,
+                            playbackController = playbackController,
                             context = context,
                         )
                         if (hasTimeshift && clipFormatAvailable) {
                             ClipExportControl(
                                 stationName = displayName,
                                 bufferedDurationMs = bufferedDurationMs,
-                                playbackService = playbackService,
+                                playbackController = playbackController,
                                 context = context,
                             )
                         }
@@ -534,9 +496,9 @@ fun NowPlayingContent(
                         isAtLive = isAtLive,
                         bufferedDurationMs = bufferedDurationMs,
                         offsetFromLiveMs = offsetFromLiveMs,
-                        onSeekToOffset = { playbackService?.seekToOffsetFromLive(it) },
-                        onRewind = { playbackService?.seekBackward(it) },
-                        onSeekToLive = { playbackService?.seekToLive() },
+                        onSeekToOffset = { playbackController?.seekToOffsetFromLive(it) },
+                        onRewind = { playbackController?.seekBackward(it) },
+                        onSeekToLive = { playbackController?.seekToLive() },
                     )
                 }
 
@@ -547,14 +509,14 @@ fun NowPlayingContent(
                 PlayerDock {
                     SleepTimerControl(
                         sleepTimerRemainingMs = sleepTimerRemainingMs,
-                        playbackService = playbackService,
+                        playbackController = playbackController,
                         context = context,
                     )
                     if (hasTimeshift && clipFormatAvailable) {
                         ClipExportControl(
                             stationName = displayName,
                             bufferedDurationMs = bufferedDurationMs,
-                            playbackService = playbackService,
+                            playbackController = playbackController,
                             context = context,
                         )
                     }
@@ -993,7 +955,7 @@ private fun CopyableLabel(
  * doesn't run an infinite animation for as long as it's simply left open.
  *
  * Shows a pause icon while playing (not stop) even though tapping it actually calls
- * [RadioPlaybackService.stopPlayback] under the hood - matches [com.freqcast.ui.components.StationItem]
+ * [PlaybackController.stopPlayback] under the hood - matches [com.freqcast.ui.components.StationItem]
  * and [com.freqcast.ui.components.NowPlayingBottomBar], which both use the same pause glyph/label
  * for the identical action, so all three transport controls read as one consistent affordance.
  */
@@ -1062,7 +1024,7 @@ private fun PlayPauseButton(
 @Composable
 private fun SleepTimerControl(
     sleepTimerRemainingMs: Long?,
-    playbackService: RadioPlaybackService?,
+    playbackController: PlaybackController?,
     context: Context,
 ) {
     var sleepTimerDialogOpen by remember { mutableStateOf(false) }
@@ -1106,7 +1068,7 @@ private fun SleepTimerControl(
                                     .fillMaxWidth()
                                     .clickable {
                                         if (minutes == 0) {
-                                            playbackService?.cancelSleepTimer()
+                                            playbackController?.cancelSleepTimer()
                                             Toast
                                                 .makeText(
                                                     context,
@@ -1116,7 +1078,7 @@ private fun SleepTimerControl(
                                                     Toast.LENGTH_SHORT,
                                                 ).show()
                                         } else {
-                                            playbackService?.setSleepTimer(minutes)
+                                            playbackController?.setSleepTimer(minutes)
                                             Toast
                                                 .makeText(
                                                     context,
@@ -1145,7 +1107,7 @@ private fun SleepTimerControl(
 /**
  * Chip + preset-picker dialog for exporting the last N minutes of the live timeshift buffer as a
  * shareable audio file. Mirrors [SleepTimerControl]'s chip-opens-dialog shape. Only rendered by the
- * caller once [RadioPlaybackService.currentClipFormat] is non-null (MP3/AAC known - see
+ * caller once [PlaybackController.currentClipFormat] is non-null (MP3/AAC known - see
  * `TimeshiftController.exportClip`'s docs for why Ogg/HLS never reach here), so [bufferedDurationMs]
  * is the only thing gating which presets are offered: the buffer isn't a rolling window, so a
  * preset longer than what's actually been recorded so far is hidden rather than silently clamped.
@@ -1154,7 +1116,7 @@ private fun SleepTimerControl(
 private fun ClipExportControl(
     stationName: String,
     bufferedDurationMs: Long,
-    playbackService: RadioPlaybackService?,
+    playbackController: PlaybackController?,
     context: Context,
 ) {
     var dialogOpen by remember { mutableStateOf(false) }
@@ -1193,11 +1155,11 @@ private fun ClipExportControl(
                                         .fillMaxWidth()
                                         .clickable {
                                             dialogOpen = false
-                                            val svc = playbackService ?: return@clickable
+                                            val ctrl = playbackController ?: return@clickable
                                             exporting = true
                                             ClipExport.export(
                                                 context = context,
-                                                service = svc,
+                                                controller = ctrl,
                                                 stationName = stationName,
                                                 durationMs = minutes * 60_000L,
                                                 chooserTitle = context.getString(R.string.export_clip),

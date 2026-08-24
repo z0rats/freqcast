@@ -1,13 +1,15 @@
 package com.freqcast.ui.components
 
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import com.freqcast.R
-import com.freqcast.ui.RadioPlaybackService
+import com.freqcast.ui.playback.controller.PlaybackController
 
 enum class PlaybackStatus { PLAYING, PAUSED, STARTING, ERROR }
 
@@ -67,26 +69,26 @@ data class PlaybackPresentation(
 )
 
 /**
- * Mirrors [playbackService]'s [RadioPlaybackService.playbackSnapshot] into a [PlaybackPresentation]
+ * Mirrors [playbackController]'s [PlaybackController.playbackSnapshot] into a [PlaybackPresentation]
  * scoped to [currentStreamUrl] (null matches any stream, i.e. no scoping).
  * [PlaybackPresentation.bufferedDurationMs]/[PlaybackPresentation.offsetFromLiveMs] tick once a
- * second at the source - see [RadioPlaybackService]'s timeshift ticker - so this just collects,
- * it never polls the service itself.
+ * second at the source - see `RadioPlaybackService`'s timeshift ticker - so this just collects,
+ * it never polls the controller itself.
  */
 @Composable
 fun rememberPlaybackPresentation(
-    playbackService: RadioPlaybackService?,
+    playbackController: PlaybackController?,
     currentStreamUrl: String?,
 ): PlaybackPresentation {
     var presentation by remember { mutableStateOf(PlaybackPresentation()) }
 
-    LaunchedEffect(playbackService, currentStreamUrl) {
-        val svc = playbackService
-        if (svc == null) {
+    LaunchedEffect(playbackController, currentStreamUrl) {
+        val controller = playbackController
+        if (controller == null) {
             presentation = PlaybackPresentation()
             return@LaunchedEffect
         }
-        svc.playbackSnapshot.collect { snapshot ->
+        controller.playbackSnapshot.collect { snapshot ->
             val isCurrent = currentStreamUrl == null || snapshot.currentMediaId == currentStreamUrl
             val isPlaying = snapshot.isPlaying && isCurrent
             val isBuffering = snapshot.isBuffering && isCurrent
@@ -127,24 +129,43 @@ data class RawPlaybackState(
 )
 
 /**
- * Mirrors [playbackService]'s [RadioPlaybackService.playbackSnapshot] straight through, with no
+ * Mirrors [playbackController]'s [PlaybackController.playbackSnapshot] straight through, with no
  * `isCurrent` scoping - unlike [rememberPlaybackPresentation], which already depends on knowing
  * which station is "current" (via `currentStreamUrl`) and so can't be used to *determine* that in
  * the first place without becoming circular. Used by [com.freqcast.ui.MainScreen] to detect
  * playback started elsewhere (Android Auto, widget, resume-after-restart) and sync its ViewModel.
  */
 @Composable
-fun rememberRawPlaybackState(playbackService: RadioPlaybackService?): RawPlaybackState {
+fun rememberRawPlaybackState(playbackController: PlaybackController?): RawPlaybackState {
     var state by remember { mutableStateOf(RawPlaybackState()) }
-    LaunchedEffect(playbackService) {
-        val svc = playbackService
-        if (svc == null) {
+    LaunchedEffect(playbackController) {
+        val controller = playbackController
+        if (controller == null) {
             state = RawPlaybackState()
             return@LaunchedEffect
         }
-        svc.playbackSnapshot.collect { snapshot ->
+        controller.playbackSnapshot.collect { snapshot ->
             state = RawPlaybackState(currentMediaId = snapshot.currentMediaId, isPlaying = snapshot.isPlaying)
         }
     }
     return state
+}
+
+/**
+ * Shared one-shot "connection failed" Toast, deduped by [PlaybackPresentation.connectionErrorAt]
+ * changing - previously copy-pasted almost verbatim in both [com.freqcast.ui.MainScreen] and
+ * [com.freqcast.ui.PlaybackScreen]. [connectionErrorAt] never resets to null (see
+ * `RadioPlaybackService.lastConnectionErrorAt`'s doc), so a new failure is only detected by its
+ * timestamp changing, not by null-vs-not-null.
+ */
+@Composable
+fun ConnectionErrorToastEffect(connectionErrorAt: Long?) {
+    val context = LocalContext.current
+    var lastShownAt by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(connectionErrorAt) {
+        if (connectionErrorAt != null && connectionErrorAt != lastShownAt) {
+            lastShownAt = connectionErrorAt
+            Toast.makeText(context, context.getString(R.string.connection_failed), Toast.LENGTH_LONG).show()
+        }
+    }
 }

@@ -54,6 +54,7 @@ import com.freqcast.ui.playback.WidgetStateStore
 import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.IconStorage
 import com.freqcast.util.STREAM_USER_AGENT
+import com.freqcast.util.StationNavigator
 import com.freqcast.util.isNetworkAvailable
 import com.freqcast.widget.RadioWidget
 import com.google.common.collect.ImmutableList
@@ -69,7 +70,24 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
+
+/**
+ * Everything [RadioPlaybackService] needs to know to start playing a station - bundles what used to
+ * be two separately-set mutable fields ([RadioPlaybackService]'s old `stationName`/`currentCustomIcon`)
+ * into one value passed to [RadioPlaybackService.applyPlayback] in a single call, so there's no
+ * longer an invisible "set these fields in the right order before calling" precondition a new call
+ * site could get wrong - the same class of bug AGENTS.md's `isFavorite` full-row `@Update` trap
+ * describes for `RadioStation`.
+ */
+data class PlaybackRequest(
+    val stationName: String?,
+    val streamUrl: String,
+    val customIcon: String?,
+    val knownHls: Boolean?,
+)
 
 /** Snapshot of playback state exposed reactively so the UI doesn't need to poll the service. */
 data class PlaybackSnapshot(
@@ -102,17 +120,18 @@ class RadioPlaybackService : MediaLibraryService() {
      */
     private var sessionPlayer: Player? = null
     private var notificationManager: PlayerNotificationManager? = null
-    private var stationName: String? = null
 
     /**
-     * The current station's [RadioStation.customIcon] (emoji string or image file path), used by
-     * [getCurrentLargeIcon] for the notification's large icon instead of always falling back to
-     * the auto-generated emoji. Set by whichever entry point resolves the full [RadioStation]
-     * (`onStartCommand`'s direct-play/resume branches, [playFromBrowseTree]) before starting
-     * playback — same "caller sets it before calling `applyPlayback`" contract as [stationName],
-     * and likewise untouched across a network-loss retry of the same stream.
+     * The station currently playing (or last played), set by [applyPlayback] itself from the
+     * [PlaybackRequest] it's given - the single source for station name/icon everywhere else in
+     * this class reads them (notification, `PendingIntent` extras, widget, [getCurrentStationName]).
+     * Deliberately untouched by [stopPlayback] (matches the old `stationName` field's behavior, not
+     * the old `currentCustomIcon` field's - see git history): [getCurrentStationName] and the widget
+     * both rely on it still naming the last-played station after an explicit stop, and nothing reads
+     * [currentRequest] post-stop in a way that clearing it would fix, so there's nothing to gain by
+     * asymmetrically nulling it out.
      */
-    private var currentCustomIcon: String? = null
+    private var currentRequest: PlaybackRequest? = null
 
     private lateinit var timeshift: TimeshiftController
     private lateinit var playbackStateStore: PlaybackStateStore
@@ -121,6 +140,9 @@ class RadioPlaybackService : MediaLibraryService() {
     private val radioBrowserApi = RadioBrowserApi()
 
     private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+
+    /** Serializes [switchToAdjacentStation] calls - see its doc for why. */
+    private val stationSwitchMutex = Mutex()
 
     private val retryPolicy = ConnectionRetryPolicy()
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -179,7 +201,9 @@ class RadioPlaybackService : MediaLibraryService() {
     /** Pushes the latest station/playing state to the home screen widget (see `widget/RadioWidget`). */
     private fun updateWidget(isPlaying: Boolean) {
         val streamUrl = retryPolicy.currentStreamUrlOrNull() ?: player?.currentMediaItem?.mediaId
-        WidgetStateStore(this).save(stationName = stationName, streamUrl = streamUrl, isPlaying = isPlaying)
+        WidgetStateStore(
+            this,
+        ).save(stationName = currentRequest?.stationName, streamUrl = streamUrl, isPlaying = isPlaying)
         serviceScope.launch { RadioWidget().updateAll(this@RadioPlaybackService) }
     }
 
@@ -254,14 +278,20 @@ class RadioPlaybackService : MediaLibraryService() {
         val streamUrl = intent?.getStringExtra(EXTRA_STREAM_URL)
 
         if (streamUrl != null) {
-            stationName = intent.getStringExtra(EXTRA_STATION_NAME)
+            val name = intent.getStringExtra(EXTRA_STATION_NAME)
             // The caller only ever passes name/URL strings (Activities, widget, alarm, shortcuts),
             // never the full RadioStation, so the known-HLS hint and Radio Browser uuid are looked
             // up here by URL instead of threading them through every intent-creation call site.
             serviceScope.launch {
                 val station = repository.getStationByUrl(streamUrl)
-                currentCustomIcon = station?.customIcon
-                startPlayback(streamUrl, knownHls = station?.isHls)
+                startPlayback(
+                    PlaybackRequest(
+                        stationName = name,
+                        streamUrl = streamUrl,
+                        customIcon = station?.customIcon,
+                        knownHls = station?.isHls,
+                    ),
+                )
                 // A genuine new play (as opposed to the process-restart resume branch below):
                 // register it as a "click" with the directory if this station came from Discover.
                 station?.radioBrowserUuid?.let { uuid -> radioBrowserApi.registerClick(uuid) }
@@ -282,11 +312,16 @@ class RadioPlaybackService : MediaLibraryService() {
             val saved = playbackStateStore.restore()
             if (saved != null) {
                 Log.d(TAG, "onStartCommand: restoring last station after service restart")
-                stationName = saved.stationName
                 serviceScope.launch {
                     val station = repository.getStationByUrl(saved.streamUrl)
-                    currentCustomIcon = station?.customIcon
-                    startPlayback(saved.streamUrl, knownHls = station?.isHls)
+                    startPlayback(
+                        PlaybackRequest(
+                            stationName = saved.stationName,
+                            streamUrl = saved.streamUrl,
+                            customIcon = station?.customIcon,
+                            knownHls = station?.isHls,
+                        ),
+                    )
                 }
             } else {
                 stopSelf()
@@ -325,7 +360,7 @@ class RadioPlaybackService : MediaLibraryService() {
         val openIntent =
             Intent(this, PlaybackActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra(PlaybackActivity.EXTRA_STATION_NAME, stationName)
+                putExtra(PlaybackActivity.EXTRA_STATION_NAME, currentRequest?.stationName)
             }
         val contentIntent =
             PendingIntent.getActivity(
@@ -336,7 +371,7 @@ class RadioPlaybackService : MediaLibraryService() {
             )
         return NotificationCompat
             .Builder(this, CHANNEL_ID)
-            .setContentTitle(stationName ?: getString(R.string.unknown_station))
+            .setContentTitle(currentRequest?.stationName ?: getString(R.string.unknown_station))
             .setContentText(getString(R.string.starting))
             .setSmallIcon(R.drawable.ic_play_circle)
             .setContentIntent(contentIntent)
@@ -441,16 +476,17 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     /**
-     * [PendingIntent] that reopens [PlaybackActivity], carrying [stationName]/[streamUrl] extras
-     * together when [streamUrl] is known - shared by the session's own activity-open intent
-     * ([buildMediaSession]) and its notification's tap target, which need identical extras.
+     * [PendingIntent] that reopens [PlaybackActivity], carrying [currentRequest]'s station name and
+     * [streamUrl] extras together when [streamUrl] is known - shared by the session's own
+     * activity-open intent ([buildMediaSession]) and its notification's tap target, which need
+     * identical extras.
      */
     private fun playbackActivityPendingIntent(streamUrl: String?): PendingIntent {
         val intent =
             Intent(this, PlaybackActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 if (streamUrl != null) {
-                    putExtra(PlaybackActivity.EXTRA_STATION_NAME, stationName)
+                    putExtra(PlaybackActivity.EXTRA_STATION_NAME, currentRequest?.stationName)
                     putExtra(PlaybackActivity.EXTRA_STREAM_URL, streamUrl)
                 }
             }
@@ -499,7 +535,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 ).setMediaDescriptionAdapter(
                     object : PlayerNotificationManager.MediaDescriptionAdapter {
                         override fun getCurrentContentTitle(player: Player): CharSequence =
-                            stationName ?: getString(R.string.unknown_station)
+                            currentRequest?.stationName ?: getString(R.string.unknown_station)
 
                         override fun getCurrentContentText(player: Player): CharSequence =
                             when {
@@ -511,14 +547,14 @@ class RadioPlaybackService : MediaLibraryService() {
                             player: Player,
                             callback: PlayerNotificationManager.BitmapCallback,
                         ): android.graphics.Bitmap? {
-                            val customIcon = currentCustomIcon
+                            val customIcon = currentRequest?.customIcon
                             if (customIcon != null && IconStorage.isImagePath(customIcon)) {
                                 IconStorage.decodeBitmap(customIcon)?.let { return it }
                             }
                             val emoji =
                                 customIcon?.takeUnless(IconStorage::isImagePath)
                                     ?: EmojiGenerator.getEmojiForStation(
-                                        stationName ?: getString(R.string.unknown_station),
+                                        currentRequest?.stationName ?: getString(R.string.unknown_station),
                                         player.currentMediaItem?.mediaId ?: "",
                                     )
                             return EmojiGenerator.getEmojiBitmap(emoji, 128)
@@ -549,38 +585,44 @@ class RadioPlaybackService : MediaLibraryService() {
                 ).build()
                 .apply {
                     setPlayer(notificationPlayer)
+                    // Previous/next station buttons in the collapsed notification-shade view -
+                    // instance methods, not Builder ones. Shown whenever TimeshiftSeekPlayer reports
+                    // COMMAND_SEEK_TO_PREVIOUS/COMMAND_SEEK_TO_NEXT available (always, since it
+                    // force-enables them). Play/pause is compact-view-visible unconditionally
+                    // regardless of this call.
+                    setUsePreviousActionInCompactView(true)
+                    setUseNextActionInCompactView(true)
                 }
     }
 
     private fun startPlayback(
-        streamUrl: String,
+        request: PlaybackRequest,
         isRetry: Boolean = false,
-        knownHls: Boolean? = null,
     ) {
-        buildMediaSession(streamUrl)
-        applyPlayback(streamUrl, isRetry, knownHls)
+        buildMediaSession(request.streamUrl)
+        applyPlayback(request, isRetry)
     }
 
     /**
-     * Drives the player/notification/network-retry/timeshift pipeline for [streamUrl]. Split out
+     * Drives the player/notification/network-retry/timeshift pipeline for [request]. Split out
      * from [startPlayback] so [MediaLibrarySessionCallback.onAddMediaItems] (Android Auto tapping a
      * station in the browse tree) can start playback without rebuilding the session it's currently
-     * being called from — see [buildMediaSession]'s doc for why that matters. [stationName] must
-     * already be set by the caller before calling this. [knownHls] is the directory's own `hls`
-     * flag for this station when known (Discover-added stations, or Android Auto's cached list);
-     * null falls back to [isHlsUrl]'s URL heuristic.
+     * being called from — see [buildMediaSession]'s doc for why that matters. Sets [currentRequest]
+     * itself, so every field this class needs about the playing station arrives in this one call
+     * instead of a caller pre-setting mutable fields in the right order beforehand.
      */
     private fun applyPlayback(
-        streamUrl: String,
+        request: PlaybackRequest,
         isRetry: Boolean = false,
-        knownHls: Boolean? = null,
     ) {
+        currentRequest = request
+        val streamUrl = request.streamUrl
         val exoPlayer = player ?: return
-        val isHls = isHlsUrl(streamUrl, knownHls)
+        val isHls = isHlsUrl(streamUrl, request.knownHls)
         Log.d(TAG, "applyPlayback: isHls=$isHls, url=${streamUrl.take(60)}, isRetry=$isRetry")
-        retryPolicy.onPlaybackStarted(streamUrl, knownHls, isRetry)
+        retryPolicy.onPlaybackStarted(streamUrl, request.knownHls, isRetry)
         isConnectionBroken = false
-        playbackStateStore.save(stationName, streamUrl)
+        playbackStateStore.save(request.stationName, streamUrl)
         timeshift.stop()
         registerNetworkCallback()
 
@@ -602,7 +644,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 .setMediaMetadata(
                     MediaMetadata
                         .Builder()
-                        .setTitle(stationName ?: getString(R.string.unknown_station))
+                        .setTitle(request.stationName ?: getString(R.string.unknown_station))
                         .setArtist(getString(R.string.app_name))
                         .build(),
                 )
@@ -665,7 +707,7 @@ class RadioPlaybackService : MediaLibraryService() {
         val updatedMetadata =
             currentItem.mediaMetadata
                 .buildUpon()
-                .setTitle(stationName ?: getString(R.string.unknown_station))
+                .setTitle(currentRequest?.stationName ?: getString(R.string.unknown_station))
                 .setArtist(trackTitle)
                 .build()
         p.replaceMediaItem(p.currentMediaItemIndex, currentItem.buildUpon().setMediaMetadata(updatedMetadata).build())
@@ -741,7 +783,7 @@ class RadioPlaybackService : MediaLibraryService() {
     fun stopPlayback() {
         cancelSleepTimer()
         retryPolicy.reset()
-        currentCustomIcon = null
+        // currentRequest deliberately survives a stop - see its doc.
         playbackStateStore.clear()
         unregisterNetworkCallback()
         timeshift.stop()
@@ -757,7 +799,7 @@ class RadioPlaybackService : MediaLibraryService() {
 
     fun getPlayer(): ExoPlayer? = player
 
-    fun getCurrentStationName(): String? = stationName
+    fun getCurrentStationName(): String? = currentRequest?.stationName
 
     fun seekBackward(ms: Long) = applyTimeshiftSeek(timeshift.seekBackward(ms))
 
@@ -816,7 +858,10 @@ class RadioPlaybackService : MediaLibraryService() {
     ) : ForwardingPlayer(player) {
         override fun isCommandAvailable(command: Int): Boolean =
             when (command) {
-                Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD -> true
+                Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD,
+                Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_PREVIOUS,
+                -> true
+
                 else -> super.isCommandAvailable(command)
             }
 
@@ -826,11 +871,21 @@ class RadioPlaybackService : MediaLibraryService() {
                 .buildUpon()
                 .add(Player.COMMAND_SEEK_BACK)
                 .add(Player.COMMAND_SEEK_FORWARD)
+                .add(Player.COMMAND_SEEK_TO_NEXT)
+                .add(Player.COMMAND_SEEK_TO_PREVIOUS)
                 .build()
 
         override fun seekBack() = seekBackward(TIMESHIFT_SEEK_BACK_MS)
 
         override fun seekForward() = seekToLive()
+
+        // The player only ever has one MediaItem loaded (the live stream, not a real playlist), so
+        // hasNextMediaItem()/hasPreviousMediaItem() are always false and the plain ExoPlayer
+        // next/previous commands would otherwise report unavailable - rerouted to station-list
+        // navigation instead, same trick as seekBack/seekForward above for timeshift.
+        override fun seekToNext() = switchToAdjacentStation(StationNavigator::next)
+
+        override fun seekToPrevious() = switchToAdjacentStation(StationNavigator::previous)
     }
 
     /**
@@ -853,10 +908,17 @@ class RadioPlaybackService : MediaLibraryService() {
         }
     }
 
-    /** Only retries if [attemptId] is still current — a manual stop/switch or a network-triggered retry in the meantime invalidates it. */
+    /**
+     * Only retries if [attemptId] is still current — a manual stop/switch or a network-triggered
+     * retry in the meantime invalidates it. Reuses [currentRequest]'s station name/icon (a retry
+     * always replays the same stream a request was already set for - see [ConnectionRetryPolicy],
+     * whose own tracked [target]'s `streamUrl` is always that same URL) rather than requiring the
+     * caller to somehow already know them again.
+     */
     private fun attemptScheduledRetry(attemptId: Long) {
         val target = retryPolicy.attemptRetry(attemptId) ?: return
-        startPlayback(target.streamUrl, isRetry = true, knownHls = target.knownHls)
+        val base = currentRequest ?: return
+        startPlayback(base.copy(streamUrl = target.streamUrl, knownHls = target.knownHls), isRetry = true)
     }
 
     /**
@@ -907,11 +969,51 @@ class RadioPlaybackService : MediaLibraryService() {
      */
     internal fun playFromBrowseTree(mediaId: String): Boolean {
         val station = browseTree.findStation(mediaId) ?: return false
-        stationName = station.name
-        currentCustomIcon = station.customIcon
-        applyPlayback(station.streamUrl, knownHls = station.isHls)
+        applyPlayback(
+            PlaybackRequest(
+                stationName = station.name,
+                streamUrl = station.streamUrl,
+                customIcon = station.customIcon,
+                knownHls = station.isHls,
+            ),
+        )
         station.radioBrowserUuid?.let { uuid -> serviceScope.launch { radioBrowserApi.registerClick(uuid) } }
         return true
+    }
+
+    /**
+     * Switches to the next/previous station in the plain station list (`sortOrder ASC, id ASC` -
+     * there's no separate "favorites" concept, see AGENTS.md), wrapping at either end via
+     * [StationNavigator]. Wired to the media notification's skip-next/skip-previous buttons through
+     * [TimeshiftSeekPlayer]'s `seekToNext`/`seekToPrevious` overrides below. Calls [applyPlayback]
+     * directly, not [startPlayback] - same reasoning as [playFromBrowseTree]: this fires from inside
+     * a player-command callback (`PlayerNotificationManager`'s button click handler), so rebuilding
+     * the session mid-dispatch isn't the safe path here either. Internal (not private), same
+     * test-seam reason as [playFromBrowseTree].
+     *
+     * [stationSwitchMutex]-serialized: [repository.getAllStations] is a real suspend Room query, so
+     * a second rapid tap (e.g. double-tapping "previous" in the notification before the first tap's
+     * [applyPlayback] has landed) would otherwise read the same not-yet-updated [currentRequest] as
+     * the first and compute the same target twice - one of the two taps silently doing nothing. The
+     * mutex makes each call wait for the previous one's [currentRequest] write before reading it,
+     * so N rapid taps walk N stations, not fewer.
+     */
+    internal fun switchToAdjacentStation(pick: (List<RadioStation>, String?) -> RadioStation?) {
+        serviceScope.launch {
+            stationSwitchMutex.withLock {
+                val currentStreamUrl = currentRequest?.streamUrl ?: return@withLock
+                val target = pick(repository.getAllStations(), currentStreamUrl) ?: return@withLock
+                applyPlayback(
+                    PlaybackRequest(
+                        stationName = target.name,
+                        streamUrl = target.streamUrl,
+                        customIcon = target.customIcon,
+                        knownHls = target.isHls,
+                    ),
+                )
+                target.radioBrowserUuid?.let { uuid -> radioBrowserApi.registerClick(uuid) }
+            }
+        }
     }
 
     private inner class MediaLibrarySessionCallback : MediaLibrarySession.Callback {
@@ -1003,7 +1105,7 @@ class RadioPlaybackService : MediaLibraryService() {
                         .setMediaMetadata(
                             item.mediaMetadata
                                 .buildUpon()
-                                .setTitle(stationName ?: getString(R.string.unknown_station))
+                                .setTitle(currentRequest?.stationName ?: getString(R.string.unknown_station))
                                 .setArtist(getString(R.string.app_name))
                                 .build(),
                         ).build()
