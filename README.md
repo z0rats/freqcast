@@ -28,6 +28,7 @@ Freqcast lets you paste the station's website instead. It first checks Radio Bro
 
 - ➕ **Paste a station website instead of hunting for a stream URL** — Freqcast automatically discovers and verifies the playable stream whenever possible
 - 🔎 **Discover stations** — search the Radio Browser directory by name, genre (with offline tag autocomplete), country, or "near me", and add results straight to your library
+- 🎁 Starts you off with a handful of curated stations — swipe any of them away if they're not your taste
 - 🔁 Background playback with automatic reconnect
 - ⏪ Timeshift for compatible streams
 - 🎶 Live ICY metadata

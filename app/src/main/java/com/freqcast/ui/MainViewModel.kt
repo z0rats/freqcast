@@ -1,10 +1,13 @@
 package com.freqcast.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.freqcast.data.CuratedStations
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.ui.playback.SettingsStore
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +25,7 @@ sealed interface MainScreenEvent {
 
 class MainViewModel(
     private val repository: RadioStationRepository,
+    private val settingsStore: SettingsStore,
 ) : ViewModel() {
     private val _stations = MutableStateFlow<List<RadioStation>>(emptyList())
     val stations: StateFlow<List<RadioStation>> = _stations.asStateFlow()
@@ -31,6 +35,13 @@ class MainViewModel(
 
     private val _currentPlayingStationId = MutableStateFlow<Long?>(null)
     val currentPlayingStationId: StateFlow<Long?> = _currentPlayingStationId.asStateFlow()
+
+    // Non-null for exactly one station, right after CuratedStations.pack is seeded on a fresh
+    // install - StationListPane plays a one-time swipe-to-reveal peek animation on that station,
+    // then calls clearSwipeHint(). See SettingsStore.hasShownSwipeHint for why this only ever
+    // fires once per install.
+    private val _swipeHintStationId = MutableStateFlow<Long?>(null)
+    val swipeHintStationId: StateFlow<Long?> = _swipeHintStationId.asStateFlow()
 
     private val eventChannel = Channel<MainScreenEvent>(Channel.BUFFERED)
     val events: Flow<MainScreenEvent> = eventChannel.receiveAsFlow()
@@ -57,6 +68,35 @@ class MainViewModel(
         viewModelScope.launch {
             _stations.value = repository.getAllStations()
         }
+    }
+
+    /**
+     * Inserts [CuratedStations.pack] the first time this runs on a given install (guarded by
+     * [SettingsStore.hasSeededCuratedPack], so it never re-runs after a user deletes some or all
+     * of the pack). Called once from [MainActivity]'s startup effect, before the first [loadStations].
+     * [context] resolves each entry's bundled icon via [CuratedStations.withResolvedIcon] - not
+     * stored on the ViewModel, same as [SettingsViewModel.importStations]'s per-call Context.
+     */
+    suspend fun seedCuratedStationsIfNeeded(context: Context) {
+        if (settingsStore.hasSeededCuratedPack) return
+        val insertedIds =
+            CuratedStations.pack.map { station ->
+                repository.insertStation(CuratedStations.withResolvedIcon(context, station))
+            }
+        settingsStore.hasSeededCuratedPack = true
+
+        if (!settingsStore.hasShownSwipeHint) {
+            // The second entry, not the first - purely a visual choice (demonstrating the gesture
+            // on the very first row read as "the whole list works this way" rather than pointing
+            // at one specific station). Falls back to the first if the pack ever shrinks to 1.
+            _swipeHintStationId.value = insertedIds.getOrNull(1) ?: insertedIds.firstOrNull()
+            settingsStore.hasShownSwipeHint = true
+        }
+    }
+
+    /** Called once the one-time swipe hint animation (see [swipeHintStationId]) has played. */
+    fun clearSwipeHint() {
+        _swipeHintStationId.value = null
     }
 
     fun updateSearchQuery(query: String) {
@@ -111,7 +151,9 @@ class MainViewModel(
     }
 
     companion object {
-        fun provideFactory(repository: RadioStationRepository): ViewModelProvider.Factory =
-            viewModelFactory { MainViewModel(repository) }
+        fun provideFactory(
+            repository: RadioStationRepository,
+            settingsStore: SettingsStore,
+        ): ViewModelProvider.Factory = viewModelFactory { MainViewModel(repository, settingsStore) }
     }
 }

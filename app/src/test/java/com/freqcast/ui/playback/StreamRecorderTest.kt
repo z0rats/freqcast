@@ -7,6 +7,7 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -118,6 +119,85 @@ class StreamRecorderTest {
 
         assertFalse(errorReported)
         assertTrue(outputFile.length() < body.length)
+    }
+
+    @Test
+    fun `clip format is detected from an mpeg Content-Type header`() {
+        server.enqueue(MockResponse().addHeader("Content-Type", "audio/mpeg").setBody("x".repeat(100)))
+        val recorder = StreamRecorder(server.url("/stream").toString(), outputFile)
+
+        recorder.start()
+        awaitTrue { !recorder.isRecording() }
+
+        assertEquals(ClipFormat.MP3, recorder.getClipFormat())
+    }
+
+    @Test
+    fun `clip format is detected from an aac Content-Type header`() {
+        server.enqueue(MockResponse().addHeader("Content-Type", "audio/aac; charset=utf-8").setBody("x".repeat(100)))
+        val recorder = StreamRecorder(server.url("/stream").toString(), outputFile)
+
+        recorder.start()
+        awaitTrue { !recorder.isRecording() }
+
+        assertEquals(ClipFormat.AAC, recorder.getClipFormat())
+    }
+
+    @Test
+    fun `clip format falls back to sniffing MP3 frame-sync bytes when Content-Type is missing`() {
+        val body = Buffer().write(byteArrayOf(0xFF.toByte(), 0xFB.toByte())).write("x".repeat(100).toByteArray())
+        server.enqueue(MockResponse().setBody(body))
+        val recorder = StreamRecorder(server.url("/stream").toString(), outputFile)
+
+        recorder.start()
+        awaitTrue { !recorder.isRecording() }
+
+        assertEquals(ClipFormat.MP3, recorder.getClipFormat())
+    }
+
+    @Test
+    fun `clip format falls back to sniffing ADTS AAC frame-sync bytes when Content-Type is missing`() {
+        val body = Buffer().write(byteArrayOf(0xFF.toByte(), 0xF1.toByte())).write("x".repeat(100).toByteArray())
+        server.enqueue(MockResponse().setBody(body))
+        val recorder = StreamRecorder(server.url("/stream").toString(), outputFile)
+
+        recorder.start()
+        awaitTrue { !recorder.isRecording() }
+
+        assertEquals(ClipFormat.AAC, recorder.getClipFormat())
+    }
+
+    @Test
+    fun `clip format stays null for bytes matching neither sync pattern`() {
+        val body = Buffer().write(byteArrayOf(0xFF.toByte(), 0x00)).write("x".repeat(100).toByteArray())
+        server.enqueue(MockResponse().setBody(body))
+        val recorder = StreamRecorder(server.url("/stream").toString(), outputFile)
+
+        recorder.start()
+        awaitTrue { !recorder.isRecording() }
+
+        assertEquals(null, recorder.getClipFormat())
+    }
+
+    @Test
+    fun `a connection failure invokes onError`() {
+        // Nothing enqueued and the server is shut down immediately, so the request fails at the
+        // socket level (ConnectException) rather than with an HTTP error response - a different
+        // code path than the "HTTP error response" case above.
+        val url = server.url("/stream").toString()
+        server.shutdown()
+        val recorder = StreamRecorder(url, outputFile)
+        val errorLatch = CountDownLatch(1)
+        var captured: Throwable? = null
+
+        recorder.start(onError = {
+            captured = it
+            errorLatch.countDown()
+        })
+
+        assertTrue(errorLatch.await(5, TimeUnit.SECONDS))
+        assertNotNull(captured)
+        awaitTrue { !recorder.isRecording() }
     }
 
     @Test

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -61,6 +64,7 @@ import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.IconStorage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -72,6 +76,11 @@ fun StationItem(
     isStartError: Boolean = false,
     isDragging: Boolean = false,
     trackTitle: String? = null,
+    // True for exactly one station right after the curated pack is seeded on a fresh install -
+    // plays a one-time peek-and-highlight animation demonstrating the swipe-to-reveal gesture,
+    // then calls onSwipeHintConsumed(). See MainViewModel.swipeHintStationId.
+    playSwipeHint: Boolean = false,
+    onSwipeHintConsumed: () -> Unit = {},
     onPlayClick: () -> Unit,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
@@ -85,6 +94,9 @@ fun StationItem(
     // NowPlayingBottomBar's station-switch drag for the same reason: wrapping every intermediate
     // drag value in a tween, as this used to, adds lag between finger and card mid-swipe.
     val offsetAnim = remember { Animatable(0f) }
+    // Border/elevation glow driving the swipe hint - 0f the rest of the time, so it never affects
+    // normal StationCard styling (see StationCard's isDragging/isActive border precedence).
+    val highlightAnim = remember { Animatable(0f) }
     var isSwipeRevealed by remember { mutableStateOf(false) }
     // Wide enough to reveal 3 action buttons (Edit, Share, Delete): 3 * 48dp + 2 * 8dp spacing + 16dp end padding.
     val revealThreshold = 184.dp
@@ -96,6 +108,26 @@ fun StationItem(
 
     fun settleTo(target: Float) {
         scope.launch { offsetAnim.animateTo(target, settleSpec) }
+    }
+
+    LaunchedEffect(playSwipeHint) {
+        if (!playSwipeHint) return@LaunchedEffect
+        // Long initial delay: on a fresh install this plays right alongside the notification
+        // permission system dialog (MainActivity.requestNotificationPermissionIfNeeded), which
+        // would otherwise cover the very moment this is trying to demonstrate. Doesn't guarantee
+        // the dialog is gone, but gives a real install-then-glance-at-the-list gap a chance to land
+        // after it, rather than firing the instant the screen composes.
+        delay(1800)
+        highlightAnim.animateTo(1f, tween(300))
+        // Reveals the full swipe threshold (all three actions), not just a peek - the point is to
+        // show Delete specifically (rightmost, so first exposed) exists at all, not merely hint at it.
+        isSwipeRevealed = true
+        offsetAnim.animateTo(maxOffsetPx, tween(400))
+        delay(1600)
+        offsetAnim.animateTo(0f, tween(400))
+        isSwipeRevealed = false
+        highlightAnim.animateTo(0f, tween(300))
+        onSwipeHintConsumed()
     }
 
     Box(
@@ -129,6 +161,7 @@ fun StationItem(
                     settleTo(0f)
                     onDeleteClick()
                 },
+                deleteHighlightAlpha = highlightAnim.value,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -140,6 +173,7 @@ fun StationItem(
             isStarting = isStarting,
             isStartError = isStartError,
             isDragging = isDragging,
+            highlightAlpha = highlightAnim.value,
             trackTitle = trackTitle,
             onPlayClick = {
                 if (isSwipeRevealed) {
@@ -195,6 +229,9 @@ private fun SwipeActionsBackground(
     onEditClick: () -> Unit,
     onShareClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    // Drives the pulsing ring/scale on the Delete button during the swipe hint (see StationItem's
+    // playSwipeHint) - 0f the rest of the time, so it never affects the button's normal look.
+    deleteHighlightAlpha: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -249,9 +286,13 @@ private fun SwipeActionsBackground(
                 onClick = onDeleteClick,
                 modifier =
                     Modifier
+                        .scale(1f + 0.18f * deleteHighlightAlpha)
                         .background(
                             color = MaterialTheme.colorScheme.error,
                             shape = MaterialTheme.shapes.medium,
+                        ).border(
+                            BorderStroke(2.dp, glass_accent.copy(alpha = deleteHighlightAlpha)),
+                            MaterialTheme.shapes.medium,
                         ),
             ) {
                 Icon(
@@ -272,6 +313,7 @@ private fun StationCard(
     isStarting: Boolean,
     isStartError: Boolean,
     isDragging: Boolean,
+    highlightAlpha: Float,
     trackTitle: String?,
     onPlayClick: () -> Unit,
     onCardClick: () -> Unit,
@@ -288,10 +330,21 @@ private fun StationCard(
         onClick = onCardClick,
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 8.dp else 0.dp),
+        elevation =
+            CardDefaults.cardElevation(
+                defaultElevation =
+                    if (isDragging ||
+                        highlightAlpha > 0f
+                    ) {
+                        8.dp
+                    } else {
+                        0.dp
+                    },
+            ),
         shape = MaterialTheme.shapes.large,
         border =
             when {
+                highlightAlpha > 0f -> BorderStroke(2.dp, glass_accent.copy(alpha = highlightAlpha))
                 isDragging -> BorderStroke(2.dp, glass_accent)
                 isActive -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
                 else -> BorderStroke(1.dp, card_border)
@@ -330,13 +383,22 @@ private fun StationCard(
                 modifier = Modifier.weight(1f).semantics(mergeDescendants = true) {},
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    text = station.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = text_primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = station.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = text_primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (station.isCurated) {
+                        CuratedBadge()
+                    }
+                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -367,6 +429,21 @@ private fun StationCard(
             )
         }
     }
+}
+
+/** Small pill marking a [RadioStation.isCurated] row, next to its name in [StationCard]. */
+@Composable
+private fun CuratedBadge(modifier: Modifier = Modifier) {
+    Text(
+        text = stringResource(R.string.station_curated_badge),
+        style = MaterialTheme.typography.labelSmall,
+        color = glass_accent,
+        maxLines = 1,
+        modifier =
+            modifier
+                .border(BorderStroke(1.dp, glass_accent.copy(alpha = 0.5f)), MaterialTheme.shapes.extraSmall)
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }
 
 @Composable

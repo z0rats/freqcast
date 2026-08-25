@@ -75,11 +75,15 @@
     <string name="export_stations_empty">没有可导出的电台</string>
     <string name="import_error">导入失败：不支持或无效的文件（应为电台备份、OPML、M3U 或 PLS 文件）</string>
     <string name="import_result">已导入 %1$d 个，跳过 %2$d 个重复项</string>
+    <string name="settings_restore_curated">恢复精选电台</string>
+    <string name="settings_restore_curated_description">找回你删除的精选电台</string>
+    <string name="restore_curated_result">已恢复 %1$d 个电台</string>
     <string name="copy_track_title">复制曲目标题</string>
     <string name="track_title_copied">曲目标题已复制</string>
     <string name="copy_station_name">复制电台名称</string>
     <string name="station_name_copied">电台名称已复制</string>
     <string name="discover_stations">发现电台</string>
+    <string name="station_curated_badge">精选</string>
     <string name="discover_search_mode_name">名称</string>
     <string name="discover_search_mode_genre">风格</string>
     <string name="discover_search_mode_country">国家</string>

@@ -164,6 +164,16 @@ class IconStorageTest {
     }
 
     @Test
+    fun `saveImageBytes returns null when the ico magic bytes are present but the container is malformed`() {
+        // Passes IconStorage's own isIco() magic-bytes check but has no ICONDIRENTRY table for
+        // IcoDecoder to parse, so IcoDecoder.decode() returns null - a different path than the
+        // generic-garbage-bytes case above, which never even looks like an .ico.
+        val path = IconStorage.saveImageBytes(context, byteArrayOf(0, 0, 1, 0))
+
+        assertNull(path)
+    }
+
+    @Test
     fun `saveImageBytes decodes a raw ico favicon since BitmapFactory alone can't`() {
         val path = IconStorage.saveImageBytes(context, icoBytesFor(32, 32))
 

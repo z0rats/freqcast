@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.freqcast.data.CuratedStations
 import com.freqcast.data.ImportResult
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.UpdateChecker
@@ -80,6 +81,22 @@ class SettingsViewModel(
         context: Context,
         content: String,
     ): ImportResult = repository.importStations(context, content)
+
+    /**
+     * Re-inserts any [CuratedStations.pack] entry the user deleted, matched by name/streamUrl
+     * (same skip-on-duplicate check `RadioStationRepository.importStationsFromJson` uses) so a
+     * still-present curated station is never duplicated. [context] resolves each entry's bundled
+     * icon, same as `MainViewModel.seedCuratedStationsIfNeeded`. Returns how many were restored.
+     */
+    suspend fun restoreCuratedStations(context: Context): Int {
+        var restored = 0
+        for (station in CuratedStations.pack) {
+            if (repository.isNameTaken(station.name) || repository.isUrlTaken(station.streamUrl)) continue
+            repository.insertStation(CuratedStations.withResolvedIcon(context, station))
+            restored++
+        }
+        return restored
+    }
 
     companion object {
         fun provideFactory(

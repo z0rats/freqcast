@@ -75,11 +75,15 @@
     <string name="export_stations_empty">No stations to export</string>
     <string name="import_error">Import failed: unsupported or invalid file (expected a stations backup, OPML, M3U, or PLS file)</string>
     <string name="import_result">Imported %1$d, skipped %2$d duplicates</string>
+    <string name="settings_restore_curated">Restore curated stations</string>
+    <string name="settings_restore_curated_description">Add back any curated station you removed</string>
+    <string name="restore_curated_result">Restored %1$d station(s)</string>
     <string name="copy_track_title">Copy track title</string>
     <string name="track_title_copied">Track title copied</string>
     <string name="copy_station_name">Copy station name</string>
     <string name="station_name_copied">Station name copied</string>
     <string name="discover_stations">Discover stations</string>
+    <string name="station_curated_badge">Curated</string>
     <string name="discover_search_mode_name">Name</string>
     <string name="discover_search_mode_genre">Genre</string>
     <string name="discover_search_mode_country">Country</string>

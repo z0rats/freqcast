@@ -107,4 +107,38 @@ class AlarmSchedulerTest {
         AlarmScheduler.cancel(context, 1L)
         assertEquals(1, shadow.scheduledAlarms.size)
     }
+
+    @Test
+    fun `cancelLegacy cancels the pre-multi-alarm alarm's PendingIntent if still registered`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        val shadow = shadowOf(alarmManager)
+        // Mirrors exactly what the pre-multi-alarm code used to register (component + request code
+        // 1001, per AlarmScheduler.LEGACY_REQUEST_CODE's doc) - PendingIntent cancellation matches
+        // by that shape, not by object identity, so cancelLegacy() must build the identical one.
+        val legacyIntent =
+            android.app.PendingIntent.getBroadcast(
+                context,
+                1001,
+                android.content.Intent(context, AlarmReceiver::class.java),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+            )
+        alarmManager.set(AlarmManager.RTC, System.currentTimeMillis() + 60_000, legacyIntent)
+        assertEquals(1, shadow.scheduledAlarms.size)
+
+        AlarmScheduler.cancelLegacy(context)
+
+        assertEquals(0, shadow.scheduledAlarms.size)
+    }
+
+    @Test
+    fun `cancelLegacy is a no-op when no legacy alarm was ever registered`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        val shadow = shadowOf(alarmManager)
+
+        AlarmScheduler.cancelLegacy(context)
+
+        assertEquals(0, shadow.scheduledAlarms.size)
+    }
 }

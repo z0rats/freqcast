@@ -75,11 +75,15 @@
     <string name="export_stations_empty">Нет станций для экспорта</string>
     <string name="import_error">Не удалось импортировать: неподдерживаемый или недействительный файл (ожидается резервная копия станций, OPML, M3U или PLS)</string>
     <string name="import_result">Импортировано: %1$d, пропущено дубликатов: %2$d</string>
+    <string name="settings_restore_curated">Восстановить подборку станций</string>
+    <string name="settings_restore_curated_description">Вернуть удалённые станции из подборки</string>
+    <string name="restore_curated_result">Восстановлено станций: %1$d</string>
     <string name="copy_track_title">Скопировать название трека</string>
     <string name="track_title_copied">Название трека скопировано</string>
     <string name="copy_station_name">Скопировать название станции</string>
     <string name="station_name_copied">Название станции скопировано</string>
     <string name="discover_stations">Найти станции</string>
+    <string name="station_curated_badge">Подборка</string>
     <string name="discover_search_mode_name">Название</string>
     <string name="discover_search_mode_genre">Жанр</string>
     <string name="discover_search_mode_country">Страна</string>

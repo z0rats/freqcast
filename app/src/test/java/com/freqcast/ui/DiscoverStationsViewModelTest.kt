@@ -314,6 +314,22 @@ class DiscoverStationsViewModelTest {
         }
 
     @Test
+    fun `COUNTRY mode searches by country instead of by name`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"Deutschlandfunk","url":"http://example.com/dlf"}]"""))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.onModeChange(DiscoverSearchMode.COUNTRY)
+
+            viewModel.onQueryChange("Germany")
+            awaitTrue { viewModel.uiState.value.hasSearched }
+
+            val request = server.takeRequest(5, TimeUnit.SECONDS)
+            assertTrue(request?.path?.contains("country=Germany") == true)
+            assertEquals(1, viewModel.uiState.value.results.size)
+        }
+
+    @Test
     fun `addStation inserts the station and marks its url as added`() =
         runTest {
             val viewModel = createViewModel(testScheduler)
@@ -327,6 +343,29 @@ class DiscoverStationsViewModelTest {
             }
 
             assertEquals("New FM", database.radioStationDao().getAllStations()[0].name)
+        }
+
+    @Test
+    fun `addStation marks an already-saved url as added without inserting a duplicate`() =
+        runTest {
+            // Inserted only *after* the view model's init has already snapshotted addedUrls from
+            // an empty DB - e.g. the same station was added via the AddStation screen while this
+            // Discover screen stayed open - so addStation's own addedUrls.contains(url) guard
+            // can't short-circuit before ever calling repository.isUrlTaken(); this is the only
+            // way to reach that suspend check's own "already taken" branch.
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            repository.insertStation(RadioStation(name = "Existing FM", streamUrl = "http://example.com/existing"))
+            val station =
+                RadioBrowserStation("u1", "Existing FM (directory copy)", "http://example.com/existing", "", "", 0)
+
+            viewModel.addStation(station)
+            awaitTrue {
+                viewModel.uiState.value.addedUrls
+                    .contains(station.url)
+            }
+
+            assertEquals(1, database.radioStationDao().getAllStations().size)
         }
 
     @Test
@@ -496,6 +535,22 @@ class DiscoverStationsViewModelTest {
         }
 
     @Test
+    fun `searchNearby sets discover_search_error instead of crashing when the API call throws`() =
+        runTest {
+            // Same MAX_RETRIES(3)-plus-final-attempt shape as loadDefaultBrowse's equivalent test -
+            // every attempt needs its own queued response, or MockWebServer blocks on an empty queue.
+            repeat(4) { server.enqueue(MockResponse().setResponseCode(500)) }
+            val viewModel = createViewModel(testScheduler, nearbyLocationProvider())
+            advanceUntilIdle()
+
+            viewModel.searchNearby()
+            awaitTrue { viewModel.uiState.value.hasSearched }
+
+            assertEquals(R.string.discover_search_error, viewModel.uiState.value.errorRes)
+            assertEquals(emptyList<Any>(), viewModel.uiState.value.results)
+        }
+
+    @Test
     fun `searchNearby sets errorRes when no location can be resolved`() =
         runTest {
             val viewModel = createViewModel(testScheduler, nearbyLocationProvider(fix = null))
@@ -614,6 +669,23 @@ class DiscoverStationsViewModelTest {
                 viewModel.uiState.value.defaultBrowseResults[0]
                     .name,
             )
+        }
+
+    @Test
+    fun `loadDefaultBrowse falls back to an empty list instead of crashing when the API call throws`() =
+        runTest {
+            // RadioBrowserApi retries a failed search MAX_RETRIES(3) times before finally letting
+            // the IOException through - every attempt needs its own queued response, or MockWebServer
+            // just blocks waiting on an empty queue instead of failing fast.
+            repeat(4) { server.enqueue(MockResponse().setResponseCode(500)) }
+            val viewModel = createViewModel(testScheduler, autoLoadDefaultBrowse = true)
+
+            awaitTrue { server.requestCount >= 4 }
+            awaitTrue { !viewModel.uiState.value.isLoadingDefaultBrowse }
+
+            assertEquals(4, server.requestCount)
+            assertEquals(emptyList<Any>(), viewModel.uiState.value.defaultBrowseResults)
+            assertNull(viewModel.uiState.value.defaultBrowseRegionCode)
         }
 
     @Test

@@ -11,6 +11,7 @@ import com.freqcast.data.StationUrlResolver
 import com.freqcast.util.StreamValidator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
@@ -245,6 +246,114 @@ class AddStationViewModelTest {
             awaitTrue { viewModel.uiState.value.isSaving }
             awaitTrue { !viewModel.uiState.value.isSaving }
             assertEquals("rock", database.radioStationDao().getAllStations()[0].description)
+        }
+
+    @Test
+    fun `save with an unparseable url shows the invalid-url error without ever entering the saving state`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onNameChange("New FM")
+            // Contains whitespace, so it fails AddStationActivity.isValidUrl even after the
+            // no-scheme-prefix normalization save() applies first. (A literally blank url field
+            // hits this same branch, not save()'s separate urlTrimmed.isEmpty() one - the
+            // no-scheme-prefix normalization turns "" into "http://", never back to empty.)
+            viewModel.onUrlChange("has space")
+
+            viewModel.save()
+
+            assertEquals(R.string.error_invalid_url, viewModel.uiState.value.urlErrorRes)
+            assertEquals(false, viewModel.uiState.value.isSaving)
+        }
+
+    @Test
+    fun `save rejects a name that's already used by another station`() =
+        runTest {
+            repository.insertStation(RadioStation(name = "Existing FM", streamUrl = "http://existing.example/stream"))
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onNameChange("Existing FM")
+            viewModel.onUrlChange(server.url("/stream").toString())
+
+            viewModel.save()
+
+            awaitTrue { viewModel.uiState.value.nameErrorRes != null }
+            assertEquals(R.string.error_duplicate_name, viewModel.uiState.value.nameErrorRes)
+            assertEquals(false, viewModel.uiState.value.isSaving)
+            assertEquals(1, database.radioStationDao().getAllStations().size)
+        }
+
+    @Test
+    fun `save rejects a stream url that's already used by another station`() =
+        runTest {
+            val streamUrl = server.url("/stream").toString()
+            repository.insertStation(RadioStation(name = "Existing FM", streamUrl = streamUrl))
+            // A second always-200 response for this new save's own direct-stream probe.
+            server.enqueue(MockResponse().setResponseCode(200))
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onNameChange("New FM")
+            viewModel.onUrlChange(streamUrl)
+
+            viewModel.save()
+
+            awaitTrue { viewModel.uiState.value.urlErrorRes != null }
+            assertEquals(R.string.error_duplicate_url, viewModel.uiState.value.urlErrorRes)
+            assertEquals(false, viewModel.uiState.value.isSaving)
+            assertEquals(1, database.radioStationDao().getAllStations().size)
+        }
+
+    @Test
+    fun `save emits SaveFailed and resets isSaving when persistence throws`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onNameChange("New FM")
+            viewModel.onUrlChange(server.url("/stream").toString())
+            val events = mutableListOf<AddStationEvent>()
+            val job = launch { viewModel.events.collect { events.add(it) } }
+            // isNameTaken is the first suspend repository call inside save()'s try block (only
+            // reached because the name field is non-blank) - closing the DB first turns it into a
+            // real, uncaught-by-anything-else failure, exercising save()'s outer catch(Exception).
+            database.close()
+
+            viewModel.save()
+            awaitTrue { events.isNotEmpty() }
+
+            assertTrue(events.single() is AddStationEvent.SaveFailed)
+            assertEquals(false, viewModel.uiState.value.isSaving)
+            job.cancel()
+        }
+
+    @Test
+    fun `selectCandidate emits SaveFailed and resets isSaving when persistence throws`() =
+        runTest {
+            // The candidate must actually resolve (reachable stream) to reach finalizeSave()'s
+            // repository call at all - an unreachable placeholder candidate would short-circuit to
+            // the plain error_stream_unreachable branch instead, never touching the DB.
+            val streamServer = MockWebServer().apply { start() }
+            streamServer.enqueue(MockResponse().setResponseCode(200))
+            val (viewModel, servers) =
+                setUpAmbiguousViewModel(
+                    testScheduler,
+                    candidateAUrl = "http://nova-paris.test:${streamServer.port}/stream",
+                )
+            try {
+                viewModel.save()
+                awaitTrue { viewModel.uiState.value.candidateStations != null }
+                val chosen =
+                    viewModel.uiState.value.candidateStations!!
+                        .first { it.name == "Nova FM Paris" }
+                val events = mutableListOf<AddStationEvent>()
+                val job = launch { viewModel.events.collect { events.add(it) } }
+                database.close()
+
+                viewModel.selectCandidate(chosen)
+                awaitTrue { events.isNotEmpty() }
+
+                assertTrue(events.single() is AddStationEvent.SaveFailed)
+                assertEquals(false, viewModel.uiState.value.isSaving)
+                job.cancel()
+            } finally {
+                servers.forEach { it.shutdown() }
+                streamServer.shutdown()
+            }
         }
 
     @Test

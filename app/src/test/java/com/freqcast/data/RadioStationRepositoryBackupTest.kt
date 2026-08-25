@@ -296,6 +296,23 @@ class RadioStationRepositoryBackupTest {
         }
 
     @Test
+    fun `importStationsFromPlaylist counts a PLS entry with a blank File value as failed`() =
+        runTest {
+            // A blank File value still leaves an entry in PlaylistImport.parsePls's `files` map
+            // (only entries with no '=' at all, or no digit-suffixed File/Title key, are dropped
+            // during parsing) - this is the one realistic way a ParsedPlaylistStation reaches
+            // importStationsFromPlaylist with a blank streamUrl.
+            val pls =
+                "[playlist]\nFile1=http://example.com/rock\nTitle1=Rock FM\n" +
+                    "File2=\nTitle2=Broken Entry\nNumberOfEntries=2"
+
+            val result = repository.importStationsFromPlaylist(pls)
+
+            assertEquals(ImportResult(imported = 1, skipped = 0, failed = 1), result)
+            assertEquals("Rock FM", repository.getAllStations().single().name)
+        }
+
+    @Test
     fun `importStationsFromPlaylist throws IllegalArgumentException for unrecognized content`() {
         assertThrows(IllegalArgumentException::class.java) {
             kotlinx.coroutines.runBlocking { repository.importStationsFromPlaylist("not a playlist") }

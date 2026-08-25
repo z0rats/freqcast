@@ -20,10 +20,30 @@ class SettingsStore(
         get() = prefs.getInt(KEY_TIMESHIFT_BUFFER_SIZE_MB, TimeshiftBufferSize.DEFAULT_MB)
         set(value) = prefs.edit().putInt(KEY_TIMESHIFT_BUFFER_SIZE_MB, value).apply()
 
+    /**
+     * Whether [com.freqcast.data.CuratedStations.pack] has already been inserted into a fresh
+     * install's station list. Guards `MainViewModel.seedCuratedStationsIfNeeded` so it only ever
+     * runs once per install - without this, a user who later deletes some or all of the pack
+     * would see it silently reappear on a later launch.
+     */
+    var hasSeededCuratedPack: Boolean
+        get() = prefs.getBoolean(KEY_SEEDED_CURATED_PACK, false)
+        set(value) = prefs.edit().putBoolean(KEY_SEEDED_CURATED_PACK, value).apply()
+
+    /**
+     * Whether the one-time swipe-to-reveal hint (peek animation on the first curated station,
+     * see `StationItem`'s `playSwipeHint`) has already been shown.
+     */
+    var hasShownSwipeHint: Boolean
+        get() = prefs.getBoolean(KEY_SHOWN_SWIPE_HINT, false)
+        set(value) = prefs.edit().putBoolean(KEY_SHOWN_SWIPE_HINT, value).apply()
+
     companion object {
         private const val PREFS_NAME = "settings"
         private const val KEY_WARN_ON_METERED = "warn_on_metered_connection"
         private const val KEY_TIMESHIFT_BUFFER_SIZE_MB = "timeshift_buffer_size_mb"
+        private const val KEY_SEEDED_CURATED_PACK = "seeded_curated_pack"
+        private const val KEY_SHOWN_SWIPE_HINT = "shown_swipe_hint"
     }
 }
 

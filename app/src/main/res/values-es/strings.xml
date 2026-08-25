@@ -75,11 +75,15 @@
     <string name="export_stations_empty">No hay emisoras para exportar</string>
     <string name="import_error">Error al importar: archivo no compatible o no válido (se esperaba una copia de seguridad de emisoras, OPML, M3U o PLS)</string>
     <string name="import_result">Importadas %1$d, omitidos %2$d duplicados</string>
+    <string name="settings_restore_curated">Restaurar selección</string>
+    <string name="settings_restore_curated_description">Vuelve a añadir las emisoras de la selección que hayas eliminado</string>
+    <string name="restore_curated_result">%1$d emisora(s) restaurada(s)</string>
     <string name="copy_track_title">Copiar título de la pista</string>
     <string name="track_title_copied">Título de la pista copiado</string>
     <string name="copy_station_name">Copiar nombre de la emisora</string>
     <string name="station_name_copied">Nombre de la emisora copiado</string>
     <string name="discover_stations">Descubrir emisoras</string>
+    <string name="station_curated_badge">Selección</string>
     <string name="discover_search_mode_name">Nombre</string>
     <string name="discover_search_mode_genre">Género</string>
     <string name="discover_search_mode_country">País</string>

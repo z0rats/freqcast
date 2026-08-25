@@ -2,8 +2,10 @@ package com.freqcast.ui
 
 import androidx.room.Room
 import com.freqcast.data.AppDatabase
+import com.freqcast.data.CuratedStations
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.ui.playback.SettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -19,6 +21,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,6 +35,7 @@ import org.robolectric.annotation.Config
 class MainViewModelTest {
     private lateinit var database: AppDatabase
     private lateinit var repository: RadioStationRepository
+    private lateinit var settingsStore: SettingsStore
 
     @Before
     fun setup() {
@@ -48,6 +52,7 @@ class MainViewModelTest {
                 .setTransactionExecutor { it.run() }
                 .build()
         repository = RadioStationRepository(database.radioStationDao())
+        settingsStore = SettingsStore(RuntimeEnvironment.getApplication())
     }
 
     @After
@@ -58,7 +63,7 @@ class MainViewModelTest {
 
     private fun createViewModel(scheduler: TestCoroutineScheduler): MainViewModel {
         Dispatchers.setMain(StandardTestDispatcher(scheduler))
-        return MainViewModel(repository)
+        return MainViewModel(repository, settingsStore)
     }
 
     private suspend fun TestScope.waitForStationsCount(
@@ -311,7 +316,12 @@ class MainViewModelTest {
                 RadioStation(name = "From Factory", streamUrl = "http://example.com/f"),
             )
             Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-            val vm = MainViewModel.provideFactory(repository).create(MainViewModel::class.java) as MainViewModel
+            val vm =
+                MainViewModel
+                    .provideFactory(
+                        repository,
+                        settingsStore,
+                    ).create(MainViewModel::class.java) as MainViewModel
             vm.loadStations()
             waitForStationsCount(vm, 1)
             val list = vm.stations.value
@@ -377,5 +387,45 @@ class MainViewModelTest {
 
             val restored = viewModel.stations.value.first { it.name == "First" }
             assertEquals(toDelete.id, restored.id)
+        }
+
+    @Test
+    fun `seedCuratedStationsIfNeeded inserts the curated pack once and sets swipeHintStationId`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+
+            viewModel.seedCuratedStationsIfNeeded(RuntimeEnvironment.getApplication())
+
+            val stations = database.radioStationDao().getAllStations()
+            assertEquals(CuratedStations.pack.size, stations.size)
+            assertEquals(CuratedStations.pack.map { it.name }, stations.map { it.name })
+            assertTrue(stations.all { it.isCurated })
+            assertEquals(stations[1].id, viewModel.swipeHintStationId.value)
+        }
+
+    @Test
+    fun `seedCuratedStationsIfNeeded is a no-op on a later call`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.seedCuratedStationsIfNeeded(RuntimeEnvironment.getApplication())
+            val firstRunCount = database.radioStationDao().getAllStations().size
+
+            viewModel.seedCuratedStationsIfNeeded(RuntimeEnvironment.getApplication())
+
+            assertEquals(firstRunCount, database.radioStationDao().getAllStations().size)
+        }
+
+    @Test
+    fun `clearSwipeHint clears swipeHintStationId`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.seedCuratedStationsIfNeeded(RuntimeEnvironment.getApplication())
+
+            viewModel.clearSwipeHint()
+
+            assertNull(viewModel.swipeHintStationId.value)
         }
 }

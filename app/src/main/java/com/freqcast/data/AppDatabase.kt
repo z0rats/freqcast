@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RadioStation::class, WakeAlarm::class, RadioTag::class], version = 11, exportSchema = true)
+@Database(entities = [RadioStation::class, WakeAlarm::class, RadioTag::class], version = 12, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun radioStationDao(): RadioStationDao
 
@@ -204,6 +204,19 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        /**
+         * Adds `isCurated`, marking rows from the hardcoded developer's-picks pack (see
+         * [com.freqcast.data.CuratedStations]); existing rows default to false.
+         */
+        val MIGRATION_11_12 =
+            object : Migration(11, 12) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE radio_stations ADD COLUMN isCurated INTEGER NOT NULL DEFAULT 0",
+                    )
+                }
+            }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -225,6 +238,7 @@ abstract class AppDatabase : RoomDatabase() {
                             MIGRATION_8_9,
                             MIGRATION_9_10,
                             MIGRATION_10_11,
+                            MIGRATION_11_12,
                         )
                         // Safety net only for schema jumps with no explicit migration
                         // (e.g. pre-1.0 installs skipping straight to a future version).

@@ -31,4 +31,11 @@ data class RadioStation(
     // null for manual adds. Lets RadioPlaybackService register a play as a "click" with the
     // directory (GET /json/url/{uuid}) to contribute to its popularity ranking.
     val radioBrowserUuid: String? = null,
+    // Marks a row from the hardcoded developer's-picks pack (see CuratedStations), seeded once on
+    // first launch - drives the "Curated" pill in StationItem. Deliberately NOT threaded through
+    // AddStationUiState/AddStationViewModel.save(): editing a curated station's full row resets
+    // this to false, same as any other field left out of the rebuilt entity - here that's the
+    // intended behavior (an edited station is no longer "as curated"), not the full-row-@Update
+    // trap this pattern usually causes elsewhere.
+    val isCurated: Boolean = false,
 )

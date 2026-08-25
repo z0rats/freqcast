@@ -19,6 +19,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -143,6 +144,64 @@ class TimeshiftControllerTest {
 
         controller.stop()
         assertFalse(controller.hasTimeshift())
+    }
+
+    @Test
+    fun `exportClip reports failure immediately when nothing is being recorded`() {
+        val resultLatch = CountDownLatch(1)
+        var result: Boolean? = null
+
+        controller.exportClip(5_000, tempFolder.newFile("clip.mp3")) {
+            result = it
+            resultLatch.countDown()
+        }
+
+        assertTrue(resultLatch.await(1, TimeUnit.SECONDS))
+        assertEquals(false, result)
+    }
+
+    @Test
+    fun `exportClip copies the buffered bytes to the destination file`() {
+        server.enqueue(MockResponse().addHeader("Content-Type", "audio/mpeg").setBody("x".repeat(20_000)))
+        controller.start(server.url("/stream").toString(), onError = {})
+        awaitTrue { controller.currentClipFormat() != null }
+        awaitTrue { controller.bufferedDurationMs() > 0 }
+
+        val destination = File(tempFolder.root, "clip.mp3")
+        val resultLatch = CountDownLatch(1)
+        var result: Boolean? = null
+
+        controller.exportClip(2_000, destination) {
+            result = it
+            resultLatch.countDown()
+        }
+
+        assertTrue(resultLatch.await(5, TimeUnit.SECONDS))
+        assertEquals(true, result)
+        assertTrue(destination.exists())
+        assertTrue(destination.length() > 0)
+    }
+
+    @Test
+    fun `exportClip reports failure when the buffer file can no longer be opened`() {
+        server.enqueue(MockResponse().setBody("x".repeat(10_000)))
+        controller.start(server.url("/stream").toString(), onError = {})
+        awaitTrue { controller.bufferedDurationMs() > 0 }
+        // Simulate the buffer file disappearing out from under exportClip (e.g. a concurrent
+        // stop()/restart racing it) without going through the controller's own stop(), so the
+        // controller's in-memory state still thinks it's recording.
+        controller.currentBufferFile()!!.delete()
+
+        val resultLatch = CountDownLatch(1)
+        var result: Boolean? = null
+
+        controller.exportClip(2_000, File(tempFolder.root, "clip.mp3")) {
+            result = it
+            resultLatch.countDown()
+        }
+
+        assertTrue(resultLatch.await(5, TimeUnit.SECONDS))
+        assertEquals(false, result)
     }
 
     @Test

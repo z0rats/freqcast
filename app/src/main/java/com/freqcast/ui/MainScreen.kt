@@ -144,7 +144,7 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermissionIfNeeded()
 
         val repository = RadioStationRepository.create(this)
-        val viewModelFactory = MainViewModel.provideFactory(repository)
+        val viewModelFactory = MainViewModel.provideFactory(repository, SettingsStore(this))
 
         setContent {
             val playbackController by rememberPlaybackController()
@@ -153,8 +153,11 @@ class MainActivity : AppCompatActivity() {
                 val viewModel: MainViewModel = viewModel(factory = viewModelFactory)
                 viewModelRef = viewModel
 
-                // Load stations on start
+                // Seed the hardcoded curated pack on a fresh install (no-op after the first run -
+                // see SettingsStore.hasSeededCuratedPack), then load stations on start.
+                val appContext = applicationContext
                 LaunchedEffect(Unit) {
+                    viewModel.seedCuratedStationsIfNeeded(appContext)
                     viewModel.loadStations()
                 }
 
@@ -292,6 +295,7 @@ fun MainScreen(
     val allStations by viewModel.stations.collectAsState(initial = emptyList())
     val searchQuery by viewModel.searchQuery.collectAsState()
     val currentPlayingStationId by viewModel.currentPlayingStationId.collectAsState()
+    val swipeHintStationId by viewModel.swipeHintStationId.collectAsState()
 
     // Keeps the long-press App Shortcuts (last played / favorite station) in sync. Re-runs on
     // every loadStations() (including plain onResume), which also happens to be the moment the
@@ -456,6 +460,8 @@ fun MainScreen(
                     isStarting = isStarting,
                     startError = startError,
                     trackTitle = trackTitle,
+                    swipeHintStationId = swipeHintStationId,
+                    onSwipeHintConsumed = { viewModel.clearSwipeHint() },
                     actions = listActions,
                     modifier = paneModifier,
                 )
@@ -577,6 +583,8 @@ private fun StationListPane(
     isStarting: Boolean,
     startError: Boolean,
     trackTitle: String?,
+    swipeHintStationId: Long?,
+    onSwipeHintConsumed: () -> Unit,
     actions: StationListActions,
     modifier: Modifier = Modifier,
 ) {
@@ -721,6 +729,8 @@ private fun StationListPane(
                         isStartError = isStationStartError,
                         isDragging = isDragging,
                         trackTitle = if (isStationPlaying) trackTitle else null,
+                        playSwipeHint = station.id == swipeHintStationId,
+                        onSwipeHintConsumed = onSwipeHintConsumed,
                         onPlayClick = {
                             if (isStationPlaying) actions.onStopPlayback() else actions.onStationItemPlayClick(station)
                         },

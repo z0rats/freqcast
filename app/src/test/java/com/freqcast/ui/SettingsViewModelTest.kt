@@ -2,6 +2,7 @@ package com.freqcast.ui
 
 import androidx.room.Room
 import com.freqcast.data.AppDatabase
+import com.freqcast.data.CuratedStations
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.UpdateChecker
 import com.freqcast.ui.playback.SettingsStore
@@ -21,6 +22,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -155,5 +157,33 @@ class SettingsViewModelTest {
             assertEquals(TimeshiftBufferSize.LARGE.mb, viewModel.uiState.value.timeshiftBufferSizeMb)
             val persisted = SettingsStore(RuntimeEnvironment.getApplication())
             assertEquals(TimeshiftBufferSize.LARGE.mb, persisted.timeshiftBufferSizeMb)
+        }
+
+    @Test
+    fun `restoreCuratedStations inserts the full pack into an empty library`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+
+            val restored = viewModel.restoreCuratedStations(RuntimeEnvironment.getApplication())
+
+            assertEquals(CuratedStations.pack.size, restored)
+            val stations = database.radioStationDao().getAllStations()
+            assertEquals(CuratedStations.pack.map { it.name }.toSet(), stations.map { it.name }.toSet())
+            assertTrue(stations.all { it.isCurated })
+        }
+
+    @Test
+    fun `restoreCuratedStations only re-inserts stations the user deleted, skipping ones still present`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            val keptStation = CuratedStations.pack.first()
+            database.radioStationDao().insertStation(keptStation)
+
+            val restored = viewModel.restoreCuratedStations(RuntimeEnvironment.getApplication())
+
+            assertEquals(CuratedStations.pack.size - 1, restored)
+            val stations = database.radioStationDao().getAllStations()
+            assertEquals(CuratedStations.pack.size, stations.size)
+            assertEquals(1, stations.count { it.name == keptStation.name })
         }
 }

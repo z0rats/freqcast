@@ -155,6 +155,15 @@ fun SettingsScreen(
         }
     }
 
+    val onRestoreCuratedClick: () -> Unit = {
+        coroutineScope.launch {
+            val restored = viewModel.restoreCuratedStations(context)
+            Toast
+                .makeText(context, context.getString(R.string.restore_curated_result, restored), Toast.LENGTH_SHORT)
+                .show()
+        }
+    }
+
     val importLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
@@ -359,6 +368,27 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(stringResource(R.string.import_stations), color = text_primary)
+                }
+            }
+
+            Card(
+                onClick = onRestoreCuratedClick,
+                modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp),
+                colors = CardDefaults.cardColors(containerColor = card_surface),
+                shape = MaterialTheme.shapes.large,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text(stringResource(R.string.settings_restore_curated), color = text_primary)
+                        Text(
+                            stringResource(R.string.settings_restore_curated_description),
+                            color = text_hint,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
 
