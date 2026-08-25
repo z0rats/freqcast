@@ -1,0 +1,3 @@
+New installs now come with a small hand-picked pack of stations to get you started — swipe left on any of them to remove it if it's not your taste.
+
+Added a "Restore curated stations" option in Settings to bring back any of them you've deleted.
