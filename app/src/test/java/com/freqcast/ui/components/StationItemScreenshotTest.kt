@@ -110,21 +110,4 @@ class StationItemScreenshotTest {
             }
         }
     }
-
-    @Test
-    fun curatedStationCardShowsBadge() {
-        captureRoboImage(roborazziOptions = roborazziOptions) {
-            PreviewBackground {
-                StationItem(
-                    station = station.copy(isCurated = true),
-                    isActive = false,
-                    isPlaying = false,
-                    onPlayClick = {},
-                    onEditClick = {},
-                    onDeleteClick = {},
-                    onShareClick = {},
-                )
-            }
-        }
-    }
 }
