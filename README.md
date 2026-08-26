@@ -34,6 +34,7 @@ Freqcast lets you paste the station's website instead. It first checks Radio Bro
 - 🎶 Live ICY metadata
 - 😴 Sleep timer and multiple wake-up alarms
 - 🏠 Home screen widget and Android Auto
+- 🤖 Play or stop a saved station via Gemini and other AI assistants, without opening the app (Android 16+)
 - 📤 Import/export station lists (JSON, OPML, M3U, PLS)
 - 📱 Tablet and foldable layouts
 - 🌐 Localized into English, Russian, Spanish and Simplified Chinese

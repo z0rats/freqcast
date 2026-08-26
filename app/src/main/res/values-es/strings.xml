@@ -76,8 +76,9 @@
     <string name="import_error">Error al importar: archivo no compatible o no válido (se esperaba una copia de seguridad de emisoras, OPML, M3U o PLS)</string>
     <string name="import_result">Importadas %1$d, omitidos %2$d duplicados</string>
     <string name="settings_restore_curated">Restaurar selección</string>
-    <string name="settings_restore_curated_description">Vuelve a añadir las emisoras de la selección que hayas eliminado</string>
     <string name="restore_curated_result">%1$d emisora(s) restaurada(s)</string>
+    <string name="settings_battery_optimization">Desactivar la optimización de batería</string>
+    <string name="settings_battery_optimization_description">Evita que el sistema detenga la reproducción en segundo plano y las alarmas. Recomendado, sobre todo en Xiaomi, Huawei, Samsung y otros móviles con ahorro de batería agresivo.</string>
     <string name="copy_track_title">Copiar título de la pista</string>
     <string name="track_title_copied">Título de la pista copiado</string>
     <string name="copy_station_name">Copiar nombre de la emisora</string>
@@ -154,4 +155,5 @@
     <string name="widget_tap_to_browse">Toca para abrir la app</string>
     <string name="widget_previous_station">Emisora anterior</string>
     <string name="widget_next_station">Emisora siguiente</string>
+    <string name="app_functions_description">Reproduce o detén tus emisoras guardadas mediante Gemini u otros asistentes de IA</string>
 </resources>

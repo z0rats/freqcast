@@ -76,8 +76,9 @@
     <string name="import_error">导入失败：不支持或无效的文件（应为电台备份、OPML、M3U 或 PLS 文件）</string>
     <string name="import_result">已导入 %1$d 个，跳过 %2$d 个重复项</string>
     <string name="settings_restore_curated">恢复精选电台</string>
-    <string name="settings_restore_curated_description">找回你删除的精选电台</string>
     <string name="restore_curated_result">已恢复 %1$d 个电台</string>
+    <string name="settings_battery_optimization">关闭电池优化</string>
+    <string name="settings_battery_optimization_description">防止系统在后台停止播放和闹钟。建议在小米、华为、三星等省电策略较激进的手机上开启。</string>
     <string name="copy_track_title">复制曲目标题</string>
     <string name="track_title_copied">曲目标题已复制</string>
     <string name="copy_station_name">复制电台名称</string>
@@ -154,4 +155,5 @@
     <string name="widget_tap_to_browse">点按以打开应用</string>
     <string name="widget_previous_station">上一个电台</string>
     <string name="widget_next_station">下一个电台</string>
+    <string name="app_functions_description">通过 Gemini 或其他 AI 助手播放或停止已保存的电台</string>
 </resources>

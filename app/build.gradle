@@ -146,6 +146,11 @@ dependencies {
     // Home screen widget (Glance: Compose-style API for RemoteViews-backed App Widgets).
     implementation libs.androidx.glance.appwidget
 
+    // Exposes "play/stop a station" to on-device AI agents (Gemini/Assistant) without opening
+    // the UI. Only active on Android 16+ (API 36) devices; a no-op elsewhere.
+    implementation libs.androidx.appfunctions
+    ksp libs.androidx.appfunctions.compiler
+
     testImplementation libs.junit
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.androidx.room.testing
@@ -155,6 +160,7 @@ dependencies {
     testImplementation libs.robolectric
     testImplementation libs.okhttp.mockwebserver
     testImplementation libs.androidx.glance.appwidget.testing
+    testImplementation libs.androidx.appfunctions.testing
 
     // Screenshot testing (Roborazzi over Robolectric's native-graphics mode)
     testImplementation libs.roborazzi

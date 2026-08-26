@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -63,6 +65,7 @@ import com.freqcast.ui.theme.freqcastGradientBackground
 import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
+import com.freqcast.util.BatteryOptimization
 import com.freqcast.util.StationShare
 import kotlinx.coroutines.launch
 
@@ -136,6 +139,13 @@ fun SettingsScreen(
             mutableStateOf(languageOptions.find { it.tag == currentLanguageTag } ?: languageOptions.first())
         }
     var languageMenuOpen by remember { mutableStateOf(false) }
+    var batteryOptimizationIgnored by
+        remember { mutableStateOf(BatteryOptimization.isIgnoringBatteryOptimizations(context)) }
+    val batteryOptimizationLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            // The system dialog reports no reliable result code either way — just re-check state.
+            batteryOptimizationIgnored = BatteryOptimization.isIgnoringBatteryOptimizations(context)
+        }
 
     val exportChooserTitle = stringResource(R.string.export_stations)
     val onExportClick: () -> Unit = {
@@ -203,6 +213,7 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .freqcastGradientBackground()
                     .padding(paddingValues)
+                    .verticalScroll(rememberScrollState())
                     .padding(Spacing.md),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -381,13 +392,31 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth().padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column {
-                        Text(stringResource(R.string.settings_restore_curated), color = text_primary)
-                        Text(
-                            stringResource(R.string.settings_restore_curated_description),
-                            color = text_hint,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                    Text(stringResource(R.string.settings_restore_curated), color = text_primary)
+                }
+            }
+
+            if (!batteryOptimizationIgnored) {
+                Card(
+                    onClick = {
+                        batteryOptimizationLauncher.launch(BatteryOptimization.requestExemptionIntent(context))
+                    },
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp),
+                    colors = CardDefaults.cardColors(containerColor = card_surface),
+                    shape = MaterialTheme.shapes.large,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text(stringResource(R.string.settings_battery_optimization), color = text_primary)
+                            Text(
+                                stringResource(R.string.settings_battery_optimization_description),
+                                color = text_hint,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
             }

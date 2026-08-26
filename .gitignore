@@ -97,3 +97,8 @@ lint/tmp/
 
 # OS-specific files
 Thumbs.db
+
+scripts
+
+# Personal Claude Code overrides (project-shared skills in .claude/skills/ ARE committed)
+.claude/settings.local.json

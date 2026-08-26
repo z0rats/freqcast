@@ -76,8 +76,9 @@
     <string name="import_error">Import failed: unsupported or invalid file (expected a stations backup, OPML, M3U, or PLS file)</string>
     <string name="import_result">Imported %1$d, skipped %2$d duplicates</string>
     <string name="settings_restore_curated">Restore curated stations</string>
-    <string name="settings_restore_curated_description">Add back any curated station you removed</string>
     <string name="restore_curated_result">Restored %1$d station(s)</string>
+    <string name="settings_battery_optimization">Disable battery optimization</string>
+    <string name="settings_battery_optimization_description">Keeps background playback and wake-up alarms from being stopped by the system. Recommended, especially on Xiaomi, Huawei, Samsung, and other phones with aggressive power saving.</string>
     <string name="copy_track_title">Copy track title</string>
     <string name="track_title_copied">Track title copied</string>
     <string name="copy_station_name">Copy station name</string>
@@ -154,4 +155,5 @@
     <string name="widget_tap_to_browse">Tap to open the app</string>
     <string name="widget_previous_station">Previous station</string>
     <string name="widget_next_station">Next station</string>
+    <string name="app_functions_description">Play or stop your saved stations using Gemini or other AI assistants</string>
 </resources>

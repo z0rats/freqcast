@@ -15,6 +15,7 @@ lifecycle = "2.11.0"
 room = "2.8.4"
 
 media3 = "1.11.0"
+appfunctions = "1.0.0-alpha10"
 guava = "33.7.1-android"
 okhttp = "5.5.0"
 kotlinxCoroutines = "1.11.0"
@@ -48,6 +49,10 @@ androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 androidx-media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3" }
+
+androidx-appfunctions = { module = "androidx.appfunctions:appfunctions", version.ref = "appfunctions" }
+androidx-appfunctions-compiler = { module = "androidx.appfunctions:appfunctions-compiler", version.ref = "appfunctions" }
+androidx-appfunctions-testing = { module = "androidx.appfunctions:appfunctions-testing", version.ref = "appfunctions" }
 
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
