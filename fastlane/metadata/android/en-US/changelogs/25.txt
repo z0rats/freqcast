@@ -1,0 +1,3 @@
+Freqcast can now play or stop a saved station when you ask Gemini or another AI assistant — no need to open the app (requires Android 16+).
+
+Added a "Disable battery optimization" option in Settings to keep background playback and wake-up alarms from being killed by aggressive power-saving on phones like Xiaomi, Huawei, and Samsung.
