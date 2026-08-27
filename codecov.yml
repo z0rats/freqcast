@@ -1,3 +1,16 @@
+coverage:
+  status:
+    # Matches AGENTS.md's Testing section: coverage is informational, not a merge gate (no
+    # koverVerify/minimum-bound rule locally either). The patch check specifically breaks hard
+    # whenever a commit's own CI run never uploads a report (push delivery hiccups do happen,
+    # e.g. commits 95578cf/1998f9f) - the next commit's "patch" then gets diffed against a stale
+    # multi-commit-old base and fails on unrelated pre-existing gaps, not on anything the new
+    # commit itself introduced. project stays a real (non-blocking, per fail_ci_if_error: false)
+    # signal since it tracks overall trend rather than being sensitive to a missed upload.
+    patch:
+      default:
+        informational: true
+
 ignore:
   # KSP-generated AppFunctions inventory/registry classes - not our code, not even present in the
   # repo (generated into app/build/generated/ at build time, gitignored). See AGENTS.md's
