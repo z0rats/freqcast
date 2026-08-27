@@ -1,0 +1,12 @@
+ignore:
+  # KSP-generated AppFunctions inventory/registry classes - not our code, not even present in the
+  # repo (generated into app/build/generated/ at build time, gitignored). See AGENTS.md's
+  # AppFunctions note under Architecture conventions.
+  - "**/appfunctions_aggregated_deps/**"
+  - "app/src/main/java/com/freqcast/appfunctions/$*.kt"
+
+  # Pure Compose theme boilerplate and static lookup data - no branches to exercise. Matches the
+  # project's existing coverage-effort policy (real functionality over chasing %), see AGENTS.md's
+  # Testing section.
+  - "app/src/main/java/com/freqcast/ui/theme/**"
+  - "app/src/main/java/com/freqcast/util/GenreCatalog.kt"

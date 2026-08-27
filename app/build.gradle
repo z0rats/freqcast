@@ -165,4 +165,8 @@ dependencies {
     // Screenshot testing (Roborazzi over Robolectric's native-graphics mode)
     testImplementation libs.roborazzi
     testImplementation libs.roborazzi.compose
+
+    // Compose interaction testing (DragDropState) under Robolectric, not just screenshots
+    testImplementation libs.androidx.compose.ui.test.junit4
+    testImplementation libs.androidx.compose.ui.test.manifest
 }
