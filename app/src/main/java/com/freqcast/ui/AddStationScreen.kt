@@ -69,8 +69,10 @@ import com.freqcast.ui.theme.card_surface
 import com.freqcast.ui.theme.card_surface_active
 import com.freqcast.ui.theme.freqcastFormFieldColors
 import com.freqcast.ui.theme.freqcastGradientBackground
+import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.EmojiGenerator
+import com.freqcast.util.FeedbackLinks
 import com.freqcast.util.IconStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -289,6 +291,43 @@ fun AddStationScreen(
                             colors = freqcastFormFieldColors(),
                             shape = MaterialTheme.shapes.medium,
                         )
+
+                        if (uiState.urlErrorRes == R.string.error_stream_unreachable ||
+                            uiState.urlErrorRes == R.string.error_stream_blocked_vpn
+                        ) {
+                            val reportExtra =
+                                stringResource(R.string.feedback_stream_not_found_body, uiState.url)
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                                Text(
+                                    stringResource(R.string.addstation_report_github),
+                                    color = glass_accent,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier =
+                                        Modifier.clickable {
+                                            context.startActivity(
+                                                FeedbackLinks.githubIssueIntent(
+                                                    body = FeedbackLinks.reportBody(context, reportExtra),
+                                                ),
+                                            )
+                                        },
+                                )
+                                Text(
+                                    stringResource(R.string.addstation_report_email),
+                                    color = glass_accent,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier =
+                                        Modifier.clickable {
+                                            val subject = context.getString(R.string.feedback_email_subject)
+                                            context.startActivity(
+                                                FeedbackLinks.emailIntent(
+                                                    subject,
+                                                    FeedbackLinks.reportBody(context, reportExtra),
+                                                ),
+                                            )
+                                        },
+                                )
+                            }
+                        }
 
                         OutlinedTextField(
                             value = uiState.description,
