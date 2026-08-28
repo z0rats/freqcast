@@ -1,0 +1,3 @@
+Added a way to report bugs or send feedback right from the app — new "Report a bug on GitHub" and "Send feedback" options in Settings, plus a quick link when adding a station fails to find its stream.
+
+Settings is now organized into grouped, icon-led rows so it stays easy to scan as it grows.
