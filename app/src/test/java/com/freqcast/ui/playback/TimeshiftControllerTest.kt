@@ -225,4 +225,46 @@ class TimeshiftControllerTest {
         assertTrue(metadataLatch.await(5, TimeUnit.SECONDS))
         assertEquals("Test Song", controller.currentTrackTitle())
     }
+
+    private fun icyMetaBlock(title: String): ByteArray {
+        val text = "StreamTitle='$title';"
+        val padded = text.padEnd(((text.length / 16) + 1) * 16, ' ')
+        return byteArrayOf((padded.length / 16).toByte()) + padded.toByteArray(Charsets.UTF_8)
+    }
+
+    @Test
+    fun `seeking backward shows the title that was playing at that position, not the live one`() {
+        val icyMetaInt = 64
+        val audioChunk = ByteArray(icyMetaInt) { 'A'.code.toByte() }
+        val responseBody =
+            Buffer()
+                .write(audioChunk)
+                .write(icyMetaBlock("First Song"))
+                .write(audioChunk)
+                .write(icyMetaBlock("Second Song"))
+                .write(audioChunk)
+        server.enqueue(
+            MockResponse()
+                .addHeader("icy-metaint", icyMetaInt)
+                .setBody(responseBody)
+                .throttleBody(32, 200, TimeUnit.MILLISECONDS),
+        )
+        val titles = mutableListOf<String>()
+
+        controller.start(server.url("/stream").toString(), onError = {}, onMetadata = { titles.add(it) })
+        awaitTrue(timeoutMs = 10_000) { titles.size >= 1 }
+        val positionAtFirstTitleMs = controller.bufferedDurationMs()
+        awaitTrue(timeoutMs = 10_000) { titles.size >= 2 }
+
+        // Rewind back to that earlier buffer position: how far behind live it now sits.
+        val offsetFromLiveMs = controller.bufferedDurationMs() - positionAtFirstTitleMs
+        controller.seekBackward(offsetFromLiveMs)
+        assertFalse(controller.isAtLive())
+        // Rewinding to roughly when "First Song" started must show it, not the meanwhile-live "Second Song".
+        assertEquals("First Song", controller.currentTrackTitle())
+
+        // Back at the live edge, the title reflects what's actually airing now.
+        controller.seekToLive()
+        assertEquals("Second Song", controller.currentTrackTitle())
+    }
 }

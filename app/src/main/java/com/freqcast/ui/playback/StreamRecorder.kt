@@ -13,6 +13,7 @@ import okhttp3.Request
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -67,6 +68,19 @@ class StreamRecorder(
     @Volatile
     private var currentTrackTitle: String? = null
 
+    /**
+     * Every title change, timestamped by elapsed ms since [startTimeMs] - the same clock basis
+     * [TimeshiftController.bufferedDurationMs] uses - so a seek back to an earlier buffer position
+     * can look up which track was actually playing there instead of always reporting the latest
+     * (live) title. Written only from the recording coroutine, read from the main thread.
+     */
+    private val titleHistory = CopyOnWriteArrayList<TitleAt>()
+
+    private data class TitleAt(
+        val atMs: Long,
+        val title: String,
+    )
+
     // Format detection: only touched from the recording coroutine, like the ICY state above.
     @Volatile
     private var clipFormat: ClipFormat? = null
@@ -80,6 +94,9 @@ class StreamRecorder(
     fun isRecording(): Boolean = recording.get()
 
     fun getCurrentTrackTitle(): String? = currentTrackTitle
+
+    /** The title that was in effect at [positionMs] into the recording, or null if unknown that early. */
+    fun getTrackTitleAt(positionMs: Long): String? = titleHistory.lastOrNull { it.atMs <= positionMs }?.title
 
     /**
      * The elementary audio container of the recorded bytes (MP3 or ADTS AAC), or null if not yet
@@ -231,6 +248,7 @@ class StreamRecorder(
                 ?.trim()
         if (!title.isNullOrEmpty() && title != currentTrackTitle) {
             currentTrackTitle = title
+            titleHistory.add(TitleAt(atMs = System.currentTimeMillis() - startTimeMs.get(), title = title))
             onMetadata(title)
         }
     }

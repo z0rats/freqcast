@@ -236,4 +236,48 @@ class StreamRecorderTest {
         assertEquals((icyMetaInt * 2).toLong(), outputFile.length())
         assertArrayEquals(audioChunk1 + audioChunk2, outputFile.readBytes())
     }
+
+    private fun icyMetaBlock(title: String): ByteArray {
+        val text = "StreamTitle='$title';"
+        val padded = text.padEnd(((text.length / 16) + 1) * 16, ' ')
+        return byteArrayOf((padded.length / 16).toByte()) + padded.toByteArray(Charsets.UTF_8)
+    }
+
+    @Test
+    fun `getTrackTitleAt returns the title that was in effect at an earlier buffer position`() {
+        val icyMetaInt = 64
+        val audioChunk = ByteArray(icyMetaInt) { 'A'.code.toByte() }
+        val responseBody =
+            Buffer()
+                .write(audioChunk)
+                .write(icyMetaBlock("First Song"))
+                .write(audioChunk)
+                .write(icyMetaBlock("Second Song"))
+                .write(audioChunk)
+        server.enqueue(
+            MockResponse()
+                .addHeader("icy-metaint", icyMetaInt)
+                .setBody(responseBody)
+                .throttleBody(32, 200, TimeUnit.MILLISECONDS),
+        )
+        val recorder = StreamRecorder(server.url("/stream").toString(), outputFile)
+        val titles = mutableListOf<String>()
+
+        recorder.start(onMetadata = { titles.add(it) })
+
+        awaitTrue(timeoutMs = 10_000) { titles.size >= 1 }
+        val firstTitleAtMs = System.currentTimeMillis() - recorder.getStartTimeMs()
+        awaitTrue(timeoutMs = 10_000) { titles.size >= 2 }
+        val secondTitleAtMs = System.currentTimeMillis() - recorder.getStartTimeMs()
+        awaitTrue { !recorder.isRecording() }
+
+        // Nothing was known yet right at the start of the recording.
+        assertEquals(null, recorder.getTrackTitleAt(0L))
+        // A position while "First Song" was airing still resolves to it, even after "Second Song" has since played.
+        assertEquals("First Song", recorder.getTrackTitleAt(firstTitleAtMs))
+        // A later position resolves to whichever title was current by then.
+        assertEquals("Second Song", recorder.getTrackTitleAt(secondTitleAtMs))
+        // The live/latest title is unaffected.
+        assertEquals("Second Song", recorder.getCurrentTrackTitle())
+    }
 }

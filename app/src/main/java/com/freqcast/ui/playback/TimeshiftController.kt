@@ -112,7 +112,16 @@ class TimeshiftController(
 
     fun hasTimeshift(): Boolean = recorder?.isRecording() == true
 
-    fun currentTrackTitle(): String? = recorder?.getCurrentTrackTitle()
+    /**
+     * At the live edge this is just the recorder's latest-seen title. Off the live edge (after a
+     * timeshift seek), the latest title would be wrong - it's whatever's airing *now*, not what was
+     * playing at the buffer position actually being listened to - so it's looked up by position
+     * instead via [StreamRecorder.getTrackTitleAt].
+     */
+    fun currentTrackTitle(): String? {
+        val rec = recorder ?: return null
+        return if (atLiveEdge) rec.getCurrentTrackTitle() else rec.getTrackTitleAt(currentAbsolutePositionMs())
+    }
 
     /** MP3/AAC or null (unknown, or a container out of clip-export's scope) - see [StreamRecorder.getClipFormat]. */
     fun currentClipFormat(): ClipFormat? = recorder?.getClipFormat()
