@@ -23,6 +23,15 @@ object CuratedStations {
                 isCurated = true,
             ),
             RadioStation(
+                name = "KRTD Radio",
+                // AzuraCast-hosted (krtd.049406.xyz), shortcode "krtd"; using the 320kbps "high"
+                // mount (AzuraCast's is_default mount for this station).
+                streamUrl = "https://krtd.049406.xyz/listen/krtd/high",
+                customIcon = "📡",
+                description = "Independent Radio · Electronic",
+                isCurated = true,
+            ),
+            RadioStation(
                 name = "KURS Radio",
                 streamUrl = "https://listen9.myradio24.com/kursradio",
                 customIcon = "🎙️",
@@ -58,6 +67,7 @@ object CuratedStations {
     private val iconRes: Map<String, Int> =
         mapOf(
             "Радио Зимы не будет" to R.raw.curated_znb,
+            "KRTD Radio" to R.raw.curated_krtd,
             "KURS Radio" to R.raw.curated_kurs,
             "HKCR" to R.raw.curated_hkcr,
             "SURPRISE.FM" to R.raw.curated_surprise,
