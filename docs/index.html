@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Freqcast — Internet radio, without the stream-URL hunt</title>
-<meta name="description" content="Freqcast is a free, open-source Android radio player. Paste a station's website and it finds, verifies, and adds the playable stream for you. No account, no ads, no catalog lock-in.">
+<title>Freqcast — Internet radio, fully tuned in</title>
+<meta name="description" content="Freqcast is a free, open-source Android radio player — background playback, Android Auto, a home-screen widget, live rewind, sleep timers and alarms. Add any station by pasting its website; Freqcast finds and verifies the stream for you.">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -141,7 +141,82 @@
   /* ---------- Hero ---------- */
   .hero {
     position: relative;
-    padding: 88px 0 64px;
+    padding: 56px 0 64px;
+  }
+  .tuner-strip {
+    position: sticky;
+    top: 64px;
+    z-index: 39;
+    height: 44px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(28, 19, 14, 0.55);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+  .tuner-strip::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px 26px);
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+    opacity: 0.7;
+  }
+  .tuner-labels {
+    position: relative;
+    z-index: 1;
+    max-width: var(--wrap);
+    margin: 0 auto;
+    height: 100%;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    color: var(--text-dim);
+  }
+  .tuner-needle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 65%;
+    pointer-events: none;
+  }
+  .tuner-needle::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 16px;
+    background: var(--accent);
+    box-shadow: 0 0 8px 1px var(--accent);
+  }
+  @media not (prefers-reduced-motion: reduce) {
+    .tuner-needle::before { animation: tuner-pulse 2.4s ease-in-out infinite; }
+  }
+  @keyframes tuner-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+  .tuner-readout {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-3);
+    text-shadow: 0 0 12px rgba(255, 184, 112, 0.7);
+    white-space: nowrap;
+  }
+  @media (max-width: 480px) {
+    .tuner-labels span:first-child, .tuner-labels span:nth-last-child(2) { display: none; }
+    .tuner-labels { font-size: 11px; }
   }
   .hero-grid {
     display: grid;
@@ -152,6 +227,10 @@
   @media (max-width: 860px) {
     .hero-grid { grid-template-columns: 1fr; }
     .hero-visual { order: -1; }
+  }
+  @media (max-width: 560px) {
+    .hero-visual { order: 0; }
+    .phone { width: 200px; }
   }
   .eyebrow {
     display: inline-flex;
@@ -300,12 +379,24 @@
     align-items: center;
   }
   @media (max-width: 860px) { .how { grid-template-columns: 1fr; } }
-  .steps { display: flex; flex-direction: column; gap: 22px; counter-reset: step; }
+  .steps { position: relative; display: flex; flex-direction: column; gap: 22px; counter-reset: step; }
+  .steps::before {
+    content: "";
+    position: absolute;
+    left: 16px;
+    top: 17px;
+    bottom: 17px;
+    width: 1px;
+    background: var(--border-strong);
+    z-index: 0;
+  }
   .step { display: flex; gap: 16px; }
   .step-num {
+    position: relative;
+    z-index: 1;
     flex: none;
     width: 34px; height: 34px;
-    border-radius: 10px;
+    border-radius: 50%;
     background: var(--surface-active);
     border: 1px solid var(--border);
     display: flex; align-items: center; justify-content: center;
@@ -335,6 +426,16 @@
     color: var(--text-soft);
     max-width: 58ch;
   }
+  .gripe-source {
+    margin-left: 8px;
+    font-style: normal;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .gripe-source:hover { color: var(--accent); text-decoration: underline; }
   .gripe-fix {
     flex: none;
     font-family: var(--font-mono);
@@ -348,6 +449,7 @@
   }
   @media (max-width: 640px) {
     .gripe { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .gripe-fix { white-space: normal; }
   }
   .demo-frame {
     border-radius: var(--radius-lg);
@@ -369,6 +471,7 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 18px;
   }
+  @media (min-width: 861px) { .feature-card:nth-child(10) { grid-column: 2; } }
   @media (max-width: 860px) { .features { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
   .feature-card {
@@ -380,12 +483,24 @@
   }
   .feature-card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
   .feature-icon {
+    position: relative;
     width: 38px; height: 38px;
-    border-radius: 10px;
+    border-radius: 50%;
     background: var(--accent-soft);
     display: flex; align-items: center; justify-content: center;
     margin-bottom: 16px;
     color: var(--accent);
+  }
+  .feature-icon::after {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: 50%;
+    width: 2px;
+    height: 6px;
+    border-radius: 1px;
+    background: var(--accent);
+    transform: translateX(-50%);
   }
   .feature-card h3 { margin: 0 0 8px; font-size: 15.5px; font-weight: 600; }
   .feature-card p { margin: 0; color: var(--text-soft); font-size: 14px; line-height: 1.55; }
@@ -546,15 +661,24 @@
   </div>
 </nav>
 
+<div class="tuner-strip" aria-hidden="true">
+  <div class="tuner-labels">
+    <span>88.1</span><span>94.5</span><span>99.9</span><span>104.3</span><span>108.7</span>
+    <div class="tuner-needle" id="tunerNeedle">
+      <span class="tuner-readout">102.5</span>
+    </div>
+  </div>
+</div>
+
 <header class="hero" id="top">
   <div class="wrap hero-grid">
     <div>
       <p class="eyebrow">Free &amp; open source · Android 10+</p>
-      <h1>Paste a station's <em>website</em>.<br>Not its stream URL.</h1>
+      <h1>Internet radio,<br><em>fully tuned in</em>.</h1>
       <p class="lede">
-        Most radio apps expect you to hunt down a raw <code>.mp3</code> or <code>.m3u8</code> link.
-        Freqcast checks the Radio Browser directory, then scans the site itself, finds the
-        playable stream, and verifies it works — before it ever touches your library.
+        Freqcast is a free, open-source Android radio player — background playback, Android Auto,
+        a home-screen widget, live rewind, sleep timers and wake-up alarms, all in one place.
+        Add a station by pasting its website; Freqcast does the rest.
       </p>
       <div class="cta-row">
         <a class="btn btn-primary" href="https://github.com/z0rats/freqcast/releases/latest">Download APK</a>
@@ -622,7 +746,7 @@
     </div>
     <div class="gripe-list">
       <div class="gripe">
-        <p class="gripe-complaint">"Ads cut into the stream every 5&ndash;10 minutes &mdash; sometimes restarting playback entirely."</p>
+        <p class="gripe-complaint">"Ads cut into the stream every 5&ndash;10 minutes &mdash; sometimes restarting playback entirely." <a class="gripe-source" href="https://otzovik.com/review_16777343.html" target="_blank" rel="noopener noreferrer">source ↗</a></p>
         <span class="gripe-fix">Zero ads. Always.</span>
       </div>
       <div class="gripe">
@@ -630,19 +754,19 @@
         <span class="gripe-fix">Export &amp; import — JSON, OPML, M3U, PLS</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"Favorites can't be reordered — you're stuck with whatever order you added them in."</p>
+        <p class="gripe-complaint">"Favorites can't be reordered — you're stuck with whatever order you added them in." <a class="gripe-source" href="https://4pda.to/forum/index.php?showtopic=970808&view=findpost&p=144466793" target="_blank" rel="noopener noreferrer">source ↗</a></p>
         <span class="gripe-fix">Drag to reorder, any time</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"Turned out the 'radio' app was quietly running dozens of third-party trackers."</p>
+        <p class="gripe-complaint">"Turned out the 'radio' app was quietly running dozens of third-party trackers." <a class="gripe-source" href="https://4pda.to/forum/index.php?showtopic=1049214&view=findpost&p=115466089" target="_blank" rel="noopener noreferrer">source ↗</a></p>
         <span class="gripe-fix">Zero trackers. GPL-3.0, F-Droid submission pending.</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"Adding a stream by hand either isn't supported, or the app crashes trying to reconnect."</p>
-        <span class="gripe-fix">Manual add + capped-backoff reconnect</span>
+        <p class="gripe-complaint">"Adding a stream by hand either isn't supported, or the app crashes trying to reconnect." <a class="gripe-source" href="https://forum.f-droid.org/t/usable-web-radio-streaming-app/33280" target="_blank" rel="noopener noreferrer">source ↗</a></p>
+        <span class="gripe-fix">Manual add + reconnects on its own</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"No Android Auto — a gap open-source radio apps have left unfilled for years."</p>
+        <p class="gripe-complaint">"No Android Auto — a gap open-source radio apps have left unfilled for years." <a class="gripe-source" href="https://github.com/segler-alex/RadioDroid/pull/1258" target="_blank" rel="noopener noreferrer">source ↗</a></p>
         <span class="gripe-fix">Android Auto, from day one</span>
       </div>
       <div class="gripe">
@@ -677,7 +801,7 @@
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
         </div>
         <h3>Discover stations</h3>
-        <p>Search the Radio Browser directory by name, genre, country, language, or stations near you — genre search offers offline autocomplete over the full tag catalog as you type.</p>
+        <p>Search a global directory of stations by name, genre, country, language, or what's near you.</p>
       </div>
 
       <div class="feature-card">
@@ -685,7 +809,7 @@
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path><path d="M3 21v-5h5"></path></svg>
         </div>
         <h3>Reconnects on its own</h3>
-        <p>Background playback with capped exponential-backoff retry when the network drops — not an infinite hammer.</p>
+        <p>If the connection drops, Freqcast waits a moment and tries again — without hammering your battery.</p>
       </div>
 
       <div class="feature-card">
@@ -700,8 +824,8 @@
         <div class="feature-icon">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"></path></svg>
         </div>
-        <h3>Live track metadata</h3>
-        <p>ICY metadata surfaces the current track title in real time, copyable with one tap.</p>
+        <h3>Live track title</h3>
+        <p>Shows the current track title in real time — copy it with one tap.</p>
       </div>
 
       <div class="feature-card">
@@ -878,7 +1002,7 @@ cd freqcast<br>
           <img src="icon-192.png" alt="">
           <span>Freqcast</span>
         </div>
-        <p class="footer-tag">Internet radio, without the stream-URL hunt.</p>
+        <p class="footer-tag">Internet radio, fully tuned in.</p>
       </div>
       <div class="footer-links">
         <a href="https://github.com/z0rats/freqcast">GitHub</a>
@@ -935,6 +1059,35 @@ cd freqcast<br>
       requestAnimationFrame(loop);
     })();
   }
+})();
+
+(function () {
+  var needle = document.getElementById('tunerNeedle');
+  var readout = needle ? needle.querySelector('.tuner-readout') : null;
+  if (!needle || !readout) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  var minFreq = 88.1, maxFreq = 108.7;
+  var ticking = false;
+
+  function update() {
+    var doc = document.documentElement;
+    var scrollable = doc.scrollHeight - doc.clientHeight;
+    var progress = scrollable > 0 ? window.scrollY / scrollable : 0;
+    progress = Math.max(0, Math.min(1, progress));
+    readout.textContent = (minFreq + progress * (maxFreq - minFreq)).toFixed(1);
+    needle.style.left = (8 + progress * 76) + '%';
+    ticking = false;
+  }
+
+  window.addEventListener('scroll', function () {
+    if (!ticking) {
+      requestAnimationFrame(update);
+      ticking = true;
+    }
+  }, { passive: true });
+
+  update();
 })();
 </script>
 
