@@ -739,9 +739,11 @@ class AddStationViewModelTest {
                 )
             val originalSortOrder = repository.getStationById(id)!!.sortOrder
             val viewModel = createViewModel(testScheduler, editingStationId = id)
-            // Wait for init's Room load to populate sortOrder before saving, same reasoning as the
-            // icon-replacement test above (Room's suspend calls hop off the virtual test scheduler).
-            awaitTrue { viewModel.uiState.value.sortOrder == originalSortOrder }
+            // Wait for init's Room load (which populates originalStation, used by save() to carry
+            // sortOrder through) before saving — a single advanceUntilIdle() isn't enough since
+            // Room's suspend DAO calls hop off the virtual test scheduler, same reasoning as the
+            // icon-replacement test below.
+            awaitTrue { viewModel.uiState.value.name == "Jazz FM" }
 
             viewModel.onDescriptionChange("smooth jazz")
             viewModel.save()

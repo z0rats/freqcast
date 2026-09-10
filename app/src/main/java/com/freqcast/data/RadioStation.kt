@@ -39,3 +39,29 @@ data class RadioStation(
     // trap this pattern usually causes elsewhere.
     val isCurated: Boolean = false,
 )
+
+/**
+ * Applies AddStationScreen's user-editable fields onto this (already-persisted) station, leaving
+ * every other field — sortOrder, isCurated, id, and anything added later — untouched. Replaces
+ * AddStationViewModel.finalizeSave() rebuilding a whole RadioStation by hand, which required every
+ * new field to be threaded through AddStationUiState just so the rebuild wouldn't reset it (bit us
+ * once with isFavorite, now removed). isHls/radioBrowserUuid merge with the freshly resolved
+ * network hints rather than being replaced by them, since a resolve can discover a better value
+ * than what's already stored without discarding what's there.
+ */
+fun RadioStation.withFormEdits(
+    name: String,
+    streamUrl: String,
+    customIcon: String?,
+    description: String?,
+    resolvedIsHls: Boolean,
+    resolvedRadioBrowserUuid: String?,
+): RadioStation =
+    copy(
+        name = name,
+        streamUrl = streamUrl,
+        customIcon = customIcon,
+        description = description,
+        isHls = resolvedIsHls || isHls,
+        radioBrowserUuid = resolvedRadioBrowserUuid ?: radioBrowserUuid,
+    )

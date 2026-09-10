@@ -14,6 +14,7 @@ import com.freqcast.data.ResolvedStation
 import com.freqcast.data.SniffOutcome
 import com.freqcast.data.SniffedRequest
 import com.freqcast.data.StationUrlResolver
+import com.freqcast.data.withFormEdits
 import com.freqcast.util.IconStorage
 import com.freqcast.util.StreamValidator
 import com.freqcast.util.WebViewStreamSniffer
@@ -39,17 +40,6 @@ data class AddStationUiState(
     /** What [AddStationViewModel.save] is currently doing, shown on the save button while [isSaving]. */
     val savingStageRes: Int? = null,
     val isEditing: Boolean = false,
-    /**
-     * Carried through unedited from the loaded station (this form has no way to reorder) so
-     * save()'s full-row @Update doesn't reset the station's manual list position back to 0. Only
-     * meaningful when editing — a new station's sortOrder is always assigned by
-     * RadioStationRepository.insertStation() regardless of this field's value.
-     */
-    val sortOrder: Int = 0,
-    /** Carried through unedited from the loaded station (this form has no HLS toggle) so save() doesn't clear it. */
-    val isHls: Boolean = false,
-    /** Carried through unedited from the loaded station (this form has no way to set it) so save() doesn't clear it. */
-    val radioBrowserUuid: String? = null,
     /**
      * Non-null while [CandidateStationPickerSheet][com.freqcast.ui.components.CandidateStationPickerSheet]
      * is showing - set when [StationUrlResolver.resolve][com.freqcast.data.StationUrlResolver.resolve]'s
@@ -98,23 +88,20 @@ class AddStationViewModel(
     private val eventChannel = Channel<AddStationEvent>(Channel.BUFFERED)
     val events: Flow<AddStationEvent> = eventChannel.receiveAsFlow()
 
-    /** The icon the station had in the DB before this edit session, for cleanup once a replacement is saved. */
-    private var originalCustomIcon: String? = null
+    /** The station as loaded from the DB, kept whole so [finalizeSave] can copy() form edits onto it. */
+    private var originalStation: RadioStation? = null
 
     init {
         editingStationId?.let { id ->
             viewModelScope.launch {
                 repository.getStationById(id)?.let { station ->
-                    originalCustomIcon = station.customIcon
+                    originalStation = station
                     _uiState.value =
                         _uiState.value.copy(
                             name = station.name,
                             url = station.streamUrl,
                             customIcon = station.customIcon,
                             description = station.description.orEmpty(),
-                            sortOrder = station.sortOrder,
-                            isHls = station.isHls,
-                            radioBrowserUuid = station.radioBrowserUuid,
                         )
                 }
             }
@@ -275,20 +262,20 @@ class AddStationViewModel(
             _uiState.value.description
                 .trim()
                 .ifBlank { null }
+        val original = originalStation
         val station =
-            if (id != null) {
-                RadioStation(
-                    id = id,
+            if (id != null && original != null) {
+                original.withFormEdits(
                     name = finalName,
                     streamUrl = resolved.streamUrl,
                     customIcon = finalIcon,
-                    sortOrder = _uiState.value.sortOrder,
                     description = finalDescription,
-                    isHls = resolved.isHls || _uiState.value.isHls,
-                    radioBrowserUuid = resolved.radioBrowserUuid ?: _uiState.value.radioBrowserUuid,
+                    resolvedIsHls = resolved.isHls,
+                    resolvedRadioBrowserUuid = resolved.radioBrowserUuid,
                 )
             } else {
                 RadioStation(
+                    id = id ?: 0,
                     name = finalName,
                     streamUrl = resolved.streamUrl,
                     customIcon = finalIcon,
@@ -302,6 +289,7 @@ class AddStationViewModel(
         } else {
             repository.insertStation(station)
         }
+        val originalCustomIcon = original?.customIcon
         if (originalCustomIcon != null && originalCustomIcon != finalIcon) {
             IconStorage.delete(originalCustomIcon)
         }
