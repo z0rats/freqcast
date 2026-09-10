@@ -16,6 +16,7 @@
     <string name="volume">音量</string>
     <string name="no_stations">暂无已保存的电台</string>
     <string name="no_search_results">没有符合搜索条件的电台</string>
+    <string name="search_catalog_results_label">在 Radio Browser 目录中找到</string>
     <string name="no_station_selected">选择一个电台以查看正在播放的内容</string>
     <string name="error_invalid_url">网址无效</string>
     <string name="error_network">网络错误</string>

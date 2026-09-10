@@ -16,6 +16,7 @@
     <string name="volume">Громкость</string>
     <string name="no_stations">Нет сохранённых станций</string>
     <string name="no_search_results">Ничего не найдено по запросу</string>
+    <string name="search_catalog_results_label">Есть в каталоге Radio Browser</string>
     <string name="no_station_selected">Выберите станцию, чтобы увидеть, что играет</string>
     <string name="error_invalid_url">Неверный URL</string>
     <string name="error_network">Ошибка сети</string>

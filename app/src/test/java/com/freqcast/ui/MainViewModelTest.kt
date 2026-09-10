@@ -1,8 +1,10 @@
 package com.freqcast.ui
 
+import android.graphics.Bitmap
 import androidx.room.Room
 import com.freqcast.data.AppDatabase
 import com.freqcast.data.CuratedStations
+import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.playback.SettingsStore
@@ -10,14 +12,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -28,14 +35,24 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
+import java.io.File
 
+/**
+ * Native graphics mode (not the legacy Robolectric shadow) so the favicon-download test's real PNG
+ * bytes decode back through [com.freqcast.util.IconStorage.saveImageBytes] — same rationale as
+ * `DiscoverStationsViewModelTest`/`IconStorageTest`.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class MainViewModelTest {
     private lateinit var database: AppDatabase
     private lateinit var repository: RadioStationRepository
     private lateinit var settingsStore: SettingsStore
+    private lateinit var server: MockWebServer
 
     @Before
     fun setup() {
@@ -53,17 +70,31 @@ class MainViewModelTest {
                 .build()
         repository = RadioStationRepository(database.radioStationDao())
         settingsStore = SettingsStore(RuntimeEnvironment.getApplication())
+        server = MockWebServer()
+        server.start()
     }
 
     @After
     fun tearDown() {
         database.close()
+        server.shutdown()
         Dispatchers.resetMain()
     }
 
     private fun createViewModel(scheduler: TestCoroutineScheduler): MainViewModel {
         Dispatchers.setMain(StandardTestDispatcher(scheduler))
-        return MainViewModel(repository, settingsStore)
+        return MainViewModel(repository, settingsStore, RadioBrowserApi(baseUrl = server.url("/")))
+    }
+
+    private fun pngBytesFor(
+        width: Int,
+        height: Int,
+    ): ByteArray {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        return ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.toByteArray()
+        }
     }
 
     private suspend fun TestScope.waitForStationsCount(
@@ -427,5 +458,205 @@ class MainViewModelTest {
             viewModel.clearSwipeHint()
 
             assertNull(viewModel.swipeHintStationId.value)
+        }
+
+    @Test
+    fun `catalog fallback search is debounced and only fires once after typing settles`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+
+            viewModel.updateSearchQuery("j")
+            advanceTimeBy(100)
+            viewModel.updateSearchQuery("ja")
+            advanceTimeBy(100)
+            viewModel.updateSearchQuery("jazz")
+            waitUntil {
+                viewModel.catalogFallback.value.results
+                    .isNotEmpty()
+            }
+
+            assertEquals(1, server.requestCount)
+            assertEquals(
+                "Jazz FM",
+                viewModel.catalogFallback.value.results[0]
+                    .name,
+            )
+        }
+
+    @Test
+    fun `catalog fallback does not search below the minimum query length`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+
+            viewModel.updateSearchQuery("ja")
+            advanceUntilIdle()
+
+            assertEquals(0, server.requestCount)
+            assertTrue(
+                viewModel.catalogFallback.value.results
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `catalog fallback does not search while local results are non-empty`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            database.radioStationDao().insertStation(
+                RadioStation(name = "Jazz Radio", streamUrl = "http://example.com/jazz"),
+            )
+            viewModel.loadStations()
+            waitForStationsCount(viewModel, 1)
+
+            viewModel.updateSearchQuery("jazz")
+            advanceUntilIdle()
+
+            assertEquals(0, server.requestCount)
+            assertTrue(
+                viewModel.catalogFallback.value.results
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `catalog fallback search failure leaves results empty without crashing`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(500))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+
+            viewModel.updateSearchQuery("jazz")
+            // query flips to "jazz" (together with isSearching = true) only once runCatalogSearch
+            // actually starts, so this can't return before the debounced search has run - unlike
+            // polling !isSearching alone, which starts (falsely) true.
+            waitUntil {
+                viewModel.catalogFallback.value.query == "jazz" && !viewModel.catalogFallback.value.isSearching
+            }
+
+            assertTrue(
+                viewModel.catalogFallback.value.results
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `catalog fallback clears once a local match appears`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.updateSearchQuery("jazz")
+            waitUntil {
+                viewModel.catalogFallback.value.results
+                    .isNotEmpty()
+            }
+
+            // A station matching the query shows up locally through some other path (e.g. added
+            // via the AddStation screen while this search stays active) - the fallback should get
+            // out of the way once the local search itself has something to show.
+            database.radioStationDao().insertStation(
+                RadioStation(name = "Local Jazz", streamUrl = "http://example.com/local-jazz"),
+            )
+            viewModel.loadStations()
+
+            waitUntil {
+                viewModel.catalogFallback.value.results
+                    .isEmpty()
+            }
+        }
+
+    @Test
+    fun `addStationFromCatalog inserts the station and marks its url as added`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.updateSearchQuery("jazz")
+            waitUntil {
+                viewModel.catalogFallback.value.results
+                    .isNotEmpty()
+            }
+            val station = viewModel.catalogFallback.value.results[0]
+
+            viewModel.addStationFromCatalog(RuntimeEnvironment.getApplication(), station)
+            waitForStationsCount(viewModel, 1)
+
+            assertEquals("Jazz FM", database.radioStationDao().getAllStations()[0].name)
+        }
+
+    @Test
+    fun `addStationFromCatalog marks an already-saved url as added without inserting a duplicate`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            // Already saved under a name that doesn't itself contain "jazz" - filteredStations
+            // still comes up empty for that query, so the catalog fallback still triggers, and
+            // addStationFromCatalog's repository.isUrlTaken(station.url) check is what has to
+            // catch the collision instead.
+            database.radioStationDao().insertStation(
+                RadioStation(name = "Existing FM", streamUrl = "http://example.com/jazz"),
+            )
+            viewModel.loadStations()
+            viewModel.updateSearchQuery("jazz")
+            waitUntil {
+                viewModel.catalogFallback.value.results
+                    .isNotEmpty()
+            }
+            val station = viewModel.catalogFallback.value.results[0]
+
+            viewModel.addStationFromCatalog(RuntimeEnvironment.getApplication(), station)
+            waitUntil {
+                viewModel.catalogFallback.value.addedUrls
+                    .contains(station.url)
+            }
+
+            assertEquals(1, database.radioStationDao().getAllStations().size)
+        }
+
+    @Test
+    fun `addStationFromCatalog downloads the favicon in the background and sets it as customIcon`() =
+        runTest {
+            server.enqueue(MockResponse().setBody("""[{"name":"Jazz FM","url":"http://example.com/jazz"}]"""))
+            server.enqueue(MockResponse().setBody(Buffer().write(pngBytesFor(64, 64))))
+            val viewModel = createViewModel(testScheduler)
+            advanceUntilIdle()
+            viewModel.updateSearchQuery("jazz")
+            waitUntil {
+                viewModel.catalogFallback.value.results
+                    .isNotEmpty()
+            }
+            val faviconUrl = server.url("/favicon.png").toString()
+            val station =
+                viewModel.catalogFallback.value.results[0]
+                    .copy(favicon = faviconUrl)
+
+            viewModel.addStationFromCatalog(RuntimeEnvironment.getApplication(), station)
+            waitForStationsCount(viewModel, 1)
+
+            // The favicon download+DB update chains multiple real-dispatcher hops (network IO,
+            // bitmap decode, two Room calls) - see DiscoverStationsViewModelTest's identical poll
+            // for why a real Thread.sleep-based wall-clock loop is needed here instead of
+            // advanceUntilIdle() alone.
+            var customIcon: String? = null
+            val deadline = System.currentTimeMillis() + 5000
+            while (customIcon == null && System.currentTimeMillis() < deadline) {
+                advanceUntilIdle()
+                customIcon =
+                    runBlocking {
+                        database
+                            .radioStationDao()
+                            .getAllStations()
+                            .firstOrNull()
+                            ?.customIcon
+                    }
+                if (customIcon == null) Thread.sleep(20)
+            }
+
+            assertTrue(customIcon != null && File(customIcon).exists())
         }
 }

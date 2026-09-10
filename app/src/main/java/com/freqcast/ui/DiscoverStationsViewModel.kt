@@ -10,15 +10,13 @@ import androidx.lifecycle.viewModelScope
 import com.freqcast.R
 import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioBrowserStation
-import com.freqcast.data.RadioStation
+import com.freqcast.data.RadioBrowserStationInstaller
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.RadioTag
 import com.freqcast.data.RadioTagRepository
 import com.freqcast.util.CountryCatalog
-import com.freqcast.util.IconStorage
 import com.freqcast.util.LocationProvider
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -26,7 +24,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
 enum class DiscoverSearchMode { NAME, GENRE, COUNTRY, NEARBY }
@@ -62,6 +59,8 @@ class DiscoverStationsViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DiscoverStationsUiState())
     val uiState: StateFlow<DiscoverStationsUiState> = _uiState.asStateFlow()
+
+    private val installer = RadioBrowserStationInstaller(repository, api)
 
     private var searchJob: Job? = null
     private var suggestJob: Job? = null
@@ -358,46 +357,9 @@ class DiscoverStationsViewModel(
     fun addStation(station: RadioBrowserStation) {
         if (_uiState.value.addedUrls.contains(station.url)) return
         viewModelScope.launch {
-            if (repository.isUrlTaken(station.url)) {
+            if (installer.install(this, appContext, station)) {
                 _uiState.value = _uiState.value.copy(addedUrls = _uiState.value.addedUrls + station.url)
-                return@launch
             }
-            val name = repository.uniqueName(station.name)
-            try {
-                val stationId =
-                    repository.insertStation(
-                        RadioStation(
-                            name = name,
-                            streamUrl = station.url,
-                            customIcon = null,
-                            description = station.tags.takeIf { it.isNotBlank() },
-                            isHls = station.hls,
-                            radioBrowserUuid = station.uuid.takeIf { it.isNotBlank() },
-                        ),
-                    )
-                _uiState.value = _uiState.value.copy(addedUrls = _uiState.value.addedUrls + station.url)
-                // Fire-and-forget: fills in the station's real logo once downloaded, in the
-                // background, rather than blocking the "Added" checkmark on a network round-trip.
-                // Falls back to the auto-generated emoji (already showing) if the favicon is
-                // missing/unreachable, or if this ViewModel's scope is gone before it finishes.
-                station.favicon.takeIf { it.isNotBlank() }?.let { faviconUrl ->
-                    launch { downloadAndSetFavicon(stationId, faviconUrl) }
-                }
-            } catch (e: Exception) {
-                // Defense-in-depth unique constraints (see AppDatabase) can still race with the
-                // isUrlTaken/isNameTaken checks above; leave the station unmarked so the user can retry.
-            }
-        }
-    }
-
-    private suspend fun downloadAndSetFavicon(
-        stationId: Long,
-        faviconUrl: String,
-    ) {
-        val bytes = api.downloadFavicon(faviconUrl) ?: return
-        val path = withContext(Dispatchers.IO) { IconStorage.saveImageBytes(appContext, bytes) } ?: return
-        repository.getStationById(stationId)?.let { current ->
-            repository.updateStation(current.copy(customIcon = path))
         }
     }
 

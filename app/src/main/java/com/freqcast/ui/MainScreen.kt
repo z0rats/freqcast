@@ -35,6 +35,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
@@ -78,12 +80,14 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.freqcast.R
+import com.freqcast.data.RadioBrowserStation
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.StationBackupJson
 import com.freqcast.ui.components.ConnectionErrorToastEffect
 import com.freqcast.ui.components.NowPlayingBottomBar
 import com.freqcast.ui.components.PlaybackStatus
+import com.freqcast.ui.components.RadioBrowserResultCard
 import com.freqcast.ui.components.StationItem
 import com.freqcast.ui.components.dragContainer
 import com.freqcast.ui.components.rememberDragDropState
@@ -715,10 +719,12 @@ private fun StationListPane(
                 message = stringResource(R.string.no_stations),
             )
         } else if (stations.isEmpty() && searchQuery.isNotBlank()) {
-            EmptyStationsMessage(
-                icon = "🔍",
-                title = null,
-                message = stringResource(R.string.no_search_results),
+            val catalogFallback by viewModel.catalogFallback.collectAsState()
+            val fallbackContext = LocalContext.current
+            CatalogFallbackSection(
+                localEmptyMessage = stringResource(R.string.no_search_results),
+                fallback = catalogFallback,
+                onAddClick = { station -> viewModel.addStationFromCatalog(fallbackContext, station) },
             )
         } else {
             val lazyListState = rememberLazyListState()
@@ -794,6 +800,50 @@ private fun StationListPane(
                                 },
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Shown in place of [EmptyStationsMessage] once the local search comes up empty for a non-trivial
+ * query — see [MainViewModel.catalogFallback]. [fallback] stays empty (no separate error text)
+ * both while the debounced search hasn't produced results yet and if it fails outright, so this
+ * quietly degrades back to the same message [EmptyStationsMessage] would show on its own.
+ */
+@Composable
+private fun CatalogFallbackSection(
+    localEmptyMessage: String,
+    fallback: CatalogFallbackState,
+    onAddClick: (RadioBrowserStation) -> Unit,
+) {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+    ) {
+        Text(
+            text = localEmptyMessage,
+            style = MaterialTheme.typography.bodyMedium,
+            color = text_secondary,
+        )
+
+        if (fallback.results.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.search_catalog_results_label),
+                style = MaterialTheme.typography.labelSmall,
+                color = text_secondary,
+                modifier = Modifier.padding(top = Spacing.md, bottom = Spacing.sm),
+            )
+            fallback.results.forEach { station ->
+                RadioBrowserResultCard(
+                    station = station,
+                    isAdded = fallback.addedUrls.contains(station.url),
+                    onAddClick = { onAddClick(station) },
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
             }
         }
     }

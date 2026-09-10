@@ -16,6 +16,7 @@
     <string name="volume">Volumen</string>
     <string name="no_stations">No hay emisoras guardadas</string>
     <string name="no_search_results">Ninguna emisora coincide con tu búsqueda</string>
+    <string name="search_catalog_results_label">Encontrado en el catálogo de Radio Browser</string>
     <string name="no_station_selected">Selecciona una emisora para ver qué está sonando</string>
     <string name="error_invalid_url">URL no válida</string>
     <string name="error_network">Error de red</string>

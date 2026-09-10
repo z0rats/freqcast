@@ -16,6 +16,7 @@
     <string name="volume">Volume</string>
     <string name="no_stations">No saved stations</string>
     <string name="no_search_results">No stations match your search</string>
+    <string name="search_catalog_results_label">Found in the Radio Browser catalog</string>
     <string name="no_station_selected">Select a station to see what\'s playing</string>
     <string name="error_invalid_url">Invalid URL</string>
     <string name="error_network">Network error</string>
