@@ -1,14 +1,9 @@
 package com.freqcast.ui.components
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -32,14 +27,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -60,7 +52,6 @@ import com.freqcast.ui.theme.glass_accent
 import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.formatOffsetFromLive
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
@@ -82,24 +73,10 @@ fun NowPlayingBottomBar(
     if (station == null) return
 
     val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
-    val offsetPx = remember { Animatable(0f) }
 
     val currentIndex = stations.indexOfFirst { it.id == station.id }
     val prevStation = if (currentIndex > 0) stations[currentIndex - 1] else null
     val nextStation = if (currentIndex in 0 until stations.size - 1) stations[currentIndex + 1] else null
-
-    val switchThresholdPx = with(density) { 72.dp.toPx() }
-    val maxDragPx = with(density) { 180.dp.toPx() }
-    val overscrollMaxPx = with(density) { 48.dp.toPx() }
-    val resistanceFactor = 0.3f
-
-    val bounceSpec =
-        spring<Float>(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow,
-        )
-    val slideSpec = tween<Float>(durationMillis = 280)
 
     BoxWithConstraints(
         modifier =
@@ -112,61 +89,22 @@ fun NowPlayingBottomBar(
         val gap = 14.dp
         val cardWidthPx = with(density) { cardWidth.toPx() }.toInt()
         val gapPx = with(density) { gap.toPx() }.toInt()
-        val targetForPrevPx = (cardWidthPx + gapPx).toFloat()
-        val targetForNextPx = -(cardWidthPx + gapPx).toFloat()
+        val carouselState =
+            rememberStationCarouselState(
+                station = station,
+                prevStation = prevStation,
+                nextStation = nextStation,
+                cardWidthPx = cardWidthPx,
+                gapPx = gapPx,
+                onSwitchStation = onSwitchStation,
+            )
 
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .height(80.dp)
-                    .pointerInput(station.id, prevStation?.id, nextStation?.id, cardWidthPx, gapPx) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                val current = offsetPx.value
-                                when {
-                                    current > switchThresholdPx && prevStation != null -> {
-                                        scope.launch {
-                                            offsetPx.animateTo(targetForPrevPx, slideSpec)
-                                            onSwitchStation(prevStation)
-                                            offsetPx.snapTo(0f)
-                                        }
-                                    }
-
-                                    current < -switchThresholdPx && nextStation != null -> {
-                                        scope.launch {
-                                            offsetPx.animateTo(targetForNextPx, slideSpec)
-                                            onSwitchStation(nextStation)
-                                            offsetPx.snapTo(0f)
-                                        }
-                                    }
-
-                                    else -> {
-                                        scope.launch {
-                                            offsetPx.animateTo(0f, bounceSpec)
-                                        }
-                                    }
-                                }
-                            },
-                        ) { _, dragAmount ->
-                            val hasPrev = prevStation != null
-                            val hasNext = nextStation != null
-                            val effectiveAmount =
-                                when {
-                                    dragAmount > 0 -> if (hasPrev) dragAmount else dragAmount * resistanceFactor
-                                    else -> if (hasNext) dragAmount else dragAmount * resistanceFactor
-                                }
-                            val newOffset = offsetPx.value + effectiveAmount
-                            val clamped =
-                                when {
-                                    hasPrev && hasNext -> newOffset.coerceIn(-maxDragPx, maxDragPx)
-                                    hasPrev -> newOffset.coerceIn(-overscrollMaxPx, maxDragPx)
-                                    hasNext -> newOffset.coerceIn(-maxDragPx, overscrollMaxPx)
-                                    else -> newOffset.coerceIn(-overscrollMaxPx, overscrollMaxPx)
-                                }
-                            scope.launch { offsetPx.snapTo(clamped) }
-                        }
-                    },
+                    .stationCarouselTarget(carouselState),
         ) {
             SubcomposeLayout(
                 modifier = Modifier.clickable(onClick = onCardClick),
@@ -212,7 +150,7 @@ fun NowPlayingBottomBar(
                         }
                     }.map { it.measure(rowConstraints) }.first()
 
-                val offsetX = (-(cardWidthPx + gapPx) + offsetPx.value).roundToInt()
+                val offsetX = (-(cardWidthPx + gapPx) + carouselState.offsetPx).roundToInt()
                 layout(constraints.maxWidth, rowPlaceable.height) {
                     rowPlaceable.placeRelative(offsetX, 0)
                 }
