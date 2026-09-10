@@ -793,11 +793,18 @@ class RadioPlaybackService : MediaLibraryService() {
         refreshSnapshot()
     }
 
-    fun isPlaying(): Boolean = player?.isPlaying ?: false
+    // getPlayer/hasTimeshift (below) are `internal`, not `public`: PlaybackController
+    // (ui/playback/controller/PlaybackController.kt) is the narrow seam Compose/Activity code
+    // binds through instead, sourcing the same information from PlaybackSnapshot - getPlayer()
+    // in particular returns the raw ExoPlayer, which would bypass that seam entirely if ever
+    // called from outside. `internal` (not `private`) only because the tests named on each still
+    // need direct access, same reasoning as loadBrowsableStations()/playFromBrowseTree() below.
+    // isPlaying()/isBuffering()/bufferedDurationMs()/isAtLive()/offsetFromLiveMs() equivalents
+    // used to live here too, entirely unused (even internally - refreshSnapshot() below reads
+    // timeshift/player directly) - deleted rather than narrowed.
 
-    fun isBuffering(): Boolean = player?.playbackState == Player.STATE_BUFFERING
-
-    fun getPlayer(): ExoPlayer? = player
+    /** Only used by [RadioPlaybackServiceStartCommandTest]/[RadioPlaybackServiceAutoTest]/[RadioPlaybackServiceMetadataTest]. */
+    internal fun getPlayer(): ExoPlayer? = player
 
     fun getCurrentStationName(): String? = currentRequest?.stationName
 
@@ -806,12 +813,6 @@ class RadioPlaybackService : MediaLibraryService() {
     fun seekToLive() = applyTimeshiftSeek(timeshift.seekToLive())
 
     fun seekToOffsetFromLive(offsetMs: Long) = applyTimeshiftSeek(timeshift.seekToOffsetFromLive(offsetMs))
-
-    /** Total duration currently held in the timeshift buffer, in ms. 0 if not recording. */
-    fun bufferedDurationMs(): Long = timeshift.bufferedDurationMs()
-
-    /** How far behind the live edge playback currently sits, in ms. 0 when at live. */
-    fun offsetFromLiveMs(): Long = timeshift.offsetFromLiveMs()
 
     /** MP3/AAC or null - see [TimeshiftController.currentClipFormat]. Drives clip-export's UI gating. */
     fun currentClipFormat(): ClipFormat? = timeshift.currentClipFormat()
@@ -843,9 +844,8 @@ class RadioPlaybackService : MediaLibraryService() {
         player?.play()
     }
 
-    fun isAtLive(): Boolean = timeshift.isAtLive()
-
-    fun hasTimeshift(): Boolean = timeshift.hasTimeshift()
+    /** Only used by [RadioPlaybackServiceTickerTest]/[ServiceBackedPlaybackControllerTest] - see the note above [getPlayer]. */
+    internal fun hasTimeshift(): Boolean = timeshift.hasTimeshift()
 
     /**
      * Forces `COMMAND_SEEK_BACK`/`COMMAND_SEEK_FORWARD` on so external surfaces (notification,
