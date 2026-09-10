@@ -431,32 +431,21 @@ fun NowPlayingContent(
                     if (isPlaying && trackTitle != null) {
                         TrackTitleRow(trackTitle = trackTitle ?: "")
                     }
-                    if (hasTimeshift) {
-                        TimeshiftControls(
-                            isAtLive = isAtLive,
-                            bufferedDurationMs = bufferedDurationMs,
-                            offsetFromLiveMs = offsetFromLiveMs,
-                            onSeekToOffset = { playbackController?.seekToOffsetFromLive(it) },
-                            onRewind = { playbackController?.seekBackward(it) },
-                            onSeekToLive = { playbackController?.seekToLive() },
-                        )
-                    }
-                    PlayPauseButton(status = status, onClick = onPlayStopClick, size = 60.dp)
-                    PlayerDock {
-                        SleepTimerControl(
-                            sleepTimerRemainingMs = sleepTimerRemainingMs,
-                            playbackController = playbackController,
-                            context = context,
-                        )
-                        if (hasTimeshift && clipFormatAvailable) {
-                            ClipExportControl(
-                                stationName = displayName,
-                                bufferedDurationMs = bufferedDurationMs,
-                                playbackController = playbackController,
-                                context = context,
-                            )
-                        }
-                    }
+                    PlayerControlsCluster(
+                        status = status,
+                        onPlayStopClick = onPlayStopClick,
+                        playPauseSize = 60.dp,
+                        hasTimeshift = hasTimeshift,
+                        bufferedDurationMs = bufferedDurationMs,
+                        offsetFromLiveMs = offsetFromLiveMs,
+                        isAtLive = isAtLive,
+                        clipFormatAvailable = clipFormatAvailable,
+                        displayName = displayName,
+                        sleepTimerRemainingMs = sleepTimerRemainingMs,
+                        playbackController = playbackController,
+                        context = context,
+                        extraVerticalSpacing = false,
+                    )
                 }
             }
         } else {
@@ -490,38 +479,77 @@ fun NowPlayingContent(
                     TrackTitleRow(trackTitle = trackTitle ?: "")
                 }
 
-                if (hasTimeshift) {
-                    Spacer(modifier = Modifier.height(Spacing.xs))
-                    TimeshiftControls(
-                        isAtLive = isAtLive,
-                        bufferedDurationMs = bufferedDurationMs,
-                        offsetFromLiveMs = offsetFromLiveMs,
-                        onSeekToOffset = { playbackController?.seekToOffsetFromLive(it) },
-                        onRewind = { playbackController?.seekBackward(it) },
-                        onSeekToLive = { playbackController?.seekToLive() },
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.xs))
-                PlayPauseButton(status = status, onClick = onPlayStopClick, size = 64.dp)
-                Spacer(modifier = Modifier.height(Spacing.xs))
-
-                PlayerDock {
-                    SleepTimerControl(
-                        sleepTimerRemainingMs = sleepTimerRemainingMs,
-                        playbackController = playbackController,
-                        context = context,
-                    )
-                    if (hasTimeshift && clipFormatAvailable) {
-                        ClipExportControl(
-                            stationName = displayName,
-                            bufferedDurationMs = bufferedDurationMs,
-                            playbackController = playbackController,
-                            context = context,
-                        )
-                    }
-                }
+                PlayerControlsCluster(
+                    status = status,
+                    onPlayStopClick = onPlayStopClick,
+                    playPauseSize = 64.dp,
+                    hasTimeshift = hasTimeshift,
+                    bufferedDurationMs = bufferedDurationMs,
+                    offsetFromLiveMs = offsetFromLiveMs,
+                    isAtLive = isAtLive,
+                    clipFormatAvailable = clipFormatAvailable,
+                    displayName = displayName,
+                    sleepTimerRemainingMs = sleepTimerRemainingMs,
+                    playbackController = playbackController,
+                    context = context,
+                    extraVerticalSpacing = true,
+                )
             }
+        }
+    }
+}
+
+/**
+ * The transport controls cluster (timeshift row, play/pause, sleep timer + clip export dock) -
+ * wired identically by both of [NowPlayingContent]'s landscape/portrait branches except for
+ * [playPauseSize] and [extraVerticalSpacing] (portrait's slightly more generous vertical rhythm,
+ * see the playback-redesign artifact). Emits its children directly rather than wrapping them in
+ * its own Column, so the caller's own `verticalArrangement` still governs spacing between them,
+ * same as when this was written inline.
+ */
+@Composable
+private fun PlayerControlsCluster(
+    status: PlaybackStatus,
+    onPlayStopClick: () -> Unit,
+    playPauseSize: Dp,
+    hasTimeshift: Boolean,
+    bufferedDurationMs: Long,
+    offsetFromLiveMs: Long,
+    isAtLive: Boolean,
+    clipFormatAvailable: Boolean,
+    displayName: String,
+    sleepTimerRemainingMs: Long?,
+    playbackController: PlaybackController?,
+    context: Context,
+    extraVerticalSpacing: Boolean,
+) {
+    if (hasTimeshift) {
+        if (extraVerticalSpacing) Spacer(modifier = Modifier.height(Spacing.xs))
+        TimeshiftControls(
+            isAtLive = isAtLive,
+            bufferedDurationMs = bufferedDurationMs,
+            offsetFromLiveMs = offsetFromLiveMs,
+            onSeekToOffset = { playbackController?.seekToOffsetFromLive(it) },
+            onRewind = { playbackController?.seekBackward(it) },
+            onSeekToLive = { playbackController?.seekToLive() },
+        )
+    }
+    if (extraVerticalSpacing) Spacer(modifier = Modifier.height(Spacing.xs))
+    PlayPauseButton(status = status, onClick = onPlayStopClick, size = playPauseSize)
+    if (extraVerticalSpacing) Spacer(modifier = Modifier.height(Spacing.xs))
+    PlayerDock {
+        SleepTimerControl(
+            sleepTimerRemainingMs = sleepTimerRemainingMs,
+            playbackController = playbackController,
+            context = context,
+        )
+        if (hasTimeshift && clipFormatAvailable) {
+            ClipExportControl(
+                stationName = displayName,
+                bufferedDurationMs = bufferedDurationMs,
+                playbackController = playbackController,
+                context = context,
+            )
         }
     }
 }
