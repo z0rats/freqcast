@@ -318,13 +318,21 @@ fun MainScreen(
     val hasTimeshift = presentation.hasTimeshift
     val isAtLive = presentation.isAtLive
     val offsetFromLiveMs = presentation.offsetFromLiveMs
-    val trackTitle = presentation.trackTitle
 
     ConnectionErrorToastEffect(presentation.connectionErrorAt)
 
     val playbackStatus = presentation.status
-    val isStarting = playbackStatus == PlaybackStatus.STARTING
-    val startError = playbackStatus == PlaybackStatus.ERROR
+    // The one value threaded into StationListPane and read for the mini player below - replaces
+    // 5 separately-unpacked primitives that used to travel down as individual params and get
+    // re-derived per item; see StationListPlaybackState's own doc comment.
+    val stationListPlaybackState =
+        StationListPlaybackState(
+            currentPlayingStationId = currentPlayingStationId,
+            isPlaying = isPlaying,
+            isStarting = playbackStatus == PlaybackStatus.STARTING,
+            isStartError = playbackStatus == PlaybackStatus.ERROR,
+            trackTitle = presentation.trackTitle,
+        )
 
     // Reload stations when screen is resumed
     LaunchedEffect(Unit) {
@@ -415,17 +423,23 @@ fun MainScreen(
                 // affordance.
                 AnimatedVisibility(visible = currentPlayingStation != null && !isWideScreen()) {
                     currentPlayingStation?.let { station ->
-                        val isStationPlaying = currentPlayingStationId == station.id && isPlaying
+                        val itemStatus = stationListPlaybackState.statusFor(station.id)
                         NowPlayingBottomBar(
                             station = station,
                             stations = stations,
                             playbackStatus = playbackStatus,
                             hasTimeshift = hasTimeshift,
                             isAtLive = isAtLive,
-                            trackTitle = if (isStationPlaying) trackTitle else null,
+                            trackTitle = itemStatus.trackTitle,
                             offsetFromLiveMs = offsetFromLiveMs,
                             onPlayPauseClick = {
-                                if (isStationPlaying) stationListActions.onStopPlayback() else onPlayStation(station)
+                                if (itemStatus.isPlaying) {
+                                    stationListActions.onStopPlayback()
+                                } else {
+                                    onPlayStation(
+                                        station,
+                                    )
+                                }
                             },
                             onCardClick = { onNowPlayingClick(station) },
                             onSwitchStation = onPlayStation,
@@ -455,11 +469,7 @@ fun MainScreen(
                     viewModel = viewModel,
                     stations = stations,
                     searchQuery = searchQuery,
-                    currentPlayingStationId = currentPlayingStationId,
-                    isPlaying = isPlaying,
-                    isStarting = isStarting,
-                    startError = startError,
-                    trackTitle = trackTitle,
+                    playbackState = stationListPlaybackState,
                     swipeHintStationId = swipeHintStationId,
                     onSwipeHintConsumed = { viewModel.clearSwipeHint() },
                     actions = listActions,
@@ -569,6 +579,44 @@ data class StationListActions(
     val onStopPlayback: () -> Unit = {},
 )
 
+/**
+ * Which station is "current" and what state it's in - [MainScreen] derives this once from
+ * [com.freqcast.ui.components.PlaybackPresentation] + `currentPlayingStationId` and threads it
+ * whole into [StationListPane], replacing 5 separately-unpacked primitives
+ * (`currentPlayingStationId`, `isPlaying`, `isStarting`, `startError`, `trackTitle`) that used to
+ * travel down as individual params. [statusFor] is the single place "is this station playing"
+ * gets answered - both the per-item [StationItem] row and the mini player ([NowPlayingBottomBar])
+ * call it instead of each re-deriving their own `isStationPlaying`-shaped local.
+ */
+data class StationListPlaybackState(
+    val currentPlayingStationId: Long?,
+    val isPlaying: Boolean,
+    val isStarting: Boolean,
+    val isStartError: Boolean,
+    val trackTitle: String?,
+) {
+    fun statusFor(stationId: Long): StationPlaybackItemStatus {
+        val isActive = currentPlayingStationId == stationId
+        val isItemPlaying = isActive && isPlaying
+        return StationPlaybackItemStatus(
+            isActive = isActive,
+            isPlaying = isItemPlaying,
+            isStarting = isActive && isStarting,
+            isStartError = isActive && isStartError,
+            trackTitle = if (isItemPlaying) trackTitle else null,
+        )
+    }
+}
+
+/** One station's playback state, as answered by [StationListPlaybackState.statusFor]. */
+data class StationPlaybackItemStatus(
+    val isActive: Boolean,
+    val isPlaying: Boolean,
+    val isStarting: Boolean,
+    val isStartError: Boolean,
+    val trackTitle: String?,
+)
+
 // The station list + its header row (Discover chip, overflow menu) and search field. Shared by
 // MainScreen's phone layout (fills the whole screen) and its wide-screen two-pane layout (the
 // left pane, alongside a persistent NowPlayingContent detail pane on the right).
@@ -578,11 +626,7 @@ private fun StationListPane(
     viewModel: MainViewModel,
     stations: List<RadioStation>,
     searchQuery: String,
-    currentPlayingStationId: Long?,
-    isPlaying: Boolean,
-    isStarting: Boolean,
-    startError: Boolean,
-    trackTitle: String?,
+    playbackState: StationListPlaybackState,
     swipeHintStationId: Long?,
     onSwipeHintConsumed: () -> Unit,
     actions: StationListActions,
@@ -713,26 +757,29 @@ private fun StationListPane(
                     items = stations,
                     key = { _, station -> station.id },
                 ) { _, station ->
-                    val isActive = currentPlayingStationId == station.id
-                    val isStationPlaying = isActive && isPlaying
-                    val isStationStarting = isActive && isStarting
-                    val isStationStartError = isActive && startError
+                    val itemStatus = playbackState.statusFor(station.id)
                     // Keyed off station.id, not `index` - see DragDropState's class doc for why an
                     // index-based check can briefly point at the wrong station right after a swap
                     // (this list arrives via a combine()'d Flow, one hop behind the drag state).
                     val isDragging = station.id == dragDropState.draggingItemKey
                     StationItem(
                         station = station,
-                        isActive = isActive,
-                        isPlaying = isStationPlaying,
-                        isStarting = isStationStarting,
-                        isStartError = isStationStartError,
+                        isActive = itemStatus.isActive,
+                        isPlaying = itemStatus.isPlaying,
+                        isStarting = itemStatus.isStarting,
+                        isStartError = itemStatus.isStartError,
                         isDragging = isDragging,
-                        trackTitle = if (isStationPlaying) trackTitle else null,
+                        trackTitle = itemStatus.trackTitle,
                         playSwipeHint = station.id == swipeHintStationId,
                         onSwipeHintConsumed = onSwipeHintConsumed,
                         onPlayClick = {
-                            if (isStationPlaying) actions.onStopPlayback() else actions.onStationItemPlayClick(station)
+                            if (itemStatus.isPlaying) {
+                                actions.onStopPlayback()
+                            } else {
+                                actions.onStationItemPlayClick(
+                                    station,
+                                )
+                            }
                         },
                         onEditClick = { actions.onStationEdit(station) },
                         onDeleteClick = { actions.onStationDelete(station) },
