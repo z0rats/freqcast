@@ -8,7 +8,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,11 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,7 +39,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -65,7 +59,6 @@ import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.IconStorage
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 fun StationItem(
@@ -88,27 +81,16 @@ fun StationItem(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
-    // Animatable + snapTo/animateTo (not animateFloatAsState) so the card tracks the finger 1:1
-    // during the drag itself - only the release/close settle is animated. Mirrors
-    // NowPlayingBottomBar's station-switch drag for the same reason: wrapping every intermediate
-    // drag value in a tween, as this used to, adds lag between finger and card mid-swipe.
-    val offsetAnim = remember { Animatable(0f) }
     // Border/elevation glow driving the swipe hint - 0f the rest of the time, so it never affects
     // normal StationCard styling (see StationCard's isDragging/isActive border precedence).
     val highlightAnim = remember { Animatable(0f) }
-    var isSwipeRevealed by remember { mutableStateOf(false) }
     // Wide enough to reveal 3 action buttons (Edit, Share, Delete): 3 * 48dp + 2 * 8dp spacing + 16dp end padding.
     val revealThreshold = 184.dp
     val cardSpacing = Spacing.sm
     val revealThresholdPx = with(density) { revealThreshold.toPx() }
     val cardSpacingPx = with(density) { cardSpacing.toPx() }
     val maxOffsetPx = -(revealThresholdPx + cardSpacingPx)
-    val settleSpec = tween<Float>(durationMillis = 300)
-
-    fun settleTo(target: Float) {
-        scope.launch { offsetAnim.animateTo(target, settleSpec) }
-    }
+    val swipeReveal = rememberSwipeRevealState(maxOffsetPx)
 
     LaunchedEffect(playSwipeHint) {
         if (!playSwipeHint) return@LaunchedEffect
@@ -121,11 +103,9 @@ fun StationItem(
         highlightAnim.animateTo(1f, tween(300))
         // Reveals the full swipe threshold (all three actions), not just a peek - the point is to
         // show Delete specifically (rightmost, so first exposed) exists at all, not merely hint at it.
-        isSwipeRevealed = true
-        offsetAnim.animateTo(maxOffsetPx, tween(400))
+        swipeReveal.revealAnimated()
         delay(1600)
-        offsetAnim.animateTo(0f, tween(400))
-        isSwipeRevealed = false
+        swipeReveal.closeAnimated()
         highlightAnim.animateTo(0f, tween(300))
         onSwipeHintConsumed()
     }
@@ -138,7 +118,7 @@ fun StationItem(
                 .clipToBounds(),
     ) {
         AnimatedVisibility(
-            visible = isSwipeRevealed || offsetAnim.value < 0f,
+            visible = swipeReveal.isRevealed || swipeReveal.offsetPx < 0f,
             modifier =
                 Modifier
                     .zIndex(0f)
@@ -147,18 +127,15 @@ fun StationItem(
         ) {
             SwipeActionsBackground(
                 onEditClick = {
-                    isSwipeRevealed = false
-                    settleTo(0f)
+                    swipeReveal.close()
                     onEditClick()
                 },
                 onShareClick = {
-                    isSwipeRevealed = false
-                    settleTo(0f)
+                    swipeReveal.close()
                     onShareClick()
                 },
                 onDeleteClick = {
-                    isSwipeRevealed = false
-                    settleTo(0f)
+                    swipeReveal.close()
                     onDeleteClick()
                 },
                 deleteHighlightAlpha = highlightAnim.value,
@@ -176,18 +153,10 @@ fun StationItem(
             highlightAlpha = highlightAnim.value,
             trackTitle = trackTitle,
             onPlayClick = {
-                if (isSwipeRevealed) {
-                    isSwipeRevealed = false
-                    settleTo(0f)
-                } else {
-                    onPlayClick()
-                }
+                if (swipeReveal.isRevealed) swipeReveal.close() else onPlayClick()
             },
             onCardClick = {
-                if (isSwipeRevealed) {
-                    isSwipeRevealed = false
-                    settleTo(0f)
-                }
+                if (swipeReveal.isRevealed) swipeReveal.close()
             },
             modifier =
                 Modifier
@@ -196,29 +165,13 @@ fun StationItem(
                     .padding(end = cardSpacing)
                     .then(
                         with(density) {
-                            Modifier.offset(x = offsetAnim.value.toDp())
+                            Modifier.offset(x = swipeReveal.offsetPx.toDp())
                         },
                     ).then(
                         // Swiping to reveal edit/share/delete is suppressed while this item is
                         // being drag-reordered (isDragging), rather than fighting the reorder
                         // gesture for the same pointer stream.
-                        if (isDragging) {
-                            Modifier
-                        } else {
-                            Modifier.pointerInput(Unit) {
-                                detectHorizontalDragGestures(
-                                    onDragEnd = {
-                                        val shouldReveal = offsetAnim.value < maxOffsetPx / 2
-                                        isSwipeRevealed = shouldReveal
-                                        settleTo(if (shouldReveal) maxOffsetPx else 0f)
-                                    },
-                                ) { _, dragAmount ->
-                                    val newOffset = (offsetAnim.value + dragAmount).coerceIn(maxOffsetPx, 0f)
-                                    isSwipeRevealed = newOffset < maxOffsetPx / 2
-                                    scope.launch { offsetAnim.snapTo(newOffset) }
-                                }
-                            }
-                        },
+                        if (isDragging) Modifier else Modifier.swipeRevealTarget(swipeReveal),
                     ),
         )
     }
@@ -406,13 +359,24 @@ private fun StationCard(
                     if (isActive && isPlaying) {
                         EqualizerBars()
                     }
+                    // Reuses PlaybackPresentation's shared status-to-text mapping
+                    // (playbackStateDescriptionRes) instead of a second copy of it - the same one
+                    // NowPlayingBottomBar's status text and PlaybackScreen's transport button read.
+                    // PAUSED (i.e. not active, or active with nothing interesting going on) isn't
+                    // shown as a word here, unlike those two surfaces - a list row shows the
+                    // station's own description/URL instead.
+                    val status =
+                        computePlaybackStatus(
+                            isPlaying = isActive && isPlaying,
+                            isBuffering = false,
+                            isRetryPending = isActive && isStarting,
+                            isConnectionBroken = isActive && isStartError,
+                        )
                     Text(
                         text =
                             when {
-                                isActive && isStartError -> stringResource(R.string.connection_failed)
-                                isActive && isPlaying && trackTitle != null -> trackTitle
-                                isActive && isPlaying -> stringResource(R.string.playing)
-                                isActive && isStarting -> stringResource(R.string.starting)
+                                status == PlaybackStatus.PLAYING && trackTitle != null -> trackTitle
+                                status != PlaybackStatus.PAUSED -> stringResource(playbackStateDescriptionRes(status))
                                 else -> station.description?.takeIf { it.isNotBlank() } ?: station.streamUrl
                             },
                         style = MaterialTheme.typography.bodySmall,
