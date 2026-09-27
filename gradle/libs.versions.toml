@@ -1,21 +1,21 @@
 [versions]
-agp = "9.4.0"
+agp = "9.4.1"
 ksp = "2.3.11"
 ktlintGradle = "14.2.0"
 ktlint = "1.8.0"
 kotlinComposeCompiler = "2.4.20"
-roborazzi = "1.74.0"
+roborazzi = "1.75.0"
 kover = "0.9.9"
 
-coreKtx = "1.19.0"
+coreKtx = "1.19.1"
 appcompat = "1.8.0"
 material = "1.14.0"
 lifecycle = "2.11.0"
 
 room = "2.8.5"
 
-media3 = "1.11.0"
-appfunctions = "1.0.0-alpha11"
+media3 = "1.11.1"
+appfunctions = "1.0.0-alpha12"
 guava = "33.7.1-android"
 okhttp = "5.5.0"
 kotlinxCoroutines = "1.11.0"
@@ -27,9 +27,9 @@ glance = "1.2.0"
 
 junit = "4.13.2"
 androidxTestCore = "1.7.0"
-mockitoCore = "5.23.0"
-mockitoKotlin = "6.3.0"
-robolectric = "4.16.1"
+mockitoCore = "5.24.0"
+mockitoKotlin = "6.4.0"
+robolectric = "4.17"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
