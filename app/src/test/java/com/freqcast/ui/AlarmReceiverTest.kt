@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.freqcast.data.AlarmRepository
 import com.freqcast.data.WakeAlarm
 import com.freqcast.ui.playback.AlarmStateStore
+import com.freqcast.ui.playback.startCommandOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -54,10 +55,10 @@ class AlarmReceiverTest {
         receiver.onReceive(context, Intent().putExtra(AlarmReceiver.EXTRA_ALARM_ID, id))
 
         val startedService = shadowOf(context as Application).nextStartedService
-        assertEquals("Morning FM", startedService?.getStringExtra(RadioPlaybackService.EXTRA_STATION_NAME))
+        assertEquals("Morning FM", startCommandOf(startedService)?.stationName)
         assertEquals(
             "https://stream.example.com/morning",
-            startedService?.getStringExtra(RadioPlaybackService.EXTRA_STREAM_URL),
+            startCommandOf(startedService)?.streamUrl,
         )
     }
 
@@ -103,7 +104,7 @@ class AlarmReceiverTest {
         receiver.onReceive(context, Intent())
 
         val startedService = shadowOf(context as Application).nextStartedService
-        assertEquals("Legacy FM", startedService?.getStringExtra(RadioPlaybackService.EXTRA_STATION_NAME))
+        assertEquals("Legacy FM", startCommandOf(startedService)?.stationName)
         assertNull(AlarmStateStore(context).restore())
     }
 

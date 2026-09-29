@@ -7,6 +7,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
 import com.freqcast.data.AppDatabase
 import com.freqcast.data.RadioStation
+import com.freqcast.ui.playback.PlaybackCommands
 import com.freqcast.ui.playback.PlaybackStateStore
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -72,16 +73,13 @@ class RadioPlaybackServiceStartCommandTest {
         this.service = service
         val streamUrl = "https://example.com/stop-test.m3u8"
         service.onStartCommand(
-            Intent().apply {
-                putExtra(RadioPlaybackService.EXTRA_STREAM_URL, streamUrl)
-                putExtra(RadioPlaybackService.EXTRA_STATION_NAME, "Stop Test FM")
-            },
+            PlaybackCommands.startIntent(service, "Stop Test FM", streamUrl),
             0,
             1,
         )
         awaitStationName(service, "Stop Test FM")
 
-        val result = service.onStartCommand(Intent(RadioPlaybackService.ACTION_STOP), 0, 2)
+        val result = service.onStartCommand(PlaybackCommands.stopIntent(service), 0, 2)
 
         assertEquals(android.app.Service.START_NOT_STICKY, result)
         assertFalse(service.playbackSnapshot.value.isPlaying)
@@ -101,10 +99,7 @@ class RadioPlaybackServiceStartCommandTest {
 
         val result =
             service.onStartCommand(
-                Intent().apply {
-                    putExtra(RadioPlaybackService.EXTRA_STREAM_URL, streamUrl)
-                    putExtra(RadioPlaybackService.EXTRA_STATION_NAME, "Intent Name")
-                },
+                PlaybackCommands.startIntent(service, "Intent Name", streamUrl),
                 0,
                 1,
             )
@@ -122,10 +117,7 @@ class RadioPlaybackServiceStartCommandTest {
         this.service = service
         val streamUrl = "https://example.com/already-playing.m3u8"
         service.onStartCommand(
-            Intent().apply {
-                putExtra(RadioPlaybackService.EXTRA_STREAM_URL, streamUrl)
-                putExtra(RadioPlaybackService.EXTRA_STATION_NAME, "Already Playing FM")
-            },
+            PlaybackCommands.startIntent(service, "Already Playing FM", streamUrl),
             0,
             1,
         )

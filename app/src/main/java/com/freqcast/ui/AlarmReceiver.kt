@@ -3,9 +3,9 @@ package com.freqcast.ui
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import androidx.core.content.ContextCompat
 import com.freqcast.data.AlarmRepository
 import com.freqcast.ui.playback.AlarmStateStore
+import com.freqcast.ui.playback.PlaybackCommands
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -38,12 +38,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val streamUrl = alarm?.streamUrl
             if (alarm == null || !alarm.enabled || streamUrl == null) return@runBlocking
 
-            val serviceIntent =
-                Intent(context, RadioPlaybackService::class.java).apply {
-                    putExtra(RadioPlaybackService.EXTRA_STATION_NAME, alarm.stationName)
-                    putExtra(RadioPlaybackService.EXTRA_STREAM_URL, streamUrl)
-                }
-            ContextCompat.startForegroundService(context, serviceIntent)
+            PlaybackCommands.start(context, alarm.stationName, streamUrl)
 
             AlarmScheduler.schedule(context, alarm.id, alarm.hour, alarm.minute)
         }

@@ -155,7 +155,7 @@ fun rememberRawPlaybackState(playbackController: PlaybackController?): RawPlayba
  * Shared one-shot "connection failed" Toast, deduped by [PlaybackPresentation.connectionErrorAt]
  * changing - previously copy-pasted almost verbatim in both [com.freqcast.ui.MainScreen] and
  * [com.freqcast.ui.PlaybackScreen]. [connectionErrorAt] never resets to null (see
- * `RadioPlaybackService.lastConnectionErrorAt`'s doc), so a new failure is only detected by its
+ * `PlaybackSession.connectionErrorAt`'s doc), so a new failure is only detected by its
  * timestamp changing, not by null-vs-not-null.
  */
 @Composable

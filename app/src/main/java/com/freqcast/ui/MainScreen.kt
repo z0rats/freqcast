@@ -93,6 +93,7 @@ import com.freqcast.ui.components.dragContainer
 import com.freqcast.ui.components.rememberDragDropState
 import com.freqcast.ui.components.rememberPlaybackPresentation
 import com.freqcast.ui.components.rememberRawPlaybackState
+import com.freqcast.ui.playback.PlaybackCommands
 import com.freqcast.ui.playback.SettingsStore
 import com.freqcast.ui.playback.controller.PlaybackController
 import com.freqcast.ui.playback.controller.ToggleResult
@@ -245,8 +246,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Not yet bound (controller == null) only ever happens for a play tap that lands before
-    // rememberPlaybackController()'s ON_START bind completes - fire the start Intent directly,
-    // same fallback shape as PlaybackActivity.startServiceDirectly.
+    // rememberPlaybackController()'s ON_START bind completes - send the start command directly,
+    // same fallback shape as PlaybackActivity.togglePlayback.
     private suspend fun playStation(
         station: RadioStation,
         viewModel: MainViewModel,
@@ -260,11 +261,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             viewModel.updateCurrentPlayingStation(station.id)
-            Intent(this, RadioPlaybackService::class.java).apply {
-                putExtra(RadioPlaybackService.EXTRA_STATION_NAME, station.name)
-                putExtra(RadioPlaybackService.EXTRA_STREAM_URL, station.streamUrl)
-                startForegroundService(this)
-            }
+            PlaybackCommands.start(this, station)
             return
         }
 

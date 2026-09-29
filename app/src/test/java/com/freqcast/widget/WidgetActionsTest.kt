@@ -7,8 +7,9 @@ import androidx.glance.action.actionParametersOf
 import androidx.test.core.app.ApplicationProvider
 import com.freqcast.data.AppDatabase
 import com.freqcast.data.RadioStation
-import com.freqcast.ui.RadioPlaybackService
+import com.freqcast.ui.playback.PlaybackCommands
 import com.freqcast.ui.playback.WidgetStateStore
+import com.freqcast.ui.playback.startCommandOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -40,7 +41,7 @@ class WidgetActionsTest {
         runBlocking { TogglePlaybackAction().onAction(context, fakeGlanceId, actionParametersOf()) }
 
         val started = shadowOf(context as Application).nextStartedService
-        assertEquals(RadioPlaybackService.ACTION_STOP, started?.action)
+        assertEquals(PlaybackCommands.Command.Stop, PlaybackCommands.parse(started))
     }
 
     @Test
@@ -50,8 +51,8 @@ class WidgetActionsTest {
         runBlocking { TogglePlaybackAction().onAction(context, fakeGlanceId, actionParametersOf()) }
 
         val started = shadowOf(context as Application).nextStartedService
-        assertEquals("Jazz FM", started?.getStringExtra(RadioPlaybackService.EXTRA_STATION_NAME))
-        assertEquals("https://example.com/jazz", started?.getStringExtra(RadioPlaybackService.EXTRA_STREAM_URL))
+        assertEquals("Jazz FM", startCommandOf(started)?.stationName)
+        assertEquals("https://example.com/jazz", startCommandOf(started)?.streamUrl)
     }
 
     @Test
@@ -78,16 +79,16 @@ class WidgetActionsTest {
         runBlocking { NextStationAction().onAction(context, fakeGlanceId, actionParametersOf()) }
 
         val startedNext = shadowOf(context as Application).nextStartedService
-        assertEquals("Classical FM", startedNext?.getStringExtra(RadioPlaybackService.EXTRA_STATION_NAME))
+        assertEquals("Classical FM", startCommandOf(startedNext)?.stationName)
         assertEquals(
             "https://example.com/classical",
-            startedNext?.getStringExtra(RadioPlaybackService.EXTRA_STREAM_URL),
+            startCommandOf(startedNext)?.streamUrl,
         )
 
         runBlocking { PreviousStationAction().onAction(context, fakeGlanceId, actionParametersOf()) }
 
         val startedPrevious = shadowOf(context as Application).nextStartedService
-        assertEquals("Jazz FM", startedPrevious?.getStringExtra(RadioPlaybackService.EXTRA_STATION_NAME))
-        assertEquals("https://example.com/jazz", startedPrevious?.getStringExtra(RadioPlaybackService.EXTRA_STREAM_URL))
+        assertEquals("Jazz FM", startCommandOf(startedPrevious)?.stationName)
+        assertEquals("https://example.com/jazz", startCommandOf(startedPrevious)?.streamUrl)
     }
 }

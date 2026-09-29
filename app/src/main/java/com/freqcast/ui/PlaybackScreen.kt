@@ -102,6 +102,7 @@ import com.freqcast.ui.components.PlaybackStatus
 import com.freqcast.ui.components.playbackStateDescriptionRes
 import com.freqcast.ui.components.rememberPlaybackPresentation
 import com.freqcast.ui.components.rememberStationIconBitmap
+import com.freqcast.ui.playback.PlaybackCommands
 import com.freqcast.ui.playback.controller.PlaybackController
 import com.freqcast.ui.playback.controller.ToggleResult
 import com.freqcast.ui.playback.controller.rememberPlaybackController
@@ -265,7 +266,8 @@ class PlaybackActivity : AppCompatActivity() {
         val url = streamUrl ?: return
 
         if (controller == null) {
-            startServiceDirectly(url)
+            // Not bound yet - a started-service command needs no service reference at all.
+            PlaybackCommands.start(this, stationName, url)
             return
         }
 
@@ -279,16 +281,6 @@ class PlaybackActivity : AppCompatActivity() {
             if (result == ToggleResult.NETWORK_UNAVAILABLE) {
                 Toast.makeText(this@PlaybackActivity, getString(R.string.error_network), Toast.LENGTH_SHORT).show()
             }
-        }
-    }
-
-    // Only reached before the controller has finished binding (see togglePlayback's null branch
-    // above) - a plain Intent fire needs no service reference at all, unlike every other command.
-    private fun startServiceDirectly(url: String) {
-        Intent(this, RadioPlaybackService::class.java).apply {
-            putExtra(RadioPlaybackService.EXTRA_STATION_NAME, stationName)
-            putExtra(RadioPlaybackService.EXTRA_STREAM_URL, url)
-            startForegroundService(this)
         }
     }
 }

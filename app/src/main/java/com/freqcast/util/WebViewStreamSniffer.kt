@@ -47,7 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * this project has no `androidTest` module - `runSniff`'s page-load/JS/touch-dispatch sequencing
  * needs manual verification on a real device. What *is* pure and unit tested: [isCandidateStreamUrl],
  * [shouldCaptureRequest] (the request-capture filter), [isTlsHandshakeError] (TLS-failure
- * classification, same shape as [com.freqcast.ui.playback.ConnectionRetryPolicy.isRetryableNetworkError]),
+ * classification, same shape as [com.freqcast.ui.playback.PlaybackSession.isRetryableNetworkError]),
  * and [finalizeCandidates] (dedup+cap). That's genuinely everything decidable here without a real
  * WebView - there's no larger hidden ranking/selection algorithm to extract beyond these.
  */

@@ -1,14 +1,12 @@
 package com.freqcast.widget
 
 import android.content.Context
-import android.content.Intent
-import androidx.core.content.ContextCompat
 import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.action.ActionCallback
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
-import com.freqcast.ui.RadioPlaybackService
+import com.freqcast.ui.playback.PlaybackCommands
 import com.freqcast.ui.playback.WidgetStateStore
 import com.freqcast.util.StationNavigator
 
@@ -21,12 +19,9 @@ class TogglePlaybackAction : ActionCallback {
     ) {
         val saved = WidgetStateStore(context).restore() ?: return
         if (saved.isPlaying) {
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, RadioPlaybackService::class.java).setAction(RadioPlaybackService.ACTION_STOP),
-            )
+            PlaybackCommands.stop(context)
         } else {
-            startStation(context, saved.stationName, saved.streamUrl)
+            PlaybackCommands.start(context, saved.stationName, saved.streamUrl)
         }
     }
 }
@@ -56,18 +51,5 @@ private suspend fun skipTo(
     val stations = RadioStationRepository.create(context).getAllStations()
     val currentStreamUrl = WidgetStateStore(context).restore()?.streamUrl
     val target = pick(stations, currentStreamUrl) ?: return
-    startStation(context, target.name, target.streamUrl)
-}
-
-private fun startStation(
-    context: Context,
-    stationName: String?,
-    streamUrl: String,
-) {
-    val intent =
-        Intent(context, RadioPlaybackService::class.java).apply {
-            putExtra(RadioPlaybackService.EXTRA_STATION_NAME, stationName)
-            putExtra(RadioPlaybackService.EXTRA_STREAM_URL, streamUrl)
-        }
-    ContextCompat.startForegroundService(context, intent)
+    PlaybackCommands.start(context, target)
 }

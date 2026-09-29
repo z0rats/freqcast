@@ -1,16 +1,15 @@
 package com.freqcast.appfunctions
 
-import android.content.Intent
 import androidx.annotation.RequiresApi
 import androidx.appfunctions.AppFunction
 import androidx.appfunctions.AppFunctionElementNotFoundException
 import androidx.appfunctions.AppFunctionSerializable
 import androidx.appfunctions.AppFunctionService
 import androidx.appfunctions.AppFunctionServiceEntryPoint
-import androidx.core.content.ContextCompat
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.RadioPlaybackService
+import com.freqcast.ui.playback.PlaybackCommands
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -66,24 +65,13 @@ abstract class BaseRadioAppFunctionService : AppFunctionService() {
                     ?: throw AppFunctionElementNotFoundException(
                         "No saved station named \"$stationName\". Check the spelling, or add it in the app first.",
                     )
-            val intent =
-                Intent(applicationContext, RadioPlaybackService::class.java).apply {
-                    putExtra(RadioPlaybackService.EXTRA_STATION_NAME, station.name)
-                    putExtra(RadioPlaybackService.EXTRA_STREAM_URL, station.streamUrl)
-                }
-            ContextCompat.startForegroundService(applicationContext, intent)
+            PlaybackCommands.start(applicationContext, station)
             PlaybackActionResult(stationName = station.name, streamUrl = station.streamUrl)
         }
 
     /** Stops whatever station is currently playing. A no-op if nothing is playing. */
     @AppFunction(isDescribedByKDoc = true)
     suspend fun stopPlayback() {
-        withContext(Dispatchers.IO) {
-            ContextCompat.startForegroundService(
-                applicationContext,
-                Intent(applicationContext, RadioPlaybackService::class.java)
-                    .setAction(RadioPlaybackService.ACTION_STOP),
-            )
-        }
+        withContext(Dispatchers.IO) { PlaybackCommands.stop(applicationContext) }
     }
 }

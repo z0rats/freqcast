@@ -47,16 +47,42 @@ data class SniffedRequest(
  * What one [webViewSniff] call found - mirrors [com.freqcast.util.WebViewStreamSniffer.SniffResult]
  * without depending on that (Context-holding) class, so this stays the pure/Context-free type
  * [StationUrlResolver]'s constructor takes. Carrying [hadTlsFailure] in the return value here -
- * rather than a side channel the caller has to set up separately - is what lets [resolve]'s own
- * [onTlsBlocked] callback fire it directly.
+ * rather than a side channel the caller has to set up separately - is what lets [StationUrlResolver.resolve]
+ * fold it into [Resolution.NotFound.tlsBlocked] directly.
  */
 data class SniffOutcome(
     val candidates: List<SniffedRequest>,
     val hadTlsFailure: Boolean = false,
 )
 
+/**
+ * Every outcome of [StationUrlResolver.resolve] - exhaustive, so a caller maps each one to UI
+ * state with a plain `when` instead of reconstructing it from a nullable return plus callbacks.
+ */
+sealed interface Resolution {
+    data class Found(
+        val station: ResolvedStation,
+    ) : Resolution
+
+    /**
+     * Several distinct directory listings share the pasted homepage; resolving stopped rather than
+     * guess. Pick one and pass it to [StationUrlResolver.resolveCandidate].
+     */
+    data class Ambiguous(
+        val candidates: List<RadioBrowserStation>,
+    ) : Resolution
+
+    /** Nothing playable found. [tlsBlocked]: a TLS handshake was reset along the way (possibly a VPN block). */
+    data class NotFound(
+        val tlsBlocked: Boolean = false,
+    ) : Resolution
+}
+
 /** Which step of [StationUrlResolver.resolve] is currently running, for a caller to show as progress. */
 enum class ResolveStage {
+    /** Probing the pasted URL itself - it may already be a direct stream, no resolving needed. */
+    CHECKING_URL,
+
     /** Stage 1: checking whether the station is already cataloged in the Radio Browser directory. */
     SEARCHING_DIRECTORY,
 
@@ -113,56 +139,98 @@ class StationUrlResolver(
      */
     private val webViewSniff: (suspend (String) -> SniffOutcome)? = null,
 ) {
+    /**
+     * The one entry point for anything pasted into [com.freqcast.ui.AddStationScreen]'s URL field.
+     * A URL that's already a reachable audio stream is used as-is ([ResolveStage.CHECKING_URL]);
+     * anything else - unreachable, or reachable but serving an ordinary webpage (reachability alone
+     * can't tell the two apart, the response's `Content-Type` does) - is treated as a homepage and
+     * run through [resolveHomepage]'s stages 1-5.
+     *
+     * A TLS handshake reset is folded into [Resolution.NotFound.tlsBlocked] from either place it can
+     * show up: this direct probe, or stage 5's WebView load - the pasted homepage can load over TLS
+     * just fine while a *different* host its JS talks to is the one actually being blocked.
+     */
     suspend fun resolve(
-        homepageUrl: String,
-        onAmbiguous: (List<RadioBrowserStation>) -> Unit = {},
+        url: String,
         onStage: (ResolveStage) -> Unit = {},
-        onTlsBlocked: () -> Unit = {},
-    ): ResolvedStation? =
-        withContext(Dispatchers.IO) {
-            withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
-                val normalizedUrl = withScheme(homepageUrl)
-                val host = hostOf(normalizedUrl) ?: return@withTimeoutOrNull null
-                onStage(ResolveStage.SEARCHING_DIRECTORY)
-                when (val directoryResult = fromDirectory(host)) {
-                    is DirectoryResult.Match -> {
-                        directoryResult.station
-                    }
+    ): Resolution {
+        onStage(ResolveStage.CHECKING_URL)
+        val probe = streamValidator.probe(url)
+        if (probe.reachable && probe.looksLikeAudio) {
+            // No favicon here: a bare stream URL never went through a homepage fetch, so there's
+            // nothing to read a real `<link rel="icon">` from.
+            return Resolution.Found(
+                ResolvedStation(
+                    streamUrl = url,
+                    isHls = probe.contentType.orEmpty().contains("mpegurl", ignoreCase = true),
+                ),
+            )
+        }
+        val homepage = resolveHomepage(url, onStage)
+        return if (homepage is Resolution.NotFound && probe.tlsHandshakeFailed) {
+            Resolution.NotFound(tlsBlocked = true)
+        } else {
+            homepage
+        }
+    }
 
-                    is DirectoryResult.Ambiguous -> {
-                        onAmbiguous(directoryResult.candidates)
-                        // Stop here rather than falling through to a scraped guess that might land
-                        // on a third, unrelated station - the caller now has the real candidate set
-                        // and surfaces it for the user to pick from directly.
-                        null
-                    }
+    /**
+     * Stages 1-5 only, treating [homepageUrl] as a homepage without [resolve]'s direct-stream probe
+     * first. Internal (not private) so [StationUrlResolverTest]'s FIFO-`enqueue`d MockWebServer
+     * scripts can drive the stages without accounting for that extra probe round-trip.
+     */
+    internal suspend fun resolveHomepage(
+        homepageUrl: String,
+        onStage: (ResolveStage) -> Unit = {},
+    ): Resolution {
+        // Survives a RESOLVE_TIMEOUT_MS cutoff: a TLS reset stage 5 already saw still explains
+        // the failure even if the pipeline then ran out of time.
+        var tlsBlocked = false
+        val outcome =
+            withContext(Dispatchers.IO) {
+                withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
+                    val normalizedUrl = withScheme(homepageUrl)
+                    val host = hostOf(normalizedUrl) ?: return@withTimeoutOrNull null
+                    onStage(ResolveStage.SEARCHING_DIRECTORY)
+                    when (val directoryResult = fromDirectory(host)) {
+                        is DirectoryResult.Match -> {
+                            Resolution.Found(directoryResult.station)
+                        }
 
-                    DirectoryResult.NoMatch -> {
-                        onStage(ResolveStage.SCANNING_PAGE)
-                        val html = fetchText(normalizedUrl)
-                        val pageName = html?.let(::extractTitle)
-                        val pageFavicon = html?.let { extractFavicon(it, normalizedUrl) }
-                        val htmlResult = html?.let { fromHtml(it, normalizedUrl, host) }
-                        htmlResult ?: webViewSniff?.let { sniff ->
-                            onStage(ResolveStage.RENDERING_PAGE)
-                            // The static scan found no stream, but its already-fetched <title>/favicon
-                            // are still the best name/icon candidates available - don't lose them just
-                            // because the regex scan itself came up empty.
-                            fromWebView(sniff, normalizedUrl, host, onTlsBlocked)?.let { resolved ->
-                                resolved.copy(
-                                    name = resolved.name ?: pageName,
-                                    favicon =
-                                        resolved.favicon ?: pageFavicon,
-                                )
-                            }
+                        is DirectoryResult.Ambiguous -> {
+                            // Stop here rather than falling through to a scraped guess that might
+                            // land on a third, unrelated station - the caller surfaces the real
+                            // candidate set for the user to pick from directly.
+                            Resolution.Ambiguous(directoryResult.candidates)
+                        }
+
+                        DirectoryResult.NoMatch -> {
+                            onStage(ResolveStage.SCANNING_PAGE)
+                            val html = fetchText(normalizedUrl)
+                            val pageName = html?.let(::extractTitle)
+                            val pageFavicon = html?.let { extractFavicon(it, normalizedUrl) }
+                            val htmlResult = html?.let { fromHtml(it, normalizedUrl, host) }
+                            val resolved =
+                                htmlResult ?: webViewSniff?.let { sniff ->
+                                    onStage(ResolveStage.RENDERING_PAGE)
+                                    // The static scan found no stream, but its already-fetched
+                                    // <title>/favicon are still the best name/icon candidates
+                                    // available - don't lose them just because the regex scan
+                                    // itself came up empty.
+                                    fromWebView(sniff, normalizedUrl, host) { tlsBlocked = true }?.let {
+                                        it.copy(name = it.name ?: pageName, favicon = it.favicon ?: pageFavicon)
+                                    }
+                                }
+                            resolved?.let { Resolution.Found(it) }
                         }
                     }
                 }
             }
-        }
+        return outcome ?: Resolution.NotFound(tlsBlocked = tlsBlocked)
+    }
 
     /**
-     * Resolves a single candidate the caller picked from [ResolveStage]'s [onAmbiguous] set - the
+     * Resolves a single candidate the caller picked from a [Resolution.Ambiguous] set - the
      * same playability probe + favicon lookup [fromDirectory] runs for an unambiguous match, just
      * invoked directly instead of via a fresh directory search. Budgeted far tighter than
      * [RESOLVE_TIMEOUT_MS] (one stream probe + one favicon fetch, not a whole multi-stage pipeline);

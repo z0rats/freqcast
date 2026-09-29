@@ -49,7 +49,7 @@ internal enum class ToggleAction { START, STOP, REJECT_NO_NETWORK }
 
 /**
  * Pure start/stop decision behind [PlaybackController.toggle], factored out so it's unit-testable
- * without Robolectric - same shape as [com.freqcast.ui.playback.ConnectionRetryPolicy]. Compares by
+ * without Robolectric - same shape as [com.freqcast.ui.playback.PlaybackSession]. Compares by
  * stream URL (a station's [RadioStation.streamUrl] is always its media id - see RadioBrowseTree),
  * checking "is this station already playing" *before* the network check, so stopping the current
  * stream never needs a network. One decision now backs every toggle call site; previously

@@ -58,6 +58,42 @@ class StationUrlResolverTest {
     )
 
     @Test
+    fun `resolve uses a pasted direct audio stream as-is without searching the directory`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "audio/mpeg"))
+            val streamUrl = server.url("/live.mp3").toString()
+            val stages = mutableListOf<ResolveStage>()
+
+            val result = resolver().resolve(streamUrl) { stages += it }
+
+            assertEquals(Resolution.Found(ResolvedStation(streamUrl = streamUrl)), result)
+            assertEquals(listOf(ResolveStage.CHECKING_URL), stages)
+            assertEquals(1, server.requestCount)
+        }
+
+    @Test
+    fun `resolve treats a reachable webpage as a homepage and runs the stages after the probe`() =
+        runTest {
+            val homepageUrl = "http://myradio.test:${server.port}/"
+            server.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "text/html"))
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setBody("""<html><body><audio src="/stream.mp3"></audio></body></html>"""))
+            server.enqueue(MockResponse().setResponseCode(200))
+            val stages = mutableListOf<ResolveStage>()
+
+            val result = resolver().resolve(homepageUrl) { stages += it }
+
+            assertEquals(
+                "http://myradio.test:${server.port}/stream.mp3",
+                (result as Resolution.Found).station.streamUrl,
+            )
+            assertEquals(
+                listOf(ResolveStage.CHECKING_URL, ResolveStage.SEARCHING_DIRECTORY, ResolveStage.SCANNING_PAGE),
+                stages,
+            )
+        }
+
+    @Test
     fun `resolve returns the directory match when its homepage matches the target host`() =
         runTest {
             val body =
@@ -68,7 +104,7 @@ class StationUrlResolverTest {
             server.enqueue(MockResponse().setBody(body))
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve("https://myradio.test/")
+            val result = resolver().resolveStation("https://myradio.test/")
 
             assertEquals(server.url("/stream").toString(), result?.streamUrl)
             assertEquals("abc-123", result?.radioBrowserUuid)
@@ -86,7 +122,7 @@ class StationUrlResolverTest {
             server.enqueue(MockResponse().setBody(body))
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve("https://myradio.test/")
+            val result = resolver().resolveStation("https://myradio.test/")
 
             assertEquals("https://www.myradio.test/logo.png", result?.favicon)
         }
@@ -126,7 +162,7 @@ class StationUrlResolverTest {
                         }
                 }
 
-            val result = resolver().resolve(homepageUrl)
+            val result = resolver().resolveStation(homepageUrl)
 
             assertEquals("http://myradio.test:${server.port}/favicon.png", result?.favicon)
         }
@@ -146,12 +182,11 @@ class StationUrlResolverTest {
                  {"name":"Myradio Affiliate B","url":"http://b.example/stream","homepage":"$homepageUrl"}]
                 """.trimIndent()
             server.enqueue(MockResponse().setBody(searchBody))
-            var captured: List<RadioBrowserStation>? = null
 
-            val result = resolver().resolve(homepageUrl, onAmbiguous = { captured = it })
+            val result = resolver().resolveHomepage(homepageUrl)
 
-            assertNull(result)
-            assertEquals(setOf("Myradio Affiliate A", "Myradio Affiliate B"), captured?.map { it.name }?.toSet())
+            val candidates = (result as Resolution.Ambiguous).candidates
+            assertEquals(setOf("Myradio Affiliate A", "Myradio Affiliate B"), candidates.map { it.name }.toSet())
             // Only the directory search fired - no page fetch. Locks in that an ambiguous match
             // stops the pipeline rather than falling through to a scraped guess.
             assertEquals(1, server.requestCount)
@@ -169,7 +204,7 @@ class StationUrlResolverTest {
             server.enqueue(MockResponse().setBody(searchBody))
             val stages = mutableListOf<ResolveStage>()
 
-            resolver().resolve(homepageUrl, onStage = { stages += it })
+            resolver().resolveStation(homepageUrl, onStage = { stages += it })
 
             assertEquals(listOf(ResolveStage.SEARCHING_DIRECTORY), stages)
         }
@@ -194,7 +229,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(homepageUrl)
+            val result = resolver().resolveStation(homepageUrl)
 
             assertEquals("http://myradio.test:${server.port}/stream.mp3", result?.streamUrl)
         }
@@ -259,7 +294,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(homepageUrl)
+            val result = resolver().resolveStation(homepageUrl)
 
             assertEquals("http://myradio.test:${server.port}/stream.mp3", result?.streamUrl)
         }
@@ -279,7 +314,7 @@ class StationUrlResolverTest {
             server.enqueue(MockResponse().setResponseCode(200))
             val stages = mutableListOf<ResolveStage>()
 
-            resolver().resolve(homepageUrl, onStage = { stages += it })
+            resolver().resolveStation(homepageUrl, onStage = { stages += it })
 
             assertEquals(listOf(ResolveStage.SEARCHING_DIRECTORY, ResolveStage.SCANNING_PAGE), stages)
         }
@@ -296,7 +331,7 @@ class StationUrlResolverTest {
             server.enqueue(MockResponse().setResponseCode(200))
             val stages = mutableListOf<ResolveStage>()
 
-            resolver().resolve("https://myradio.test/", onStage = { stages += it })
+            resolver().resolveStation("https://myradio.test/", onStage = { stages += it })
 
             assertEquals(listOf(ResolveStage.SEARCHING_DIRECTORY), stages)
         }
@@ -315,7 +350,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(homepageUrl)
+            val result = resolver().resolveStation(homepageUrl)
 
             assertEquals("http://myradio.test:${server.port}/stream.mp3", result?.streamUrl)
         }
@@ -331,7 +366,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(server.url("/").toString())
+            val result = resolver().resolveStation(server.url("/").toString())
 
             assertEquals("My Cool Radio", result?.name)
         }
@@ -403,7 +438,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(server.url("/").toString())
+            val result = resolver().resolveStation(server.url("/").toString())
 
             assertEquals(server.url("/favicon.png").toString(), result?.favicon)
         }
@@ -418,7 +453,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(server.url("/").toString())
+            val result = resolver().resolveStation(server.url("/").toString())
 
             assertEquals(server.url("/stream.mp3").toString(), result?.streamUrl)
             assertTrue(result?.isHls == false)
@@ -451,7 +486,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(homepageUrl)
+            val result = resolver().resolveStation(homepageUrl)
 
             assertEquals("http://cdn.myradio.test:${server.port}/stream.mp3", result?.streamUrl)
             assertEquals(4, server.requestCount)
@@ -477,7 +512,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(server.url("/").toString())
+            val result = resolver().resolveStation(server.url("/").toString())
 
             assertEquals(server.url("/stream.mp3").toString(), result?.streamUrl)
         }
@@ -500,7 +535,7 @@ class StationUrlResolverTest {
             )
             server.enqueue(MockResponse().setResponseCode(200))
 
-            val result = resolver().resolve(server.url("/").toString())
+            val result = resolver().resolveStation(server.url("/").toString())
 
             assertEquals(server.url("/stream.mp3").toString(), result?.streamUrl)
         }
@@ -510,7 +545,7 @@ class StationUrlResolverTest {
         runTest {
             server.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
 
-            val result = resolver().resolve(server.url("/").toString())
+            val result = resolver().resolveStation(server.url("/").toString())
 
             assertNull(result)
         }
@@ -524,7 +559,7 @@ class StationUrlResolverTest {
                 ),
             )
 
-            val result = resolver().resolve(server.url("/").toString())
+            val result = resolver().resolveStation(server.url("/").toString())
 
             assertNull(result)
         }
@@ -544,7 +579,7 @@ class StationUrlResolverTest {
                             listOf(SniffedRequest(server.url("/webview-stream.mp3").toString())),
                         )
                     },
-                ).resolve(homepageUrl)
+                ).resolveStation(homepageUrl)
 
             assertEquals(server.url("/webview-stream.mp3").toString(), result?.streamUrl)
         }
@@ -568,7 +603,7 @@ class StationUrlResolverTest {
                         sniffInvoked = true
                         SniffOutcome(emptyList())
                     },
-                ).resolve(homepageUrl)
+                ).resolveStation(homepageUrl)
 
             assertEquals("http://myradio.test:${server.port}/stream.mp3", result?.streamUrl)
             assertFalse(sniffInvoked)
@@ -596,7 +631,7 @@ class StationUrlResolverTest {
                             listOf(SniffedRequest(server.url("/webview-stream.mp3").toString())),
                         )
                     },
-                ).resolve(homepageUrl)
+                ).resolveStation(homepageUrl)
 
             assertEquals("My Cool Radio", result?.name)
             assertEquals("http://myradio.test:${server.port}/favicon.png", result?.favicon)
@@ -611,13 +646,13 @@ class StationUrlResolverTest {
 
             val result =
                 resolver(webViewSniff = { SniffOutcome(listOf(SniffedRequest("http://127.0.0.1:1/stream.mp3"))) })
-                    .resolve(homepageUrl)
+                    .resolveStation(homepageUrl)
 
             assertNull(result)
         }
 
     @Test
-    fun `resolve invokes onTlsBlocked when stage 5's webview sniff reports a TLS failure`() =
+    fun `resolve reports tlsBlocked when stage 5's webview sniff reports a TLS failure`() =
         runTest {
             // Confirmed real shape: the pasted homepage loads fine over TLS, but a different host
             // its JS talks to resets the handshake - stage 5 is the only stage that can observe
@@ -625,32 +660,30 @@ class StationUrlResolverTest {
             val homepageUrl = "http://myradio.test:${server.port}/"
             server.enqueue(MockResponse().setBody("[]"))
             server.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
-            var tlsBlocked = false
 
             val result =
                 resolver(webViewSniff = { SniffOutcome(emptyList(), hadTlsFailure = true) })
-                    .resolve(homepageUrl, onTlsBlocked = { tlsBlocked = true })
+                    .resolveHomepage(homepageUrl)
 
-            assertNull(result)
-            assertTrue(tlsBlocked)
+            assertEquals(Resolution.NotFound(tlsBlocked = true), result)
         }
 
     @Test
-    fun `resolve does not invoke onTlsBlocked when stage 5 finds a stream without any TLS failure`() =
+    fun `resolve finds stage 5's stream without reporting tlsBlocked`() =
         runTest {
             val homepageUrl = "http://myradio.test:${server.port}/"
             server.enqueue(MockResponse().setBody("[]"))
             server.enqueue(MockResponse().setBody("<html><body><p>Just a website.</p></body></html>"))
             server.enqueue(MockResponse().setResponseCode(200))
-            var tlsBlocked = false
 
-            resolver(
-                webViewSniff = {
-                    SniffOutcome(listOf(SniffedRequest(server.url("/webview-stream.mp3").toString())))
-                },
-            ).resolve(homepageUrl, onTlsBlocked = { tlsBlocked = true })
+            val result =
+                resolver(
+                    webViewSniff = {
+                        SniffOutcome(listOf(SniffedRequest(server.url("/webview-stream.mp3").toString())))
+                    },
+                ).resolveHomepage(homepageUrl)
 
-            assertFalse(tlsBlocked)
+            assertTrue(result is Resolution.Found)
         }
 
     @Test
@@ -664,7 +697,7 @@ class StationUrlResolverTest {
 
             resolver(
                 webViewSniff = { SniffOutcome(listOf(SniffedRequest(server.url("/webview-stream.mp3").toString()))) },
-            ).resolve(homepageUrl, onStage = { stages += it })
+            ).resolveStation(homepageUrl, onStage = { stages += it })
 
             assertEquals(
                 listOf(ResolveStage.SEARCHING_DIRECTORY, ResolveStage.SCANNING_PAGE, ResolveStage.RENDERING_PAGE),
@@ -703,7 +736,7 @@ class StationUrlResolverTest {
                             listOf(SniffedRequest(apiUrl, headers = mapOf("apikey" to "test-key"))),
                         )
                     },
-                ).resolve(homepageUrl)
+                ).resolveStation(homepageUrl)
 
             assertEquals(server.url("/actual-stream.mp3").toString(), result?.streamUrl)
             // Requests: directory search, homepage GET, apiUrl HEAD (direct-probe), apiUrl GET
@@ -734,7 +767,7 @@ class StationUrlResolverTest {
             val apiUrl = server.url("/rest/v1/station_settings?select=stream_url,logo_url").toString()
 
             val result =
-                resolver(webViewSniff = { SniffOutcome(listOf(SniffedRequest(apiUrl))) }).resolve(homepageUrl)
+                resolver(webViewSniff = { SniffOutcome(listOf(SniffedRequest(apiUrl))) }).resolveStation(homepageUrl)
 
             assertEquals(server.url("/actual-stream.mp3").toString(), result?.streamUrl)
             assertEquals(server.url("/logo.png").toString(), result?.favicon)
@@ -874,3 +907,12 @@ class StationUrlResolverTest {
         assertNull(result)
     }
 }
+
+/**
+ * Stages 1-5's found station, or null for any other [Resolution] - most tests here only care
+ * whether a stage produced the right stream, not which non-found outcome it was.
+ */
+private suspend fun StationUrlResolver.resolveStation(
+    url: String,
+    onStage: (ResolveStage) -> Unit = {},
+): ResolvedStation? = (resolveHomepage(url, onStage) as? Resolution.Found)?.station

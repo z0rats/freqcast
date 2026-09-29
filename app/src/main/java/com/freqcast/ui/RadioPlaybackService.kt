@@ -43,7 +43,8 @@ import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.playback.ClipFormat
-import com.freqcast.ui.playback.ConnectionRetryPolicy
+import com.freqcast.ui.playback.PlaybackCommands
+import com.freqcast.ui.playback.PlaybackSession
 import com.freqcast.ui.playback.PlaybackStateStore
 import com.freqcast.ui.playback.RadioBrowseTree
 import com.freqcast.ui.playback.RetryDecision
@@ -87,7 +88,56 @@ data class PlaybackRequest(
     val streamUrl: String,
     val customIcon: String?,
     val knownHls: Boolean?,
-)
+) {
+    companion object {
+        fun of(station: RadioStation) =
+            PlaybackRequest(
+                stationName = station.name,
+                streamUrl = station.streamUrl,
+                customIcon = station.customIcon,
+                knownHls = station.isHls,
+            )
+
+        /**
+         * For a start command that only carried a name/URL pair: the icon and HLS hint come from
+         * [station] (looked up by URL) when the URL is a saved station, else stay unknown.
+         */
+        fun of(
+            stationName: String?,
+            streamUrl: String,
+            station: RadioStation?,
+        ) = PlaybackRequest(
+            stationName = stationName,
+            streamUrl = streamUrl,
+            customIcon = station?.customIcon,
+            knownHls = station?.isHls,
+        )
+    }
+}
+
+/**
+ * Where a [RadioPlaybackService.play] call came from - decides the two things that differ per
+ * entry point, so each entry point states its origin instead of re-deciding them inline.
+ */
+internal enum class PlayOrigin(
+    /**
+     * Top-level entry points rebuild the media session ([RadioPlaybackService.startPlayback]);
+     * anything dispatched from inside a session/player callback must not rebuild the session it's
+     * running in, so it goes straight to `applyPlayback`.
+     */
+    val rebuildsSession: Boolean,
+    /** Reports the play to the Radio Browser directory's `clickcount` (Discover-added stations only). */
+    val countsAsClick: Boolean,
+) {
+    /** A start command intent (Activities, widget, alarm, AppFunctions, see [com.freqcast.ui.playback.PlaybackCommands]). */
+    START_COMMAND(rebuildsSession = true, countsAsClick = true),
+
+    /** Process-death restart resuming the last station - not a new click, avoids double-counting on cold start. */
+    RESUME(rebuildsSession = true, countsAsClick = false),
+
+    /** Android Auto browse-tree tap or notification skip-next/previous - runs inside a session callback. */
+    IN_SESSION(rebuildsSession = false, countsAsClick = true),
+}
 
 /** Snapshot of playback state exposed reactively so the UI doesn't need to poll the service. */
 data class PlaybackSnapshot(
@@ -122,16 +172,14 @@ class RadioPlaybackService : MediaLibraryService() {
     private var notificationManager: PlayerNotificationManager? = null
 
     /**
-     * The station currently playing (or last played), set by [applyPlayback] itself from the
-     * [PlaybackRequest] it's given - the single source for station name/icon everywhere else in
-     * this class reads them (notification, `PendingIntent` extras, widget, [getCurrentStationName]).
-     * Deliberately untouched by [stopPlayback] (matches the old `stationName` field's behavior, not
-     * the old `currentCustomIcon` field's - see git history): [getCurrentStationName] and the widget
-     * both rely on it still naming the last-played station after an explicit stop, and nothing reads
-     * [currentRequest] post-stop in a way that clearing it would fix, so there's nothing to gain by
-     * asymmetrically nulling it out.
+     * Owns all per-stream state (current station, retry/backoff, connection-error signals) and the
+     * rules that change it - this class only reports events into it and executes the decisions it
+     * returns. See [PlaybackSession].
      */
-    private var currentRequest: PlaybackRequest? = null
+    private val session = PlaybackSession()
+
+    /** The station currently playing (or last played) - survives [stopPlayback], see [PlaybackSession.currentRequest]. */
+    private val currentRequest: PlaybackRequest? get() = session.currentRequest
 
     private lateinit var timeshift: TimeshiftController
     private lateinit var playbackStateStore: PlaybackStateStore
@@ -144,7 +192,6 @@ class RadioPlaybackService : MediaLibraryService() {
     /** Serializes [switchToAdjacentStation] calls - see its doc for why. */
     private val stationSwitchMutex = Mutex()
 
-    private val retryPolicy = ConnectionRetryPolicy()
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -153,23 +200,6 @@ class RadioPlaybackService : MediaLibraryService() {
 
     private val _playbackSnapshot = MutableStateFlow(PlaybackSnapshot())
     val playbackSnapshot: StateFlow<PlaybackSnapshot> = _playbackSnapshot.asStateFlow()
-
-    /**
-     * Monotonic timestamp of the last connection failure (timeshift recorder I/O error, or retry
-     * exhaustion after a network error/loss), or null if none has happened yet in this process.
-     * Never reset back to null - consumers react to the value *changing*, not to its
-     * null/not-null-ness, since a new failure simply overwrites it.
-     */
-    private var lastConnectionErrorAt: Long? = null
-
-    /**
-     * Whether the current stream is in a give-up state (retries exhausted or a fatal error), for
-     * [PlaybackStatus.ERROR][com.freqcast.ui.components.PlaybackStatus] in the UI. Unlike
-     * [lastConnectionErrorAt] (which never resets - it only drives a one-shot Toast on change),
-     * this must flip back to false on the next attempt, or the mini player would show ERROR
-     * forever after the first failure of the session - see [applyPlayback].
-     */
-    private var isConnectionBroken = false
 
     /**
      * [updateWidgetToo] is false for the once-a-second timeshift ticker ([onCreate]): the widget
@@ -188,9 +218,9 @@ class RadioPlaybackService : MediaLibraryService() {
                 isAtLive = timeshift.isAtLive(),
                 trackTitle = timeshift.currentTrackTitle(),
                 sleepTimerEndAtMs = sleepTimer.endAtMsOrNull(),
-                connectionErrorAt = lastConnectionErrorAt,
-                isRetryPending = retryPolicy.isPendingRetry(),
-                isConnectionBroken = isConnectionBroken,
+                connectionErrorAt = session.connectionErrorAt,
+                isRetryPending = session.isPendingRetry,
+                isConnectionBroken = session.isConnectionBroken,
                 bufferedDurationMs = timeshift.bufferedDurationMs(),
                 offsetFromLiveMs = timeshift.offsetFromLiveMs(),
                 clipFormatAvailable = timeshift.currentClipFormat() != null,
@@ -200,7 +230,7 @@ class RadioPlaybackService : MediaLibraryService() {
 
     /** Pushes the latest station/playing state to the home screen widget (see `widget/RadioWidget`). */
     private fun updateWidget(isPlaying: Boolean) {
-        val streamUrl = retryPolicy.currentStreamUrlOrNull() ?: player?.currentMediaItem?.mediaId
+        val streamUrl = session.activeStreamUrlOrNull() ?: player?.currentMediaItem?.mediaId
         WidgetStateStore(
             this,
         ).save(stationName = currentRequest?.stationName, streamUrl = streamUrl, isPlaying = isPlaying)
@@ -270,31 +300,24 @@ class RadioPlaybackService : MediaLibraryService() {
         flags: Int,
         startId: Int,
     ): Int {
-        if (intent?.action == ACTION_STOP) {
+        val command = PlaybackCommands.parse(intent)
+
+        if (command == PlaybackCommands.Command.Stop) {
             stopPlayback()
             return START_NOT_STICKY
         }
 
-        val streamUrl = intent?.getStringExtra(EXTRA_STREAM_URL)
-
-        if (streamUrl != null) {
-            val name = intent.getStringExtra(EXTRA_STATION_NAME)
-            // The caller only ever passes name/URL strings (Activities, widget, alarm, shortcuts),
-            // never the full RadioStation, so the known-HLS hint and Radio Browser uuid are looked
-            // up here by URL instead of threading them through every intent-creation call site.
+        if (command is PlaybackCommands.Command.Start) {
+            // The command only carries name/URL strings, never the full RadioStation, so the
+            // known-HLS hint and Radio Browser uuid are looked up here by URL instead of threading
+            // them through every caller.
             serviceScope.launch {
-                val station = repository.getStationByUrl(streamUrl)
-                startPlayback(
-                    PlaybackRequest(
-                        stationName = name,
-                        streamUrl = streamUrl,
-                        customIcon = station?.customIcon,
-                        knownHls = station?.isHls,
-                    ),
+                val station = repository.getStationByUrl(command.streamUrl)
+                play(
+                    PlaybackRequest.of(command.stationName, command.streamUrl, station),
+                    station,
+                    PlayOrigin.START_COMMAND,
                 )
-                // A genuine new play (as opposed to the process-restart resume branch below):
-                // register it as a "click" with the directory if this station came from Discover.
-                station?.radioBrowserUuid?.let { uuid -> radioBrowserApi.registerClick(uuid) }
             }
         } else if (player?.playbackState != Player.STATE_IDLE) {
             // A genuine process-death restart always finds the player IDLE (onCreate() just built a
@@ -314,14 +337,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 Log.d(TAG, "onStartCommand: restoring last station after service restart")
                 serviceScope.launch {
                     val station = repository.getStationByUrl(saved.streamUrl)
-                    startPlayback(
-                        PlaybackRequest(
-                            stationName = saved.stationName,
-                            streamUrl = saved.streamUrl,
-                            customIcon = station?.customIcon,
-                            knownHls = station?.isHls,
-                        ),
-                    )
+                    play(PlaybackRequest.of(saved.stationName, saved.streamUrl, station), station, PlayOrigin.RESUME)
                 }
             } else {
                 stopSelf()
@@ -463,7 +479,7 @@ class RadioPlaybackService : MediaLibraryService() {
                                 }
                                 if (playbackState == Player.STATE_READY) {
                                     // Stream loaded successfully: give future failures a fresh retry budget.
-                                    retryPolicy.onPlaybackSucceeded()
+                                    session.onPlaybackSucceeded()
                                 }
                                 refreshSnapshot()
                             }
@@ -539,7 +555,7 @@ class RadioPlaybackService : MediaLibraryService() {
 
                         override fun getCurrentContentText(player: Player): CharSequence =
                             when {
-                                retryPolicy.isPendingRetry() -> getString(R.string.reconnecting)
+                                session.isPendingRetry -> getString(R.string.reconnecting)
                                 else -> timeshift.currentTrackTitle() ?: getString(R.string.app_name)
                             }
 
@@ -595,6 +611,22 @@ class RadioPlaybackService : MediaLibraryService() {
                 }
     }
 
+    /**
+     * The one path every "play this station" entry point takes - [origin] decides whether the
+     * session is rebuilt and whether the play counts as a directory click, so no entry point
+     * re-decides either inline.
+     */
+    private fun play(
+        request: PlaybackRequest,
+        station: RadioStation?,
+        origin: PlayOrigin,
+    ) {
+        if (origin.rebuildsSession) startPlayback(request) else applyPlayback(request)
+        if (origin.countsAsClick) {
+            station?.radioBrowserUuid?.let { uuid -> serviceScope.launch { radioBrowserApi.registerClick(uuid) } }
+        }
+    }
+
     private fun startPlayback(
         request: PlaybackRequest,
         isRetry: Boolean = false,
@@ -607,21 +639,19 @@ class RadioPlaybackService : MediaLibraryService() {
      * Drives the player/notification/network-retry/timeshift pipeline for [request]. Split out
      * from [startPlayback] so [MediaLibrarySessionCallback.onAddMediaItems] (Android Auto tapping a
      * station in the browse tree) can start playback without rebuilding the session it's currently
-     * being called from — see [buildMediaSession]'s doc for why that matters. Sets [currentRequest]
-     * itself, so every field this class needs about the playing station arrives in this one call
-     * instead of a caller pre-setting mutable fields in the right order beforehand.
+     * being called from — see [buildMediaSession]'s doc for why that matters. Reports [request] to
+     * [session] itself, so every field this class needs about the playing station arrives in this
+     * one call instead of a caller pre-setting mutable fields in the right order beforehand.
      */
     private fun applyPlayback(
         request: PlaybackRequest,
         isRetry: Boolean = false,
     ) {
-        currentRequest = request
-        val streamUrl = request.streamUrl
         val exoPlayer = player ?: return
+        val streamUrl = request.streamUrl
         val isHls = isHlsUrl(streamUrl, request.knownHls)
         Log.d(TAG, "applyPlayback: isHls=$isHls, url=${streamUrl.take(60)}, isRetry=$isRetry")
-        retryPolicy.onPlaybackStarted(streamUrl, request.knownHls, isRetry)
-        isConnectionBroken = false
+        session.onPlaybackStarted(request, isRetry)
         playbackStateStore.save(request.stationName, streamUrl)
         timeshift.stop()
         registerNetworkCallback()
@@ -741,11 +771,11 @@ class RadioPlaybackService : MediaLibraryService() {
     internal fun tryResumePlaybackAfterNetworkRestored() {
         if (!isNetworkAvailable(this)) return
         val p = player ?: return
-        handleRetryDecision(retryPolicy.onNetworkAvailable(isPlayerIdle = p.playbackState == Player.STATE_IDLE))
+        handleRetryDecision(session.onNetworkAvailable(isPlayerIdle = p.playbackState == Player.STATE_IDLE))
     }
 
     /**
-     * Single dispatch point for every [RetryDecision] the policy can produce, regardless of which
+     * Single dispatch point for every [RetryDecision] [session] can produce, regardless of which
      * caller ([tryResumePlaybackAfterNetworkRestored] or [handlePlayerError]) triggered it - each
      * caller only ever receives a subset of this sealed type, but funneling both through one `when`
      * keeps the exhaustive match (and the GiveUp/NoAction handling) in a single place instead of
@@ -764,9 +794,8 @@ class RadioPlaybackService : MediaLibraryService() {
             }
 
             RetryDecision.GiveUp -> {
+                // session already marked itself broken and stamped connectionErrorAt.
                 Log.d(TAG, "handleRetryDecision: retry limit reached, giving up")
-                lastConnectionErrorAt = System.currentTimeMillis()
-                isConnectionBroken = true
                 stopPlayback()
             }
 
@@ -782,8 +811,7 @@ class RadioPlaybackService : MediaLibraryService() {
 
     fun stopPlayback() {
         cancelSleepTimer()
-        retryPolicy.reset()
-        // currentRequest deliberately survives a stop - see its doc.
+        session.onStopped()
         playbackStateStore.clear()
         unregisterNetworkCallback()
         timeshift.stop()
@@ -903,22 +931,20 @@ class RadioPlaybackService : MediaLibraryService() {
 
             // Transient network errors (e.g. VPN toggle): retry when network is back instead of stopping.
             else -> {
-                handleRetryDecision(retryPolicy.onPlaybackError(error))
+                handleRetryDecision(session.onPlaybackError(error))
             }
         }
     }
 
     /**
      * Only retries if [attemptId] is still current — a manual stop/switch or a network-triggered
-     * retry in the meantime invalidates it. Reuses [currentRequest]'s station name/icon (a retry
-     * always replays the same stream a request was already set for - see [ConnectionRetryPolicy],
-     * whose own tracked [target]'s `streamUrl` is always that same URL) rather than requiring the
-     * caller to somehow already know them again.
+     * retry in the meantime invalidates it ([PlaybackSession.attemptRetry] returns null). Replays
+     * the session's own request, so the retry can't flip-flop the HLS decision or lose the
+     * station's name/icon.
      */
     private fun attemptScheduledRetry(attemptId: Long) {
-        val target = retryPolicy.attemptRetry(attemptId) ?: return
-        val base = currentRequest ?: return
-        startPlayback(base.copy(streamUrl = target.streamUrl, knownHls = target.knownHls), isRetry = true)
+        val request = session.attemptRetry(attemptId) ?: return
+        startPlayback(request, isRetry = true)
     }
 
     /**
@@ -927,8 +953,7 @@ class RadioPlaybackService : MediaLibraryService() {
      * player-level error would. Internal (not private), same test-seam reason as [handlePlayerError].
      */
     internal fun onTimeshiftError() {
-        lastConnectionErrorAt = System.currentTimeMillis()
-        retryPolicy.markPendingRetry()
+        session.onRecorderError()
         timeshift.stop()
         notificationManager?.invalidate()
         refreshSnapshot()
@@ -936,7 +961,7 @@ class RadioPlaybackService : MediaLibraryService() {
 
     private fun releasePlayer() {
         cancelSleepTimer()
-        retryPolicy.reset()
+        session.onStopped()
         unregisterNetworkCallback()
         timeshift.stop()
         notificationManager?.setPlayer(null)
@@ -969,15 +994,7 @@ class RadioPlaybackService : MediaLibraryService() {
      */
     internal fun playFromBrowseTree(mediaId: String): Boolean {
         val station = browseTree.findStation(mediaId) ?: return false
-        applyPlayback(
-            PlaybackRequest(
-                stationName = station.name,
-                streamUrl = station.streamUrl,
-                customIcon = station.customIcon,
-                knownHls = station.isHls,
-            ),
-        )
-        station.radioBrowserUuid?.let { uuid -> serviceScope.launch { radioBrowserApi.registerClick(uuid) } }
+        play(PlaybackRequest.of(station), station, PlayOrigin.IN_SESSION)
         return true
     }
 
@@ -1003,15 +1020,7 @@ class RadioPlaybackService : MediaLibraryService() {
             stationSwitchMutex.withLock {
                 val currentStreamUrl = currentRequest?.streamUrl ?: return@withLock
                 val target = pick(repository.getAllStations(), currentStreamUrl) ?: return@withLock
-                applyPlayback(
-                    PlaybackRequest(
-                        stationName = target.name,
-                        streamUrl = target.streamUrl,
-                        customIcon = target.customIcon,
-                        knownHls = target.isHls,
-                    ),
-                )
-                target.radioBrowserUuid?.let { uuid -> radioBrowserApi.registerClick(uuid) }
+                play(PlaybackRequest.of(target), target, PlayOrigin.IN_SESSION)
             }
         }
     }
@@ -1116,9 +1125,6 @@ class RadioPlaybackService : MediaLibraryService() {
 
     companion object {
         private const val TAG = "RadioPlayback"
-        const val EXTRA_STATION_NAME = "station_name"
-        const val EXTRA_STREAM_URL = "stream_url"
-        const val ACTION_STOP = "com.freqcast.action.STOP"
 
         /** Rewind amount for both the in-app button and the [TimeshiftSeekPlayer]-routed system seek controls. */
         const val TIMESHIFT_SEEK_BACK_MS = 5000L

@@ -10,7 +10,7 @@ import org.robolectric.annotation.Config
 /**
  * Covers the pure HLS-detection logic in [RadioPlaybackService] without spinning up the full media
  * session / ExoPlayer / audio framework machinery the service also depends on. Retry backoff and
- * retryable-error classification moved to [com.freqcast.ui.playback.ConnectionRetryPolicyTest]
+ * retryable-error classification moved to [com.freqcast.ui.playback.PlaybackSessionTest]
  * along with the rest of the reconnection state machine.
  */
 @RunWith(RobolectricTestRunner::class)

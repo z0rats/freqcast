@@ -9,6 +9,7 @@ import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioBrowserStation
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.data.Resolution
 import com.freqcast.data.ResolveStage
 import com.freqcast.data.ResolvedStation
 import com.freqcast.data.SniffOutcome
@@ -63,13 +64,13 @@ class AddStationViewModel(
     private val repository: RadioStationRepository,
     private val editingStationId: Long?,
     private val appContext: Context,
-    private val streamValidator: StreamValidator = StreamValidator(),
+    streamValidator: StreamValidator = StreamValidator(),
     private val webViewStreamSniffer: WebViewStreamSniffer = WebViewStreamSniffer(appContext),
     private val stationUrlResolver: StationUrlResolver =
         StationUrlResolver(
             streamValidator = streamValidator,
-            // StationUrlResolver.SniffOutcome carries hadTlsFailure in the return value itself, so
-            // it reaches resolve()'s own onTlsBlocked callback directly - no side channel needed.
+            // SniffOutcome carries hadTlsFailure in the return value itself, so it reaches
+            // Resolution.NotFound.tlsBlocked directly - no side channel needed.
             webViewSniff = { url ->
                 val result = webViewStreamSniffer.sniff(url)
                 SniffOutcome(
@@ -171,44 +172,38 @@ class AddStationViewModel(
                 // urlTrimmed may be a stream URL (used as-is) or a station homepage - a
                 // non-technical user's more likely starting point - which stationUrlResolver
                 // tries to turn into one via the Radio Browser directory or by scraping the page.
-                var ambiguousCandidates: List<RadioBrowserStation>? = null
-                var tlsBlocked = false
+                val resolution =
+                    stationUrlResolver.resolve(urlTrimmed) { stage ->
+                        _uiState.value = _uiState.value.copy(savingStageRes = stage.toStageRes())
+                    }
                 val resolved =
-                    resolveStation(
-                        urlTrimmed,
-                        onAmbiguous = { candidates -> ambiguousCandidates = candidates },
-                        onTlsBlocked = { tlsBlocked = true },
-                    )
-                if (resolved == null) {
-                    val candidates = ambiguousCandidates
-                    _uiState.value =
-                        when {
-                            !candidates.isNullOrEmpty() -> {
-                                _uiState.value.copy(
-                                    isSaving = false,
-                                    savingStageRes = null,
-                                    candidateStations = candidates,
-                                )
-                            }
-
-                            tlsBlocked && checkVpnActive() -> {
-                                _uiState.value.copy(
-                                    isSaving = false,
-                                    savingStageRes = null,
-                                    urlErrorRes = R.string.error_stream_blocked_vpn,
-                                )
-                            }
-
-                            else -> {
-                                _uiState.value.copy(
-                                    isSaving = false,
-                                    savingStageRes = null,
-                                    urlErrorRes = R.string.error_stream_unreachable,
-                                )
-                            }
+                    when (resolution) {
+                        is Resolution.Found -> {
+                            resolution.station
                         }
-                    return@launch
-                }
+
+                        is Resolution.Ambiguous -> {
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    isSaving = false,
+                                    savingStageRes = null,
+                                    candidateStations = resolution.candidates,
+                                )
+                            return@launch
+                        }
+
+                        is Resolution.NotFound -> {
+                            val errorRes =
+                                if (resolution.tlsBlocked && checkVpnActive()) {
+                                    R.string.error_stream_blocked_vpn
+                                } else {
+                                    R.string.error_stream_unreachable
+                                }
+                            _uiState.value =
+                                _uiState.value.copy(isSaving = false, savingStageRes = null, urlErrorRes = errorRes)
+                            return@launch
+                        }
+                    }
 
                 finalizeSave(resolved)
             } catch (e: Exception) {
@@ -347,45 +342,6 @@ class AddStationViewModel(
         return label.replaceFirstChar { it.uppercase() }
     }
 
-    /**
-     * A pasted URL that's already a reachable audio stream is used as-is; anything else -
-     * unreachable, or reachable but serving an ordinary webpage - falls back to
-     * [stationUrlResolver], which treats it as a homepage to resolve instead. Reachability alone
-     * isn't enough to tell the two apart, since a station's homepage is normally just as
-     * reachable as its stream; the response's `Content-Type` is what actually distinguishes them.
-     *
-     * Reports its progress via [AddStationUiState.savingStageRes] as it goes, since this can take
-     * several round-trips (direct-stream probe, then possibly the Radio Browser directory and/or
-     * a page scrape) - a plain spinner alone would leave the user guessing how much is left.
-     */
-    private suspend fun resolveStation(
-        url: String,
-        onAmbiguous: (List<RadioBrowserStation>) -> Unit = {},
-        onTlsBlocked: () -> Unit = {},
-    ): ResolvedStation? {
-        _uiState.value = _uiState.value.copy(savingStageRes = R.string.stage_checking_url)
-        val probe = streamValidator.probe(url)
-        // A TLS handshake reset on this very first, direct connection attempt is already a strong
-        // enough signal to act on. It is *not* the only place this can show up, though - the
-        // pasted homepage can load over TLS just fine while a *different* host its JS talks to
-        // (e.g. a separate API/backend domain) is the one actually getting blocked; that case only
-        // surfaces later, from stage 5's WebView load - resolve()'s own onTlsBlocked below covers it.
-        if (probe.tlsHandshakeFailed) onTlsBlocked()
-        return if (probe.reachable && probe.looksLikeAudio) {
-            // No favicon here: a bare stream URL never went through a homepage fetch, so there's
-            // nothing to read a real `<link rel="icon">` from - only [fromDirectory] and
-            // [fromHtml] below have a page (or directory listing) to find one on.
-            ResolvedStation(streamUrl = url, isHls = probe.contentType.orEmpty().contains("mpegurl", ignoreCase = true))
-        } else {
-            stationUrlResolver.resolve(
-                url,
-                onAmbiguous = onAmbiguous,
-                onStage = { stage -> _uiState.value = _uiState.value.copy(savingStageRes = stage.toStageRes()) },
-                onTlsBlocked = onTlsBlocked,
-            )
-        }
-    }
-
     /** Downloads and persists [faviconUrl] as a station icon file; null on any failure (network, decode, or storage). */
     private suspend fun downloadFavicon(faviconUrl: String): String? {
         val bytes = radioBrowserApi.downloadFavicon(faviconUrl) ?: return null
@@ -394,6 +350,7 @@ class AddStationViewModel(
 
     private fun ResolveStage.toStageRes(): Int =
         when (this) {
+            ResolveStage.CHECKING_URL -> R.string.stage_checking_url
             ResolveStage.SEARCHING_DIRECTORY -> R.string.stage_searching_directory
             ResolveStage.SCANNING_PAGE -> R.string.stage_scanning_page
             ResolveStage.RENDERING_PAGE -> R.string.stage_rendering_page

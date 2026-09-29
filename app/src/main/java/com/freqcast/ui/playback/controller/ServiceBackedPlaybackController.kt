@@ -1,11 +1,11 @@
 package com.freqcast.ui.playback.controller
 
 import android.content.Context
-import android.content.Intent
 import com.freqcast.data.RadioStation
 import com.freqcast.ui.PlaybackSnapshot
 import com.freqcast.ui.RadioPlaybackService
 import com.freqcast.ui.playback.ClipFormat
+import com.freqcast.ui.playback.PlaybackCommands
 import com.freqcast.util.isNetworkAvailable
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -39,18 +39,10 @@ class ServiceBackedPlaybackController(
             }
 
             ToggleAction.START -> {
-                startService(station)
+                PlaybackCommands.start(appContext, station)
                 ToggleResult.STARTED
             }
         }
-    }
-
-    private fun startService(station: RadioStation) {
-        Intent(appContext, RadioPlaybackService::class.java)
-            .apply {
-                putExtra(RadioPlaybackService.EXTRA_STATION_NAME, station.name)
-                putExtra(RadioPlaybackService.EXTRA_STREAM_URL, station.streamUrl)
-            }.also { appContext.startForegroundService(it) }
     }
 
     override fun stopPlayback() = service.stopPlayback()

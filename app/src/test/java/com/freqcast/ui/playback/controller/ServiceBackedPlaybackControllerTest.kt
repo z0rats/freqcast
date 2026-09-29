@@ -9,6 +9,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.freqcast.data.AppDatabase
 import com.freqcast.data.RadioStation
 import com.freqcast.ui.RadioPlaybackService
+import com.freqcast.ui.playback.startCommandOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
@@ -93,8 +94,8 @@ class ServiceBackedPlaybackControllerTest {
 
             assertEquals(ToggleResult.STARTED, result)
             val started = shadowOf(context as Application).nextStartedService
-            assertEquals("Jazz FM", started.getStringExtra(RadioPlaybackService.EXTRA_STATION_NAME))
-            assertEquals("https://example.com/jazz.mp3", started.getStringExtra(RadioPlaybackService.EXTRA_STREAM_URL))
+            assertEquals("Jazz FM", startCommandOf(started)?.stationName)
+            assertEquals("https://example.com/jazz.mp3", startCommandOf(started)?.streamUrl)
         }
 
     @Test
