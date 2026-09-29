@@ -1,22 +1,13 @@
 package com.freqcast.data
 
-import android.content.Context
-import com.freqcast.util.IconStorage
-import org.json.JSONArray
-import org.json.JSONException
-import org.json.JSONObject
-import java.util.Base64
+/** What [RadioStationRepository.insertStationIfAbsent] does when [RadioStation.name] collides with a different existing station. */
+enum class NameCollisionPolicy {
+    /** Append " (2)", " (3)", ... via [RadioStationRepository.uniqueName] until it no longer collides. */
+    RENAME,
 
-/** Null when [key] is absent/JSON-null, or when the string it holds is blank. */
-private fun JSONObject.optNullableString(key: String): String? =
-    if (!has(key) || isNull(key)) null else optString(key).ifBlank { null }
-
-/** Outcome of [RadioStationRepository.importStationsFromJson]. */
-data class ImportResult(
-    val imported: Int,
-    val skipped: Int,
-    val failed: Int,
-)
+    /** Don't insert at all. */
+    SKIP,
+}
 
 class RadioStationRepository(
     private val dao: RadioStationDao,
@@ -68,128 +59,30 @@ class RadioStationRepository(
     }
 
     /**
-     * Serializes all stations to a JSON array of `{name, streamUrl, customIcon, description, isHls,
-     * radioBrowserUuid}` objects, or `null` if there are no saved stations to export.
+     * Inserts [station] unless a station with the same [RadioStation.streamUrl] already exists -
+     * the url is what makes it *the same station*, so a url collision always means "nothing to
+     * do" regardless of [onNameCollision]. A name collision with a *different* station is
+     * resolved per [onNameCollision]. Returns the inserted row's id, or `null` if nothing was
+     * inserted.
+     *
+     * The one seam every "add a station without interactive per-field validation" flow goes
+     * through - [RadioBrowserStationInstaller], curated-pack seeding, and curated-pack restore -
+     * so they can't drift into different collision behavior again. [com.freqcast.ui.AddStationViewModel]'s
+     * own save flow is deliberately not routed through this: it surfaces name/url collisions as
+     * distinct field errors to the user instead of silently renaming or skipping.
      */
-    suspend fun exportStationsToJson(): String? {
-        val stations = dao.getAllStations()
-        if (stations.isEmpty()) return null
-        return StationBackupJson.toJsonArray(stations)
+    suspend fun insertStationIfAbsent(
+        station: RadioStation,
+        onNameCollision: NameCollisionPolicy = NameCollisionPolicy.SKIP,
+    ): Long? {
+        if (isUrlTaken(station.streamUrl)) return null
+        val name =
+            when (onNameCollision) {
+                NameCollisionPolicy.RENAME -> uniqueName(station.name)
+                NameCollisionPolicy.SKIP -> if (isNameTaken(station.name)) return null else station.name
+            }
+        return insertStation(station.copy(name = name))
     }
-
-    /**
-     * Imports stations from a JSON array produced by [exportStationsToJson]. Entries whose
-     * name or URL already exists are skipped rather than overwritten; entries missing a name
-     * or URL are counted as failed. Throws [IllegalArgumentException] if [json] isn't a JSON array.
-     * [context] is needed to persist an entry's `iconData` payload (if present) as a new local icon
-     * file via [IconStorage] — see [resolveImportedIcon].
-     */
-    suspend fun importStationsFromJson(
-        context: Context,
-        json: String,
-    ): ImportResult {
-        val array =
-            try {
-                JSONArray(json)
-            } catch (e: JSONException) {
-                throw IllegalArgumentException("Not a valid stations backup file", e)
-            }
-
-        var imported = 0
-        var skipped = 0
-        var failed = 0
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i)
-            val name = obj?.optString("name")?.trim().orEmpty()
-            val url = obj?.optString("streamUrl")?.trim().orEmpty()
-            if (obj == null || name.isEmpty() || url.isEmpty()) {
-                failed++
-                continue
-            }
-            if (isNameTaken(name) || isUrlTaken(url)) {
-                skipped++
-                continue
-            }
-            val icon = resolveImportedIcon(context, obj)
-            // "genre" was this field's name before the column was renamed to "description";
-            // older backup files still carry it under that key.
-            val description = obj.optNullableString("description") ?: obj.optNullableString("genre")
-            val isHls = obj.optBoolean("isHls", false)
-            val radioBrowserUuid = obj.optNullableString("radioBrowserUuid")
-            insertStation(
-                RadioStation(
-                    name = name,
-                    streamUrl = url,
-                    customIcon = icon,
-                    description = description,
-                    isHls = isHls,
-                    radioBrowserUuid = radioBrowserUuid,
-                ),
-            )
-            imported++
-        }
-        return ImportResult(imported, skipped, failed)
-    }
-
-    /**
-     * Resolves an imported entry's icon: if a base64 `iconData` payload is present (added by
-     * [StationBackupJson] for a locally stored icon image so it survives a move to another device),
-     * decodes it and persists it as a new local icon file via [IconStorage] — the entry's
-     * `customIcon` string came from the exporting device and won't resolve here. Falls back to that
-     * `customIcon` string as-is (an emoji, or a pre-`iconData` backup's now-unresolvable path) when
-     * no `iconData` payload is present.
-     */
-    private fun resolveImportedIcon(
-        context: Context,
-        obj: JSONObject,
-    ): String? {
-        val iconData = obj.optNullableString("iconData") ?: return obj.optNullableString("customIcon")
-        val bytes = runCatching { Base64.getDecoder().decode(iconData) }.getOrNull() ?: return null
-        return IconStorage.saveImageBytes(context, bytes)
-    }
-
-    /**
-     * Imports stations from an OPML, M3U/M3U8, or PLS playlist file (format sniffed by
-     * [PlaylistImport]). Only `name`/`streamUrl` are known from these formats, so every other
-     * field stays at its entity default. Same skip-on-duplicate/failed-on-missing-field semantics
-     * as [importStationsFromJson]. Throws [IllegalArgumentException] if the format isn't recognized.
-     */
-    suspend fun importStationsFromPlaylist(content: String): ImportResult {
-        val entries = PlaylistImport.parse(content)
-        var imported = 0
-        var skipped = 0
-        var failed = 0
-        for (entry in entries) {
-            val name = entry.name.trim()
-            val url = entry.streamUrl.trim()
-            if (name.isEmpty() || url.isEmpty()) {
-                failed++
-                continue
-            }
-            if (isNameTaken(name) || isUrlTaken(url)) {
-                skipped++
-                continue
-            }
-            insertStation(RadioStation(name = name, streamUrl = url))
-            imported++
-        }
-        return ImportResult(imported, skipped, failed)
-    }
-
-    /**
-     * Single import entry point for [SettingsScreen]/`SettingsViewModel`: sniffs whether [content]
-     * is a JSON stations backup ([importStationsFromJson]) or an OPML/M3U/PLS playlist
-     * ([importStationsFromPlaylist]) and dispatches accordingly.
-     */
-    suspend fun importStations(
-        context: Context,
-        content: String,
-    ): ImportResult =
-        if (content.trimStart().startsWith("[")) {
-            importStationsFromJson(context, content)
-        } else {
-            importStationsFromPlaylist(content)
-        }
 
     companion object {
         fun create(context: android.content.Context): RadioStationRepository =

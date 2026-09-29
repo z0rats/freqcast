@@ -146,8 +146,10 @@ class AlarmEditViewModelTest {
             viewModel.save()
             waitUntil { events.isNotEmpty() }
 
-            val saved = (events.single() as AlarmEditEvent.Saved).alarm
+            val savedEvent = events.single() as AlarmEditEvent.Saved
+            val saved = savedEvent.alarm
             assertTrue(saved.enabled)
+            assertTrue(savedEvent.shouldSchedule)
             assertEquals(7, saved.hour)
             assertEquals(30, saved.minute)
             assertEquals("Rock FM", saved.stationName)
@@ -167,9 +169,10 @@ class AlarmEditViewModelTest {
             viewModel.save()
             waitUntil { events.isNotEmpty() }
 
-            val saved = (events.single() as AlarmEditEvent.Saved).alarm
-            assertFalse(saved.enabled)
-            assertNull(saved.stationName)
+            val savedEvent = events.single() as AlarmEditEvent.Saved
+            assertFalse(savedEvent.alarm.enabled)
+            assertNull(savedEvent.alarm.stationName)
+            assertFalse(savedEvent.shouldSchedule)
             job.cancel()
         }
 

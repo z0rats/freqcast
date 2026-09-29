@@ -15,16 +15,13 @@ import com.freqcast.data.RadioStationRepository
 import com.freqcast.data.RadioTag
 import com.freqcast.data.RadioTagRepository
 import com.freqcast.util.CountryCatalog
+import com.freqcast.util.DebouncedSearch
 import com.freqcast.util.LocationProvider
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlin.coroutines.coroutineContext
 
 enum class DiscoverSearchMode { NAME, GENRE, COUNTRY, NEARBY }
 
@@ -62,7 +59,7 @@ class DiscoverStationsViewModel(
 
     private val installer = RadioBrowserStationInstaller(repository, api)
 
-    private var searchJob: Job? = null
+    private val search = DebouncedSearch<List<RadioBrowserStation>>(viewModelScope)
     private var suggestJob: Job? = null
 
     init {
@@ -226,15 +223,14 @@ class DiscoverStationsViewModel(
      * chip to highlight, independent of [query] (which stays untouched here).
      */
     fun searchGenre(tag: String) {
-        searchJob?.cancel()
         suggestJob?.cancel()
         _uiState.value = _uiState.value.copy(selectedGenreTag = tag, tagSuggestions = emptyList())
-        searchJob = viewModelScope.launch { runSearch(tag) }
+        runSearch(tag, debounceMs = 0L)
     }
 
     fun onModeChange(mode: DiscoverSearchMode) {
         if (mode == _uiState.value.mode) return
-        searchJob?.cancel()
+        search.cancel()
         suggestJob?.cancel()
         _uiState.value =
             _uiState.value.copy(
@@ -256,46 +252,52 @@ class DiscoverStationsViewModel(
         if (mode != DiscoverSearchMode.NEARBY) scheduleSearch()
     }
 
+    /** Signals "no location" through [DebouncedSearch]'s failure channel — distinguished from any
+     * other search failure by [onResult] below, not logged as an unexpected error. */
+    private class LocationUnavailableException : Exception()
+
     /** Called by the screen once ACCESS_COARSE_LOCATION is confirmed granted. */
     fun searchNearby() {
-        searchJob?.cancel()
-        searchJob =
-            viewModelScope.launch {
+        search.launch(
+            block = {
                 _uiState.value =
                     _uiState.value.copy(isSearching = true, errorRes = null, locationPermissionDenied = false)
-                val location = locationProvider.getCurrentLocation()
-                if (location == null) {
-                    _uiState.value =
-                        _uiState.value.copy(
-                            isSearching = false,
-                            hasSearched = true,
-                            errorRes = R.string.discover_location_unavailable,
-                        )
-                    return@launch
-                }
-                try {
-                    val results =
-                        api.searchNearby(
-                            latitude = location.latitude,
-                            longitude = location.longitude,
-                            radiusMeters = NEARBY_RADIUS_METERS,
-                        )
-                    coroutineContext.ensureActive()
-                    _uiState.value = _uiState.value.copy(results = results, isSearching = false, hasSearched = true)
-                } catch (e: CancellationException) {
-                    // Superseded by a newer search (searchJob?.cancel()), not a real failure.
-                    throw e
-                } catch (e: Exception) {
-                    Log.e(TAG, "searchNearby failed", e)
-                    _uiState.value =
-                        _uiState.value.copy(
-                            results = emptyList(),
-                            isSearching = false,
-                            hasSearched = true,
-                            errorRes = R.string.discover_search_error,
-                        )
-                }
-            }
+                val location = locationProvider.getCurrentLocation() ?: throw LocationUnavailableException()
+                api.searchNearby(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    radiusMeters = NEARBY_RADIUS_METERS,
+                )
+            },
+            onResult = { result ->
+                result.fold(
+                    onSuccess = { results ->
+                        _uiState.value = _uiState.value.copy(results = results, isSearching = false, hasSearched = true)
+                    },
+                    onFailure = { e ->
+                        if (e is LocationUnavailableException) {
+                            // Leaves `results` as-is, same as before location resolution ever
+                            // starts - there's nothing wrong with a previous search's results.
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    isSearching = false,
+                                    hasSearched = true,
+                                    errorRes = R.string.discover_location_unavailable,
+                                )
+                        } else {
+                            Log.e(TAG, "searchNearby failed", e)
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    results = emptyList(),
+                                    isSearching = false,
+                                    hasSearched = true,
+                                    errorRes = R.string.discover_search_error,
+                                )
+                        }
+                    },
+                )
+            },
+        )
     }
 
     /** The screen calls this when the user declines the ACCESS_COARSE_LOCATION request. */
@@ -304,24 +306,22 @@ class DiscoverStationsViewModel(
     }
 
     private fun scheduleSearch() {
-        searchJob?.cancel()
         val query = _uiState.value.query.trim()
         if (query.isEmpty()) {
+            search.cancel()
             _uiState.value =
                 _uiState.value.copy(results = emptyList(), isSearching = false, hasSearched = false, errorRes = null)
             return
         }
-        searchJob =
-            viewModelScope.launch {
-                delay(SEARCH_DEBOUNCE_MS)
-                runSearch(query)
-            }
+        runSearch(query, debounceMs = SEARCH_DEBOUNCE_MS)
     }
 
-    private suspend fun runSearch(query: String) {
-        // NEARBY is driven by searchNearby(), never by the debounced text-query path.
-        if (_uiState.value.mode == DiscoverSearchMode.NEARBY) return
-        _uiState.value = _uiState.value.copy(isSearching = true, errorRes = null)
+    /** Shared by [scheduleSearch] (debounced text query) and [searchGenre] (immediate, chip-driven). */
+    private fun runSearch(
+        query: String,
+        debounceMs: Long,
+    ) {
+        // NEARBY is driven by searchNearby(), never by this text/tag-query path.
         val searchBy =
             when (_uiState.value.mode) {
                 DiscoverSearchMode.NAME -> RadioBrowserApi.SearchBy.NAME
@@ -329,29 +329,30 @@ class DiscoverStationsViewModel(
                 DiscoverSearchMode.COUNTRY -> RadioBrowserApi.SearchBy.COUNTRY
                 DiscoverSearchMode.NEARBY -> return
             }
-        try {
-            val results = api.search(query, searchBy)
-            // api.search()'s blocking OkHttp call isn't itself interruptible, so a cancellation
-            // requested while it was in flight may not have surfaced as an exception yet by the
-            // time it returns — check explicitly rather than let a stale, superseded search's
-            // results overwrite whatever the newer search already put in _uiState.
-            coroutineContext.ensureActive()
-            _uiState.value = _uiState.value.copy(results = results, isSearching = false, hasSearched = true)
-        } catch (e: CancellationException) {
-            // scheduleSearch() cancels this job whenever a newer keystroke supersedes it — if that
-            // lands while api.search() is already in flight, it surfaces here, not just as a
-            // cancelled delay(); not a real failure, so it must not become discover_search_error.
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "search failed: query=\"$query\", searchBy=$searchBy", e)
-            _uiState.value =
-                _uiState.value.copy(
-                    results = emptyList(),
-                    isSearching = false,
-                    hasSearched = true,
-                    errorRes = R.string.discover_search_error,
+        search.launch(
+            debounceMs = debounceMs,
+            block = {
+                _uiState.value = _uiState.value.copy(isSearching = true, errorRes = null)
+                api.search(query, searchBy)
+            },
+            onResult = { result ->
+                result.fold(
+                    onSuccess = { results ->
+                        _uiState.value = _uiState.value.copy(results = results, isSearching = false, hasSearched = true)
+                    },
+                    onFailure = { e ->
+                        Log.e(TAG, "search failed: query=\"$query\", searchBy=$searchBy", e)
+                        _uiState.value =
+                            _uiState.value.copy(
+                                results = emptyList(),
+                                isSearching = false,
+                                hasSearched = true,
+                                errorRes = R.string.discover_search_error,
+                            )
+                    },
                 )
-        }
+            },
+        )
     }
 
     fun addStation(station: RadioBrowserStation) {

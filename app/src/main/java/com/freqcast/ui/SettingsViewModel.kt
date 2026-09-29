@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.freqcast.data.CuratedStations
 import com.freqcast.data.ImportResult
 import com.freqcast.data.RadioStationRepository
+import com.freqcast.data.StationBackupIO
 import com.freqcast.data.UpdateChecker
 import com.freqcast.data.isNewerVersion
 import com.freqcast.ui.playback.SettingsStore
@@ -42,6 +43,8 @@ class SettingsViewModel(
         )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+    private val backupIO = StationBackupIO(repository)
+
     fun setWarnOnMeteredConnection(value: Boolean) {
         settingsStore.warnOnMeteredConnection = value
         _uiState.value = _uiState.value.copy(warnOnMeteredConnection = value)
@@ -71,32 +74,27 @@ class SettingsViewModel(
      * Plain suspend function (not launched internally) so callers get the JSON back to write to a
      * file. Returns `null` if there are no saved stations to export.
      */
-    suspend fun exportStationsJson(): String? = repository.exportStationsToJson()
+    suspend fun exportStationsJson(): String? = backupIO.export()
 
     /**
      * Plain suspend function so callers get the [ImportResult] back to show to the user. Accepts a
-     * JSON stations backup or an OPML/M3U/PLS playlist — see [RadioStationRepository.importStations].
+     * JSON stations backup or an OPML/M3U/PLS playlist — see [StationBackupIO.import].
      */
     suspend fun importStations(
         context: Context,
         content: String,
-    ): ImportResult = repository.importStations(context, content)
+    ): ImportResult = backupIO.import(context, content)
 
     /**
-     * Re-inserts any [CuratedStations.pack] entry the user deleted, matched by name/streamUrl
-     * (same skip-on-duplicate check `RadioStationRepository.importStationsFromJson` uses) so a
+     * Re-inserts any [CuratedStations.pack] entry the user deleted, via
+     * [RadioStationRepository.insertStationIfAbsent] (default [NameCollisionPolicy.SKIP]) so a
      * still-present curated station is never duplicated. [context] resolves each entry's bundled
      * icon, same as `MainViewModel.seedCuratedStationsIfNeeded`. Returns how many were restored.
      */
-    suspend fun restoreCuratedStations(context: Context): Int {
-        var restored = 0
-        for (station in CuratedStations.pack) {
-            if (repository.isNameTaken(station.name) || repository.isUrlTaken(station.streamUrl)) continue
-            repository.insertStation(CuratedStations.withResolvedIcon(context, station))
-            restored++
+    suspend fun restoreCuratedStations(context: Context): Int =
+        CuratedStations.pack.count { station ->
+            repository.insertStationIfAbsent(CuratedStations.withResolvedIcon(context, station)) != null
         }
-        return restored
-    }
 
     companion object {
         fun provideFactory(

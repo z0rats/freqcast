@@ -28,6 +28,10 @@ data class AlarmEditUiState(
 sealed interface AlarmEditEvent {
     data class Saved(
         val alarm: WakeAlarm,
+        /** Whether the caller should schedule (vs. cancel) [alarm] — `alarm.enabled` already
+         * factors in whether a station was picked (see [AlarmEditViewModel.save]), so the caller
+         * doesn't need to re-derive that from [alarm]'s fields itself. */
+        val shouldSchedule: Boolean,
     ) : AlarmEditEvent
 
     data class Deleted(
@@ -97,7 +101,8 @@ class AlarmEditViewModel(
                 } else {
                     alarmRepository.insertAlarm(alarm)
                 }
-            eventChannel.send(AlarmEditEvent.Saved(alarm.copy(id = savedId)))
+            val saved = alarm.copy(id = savedId)
+            eventChannel.send(AlarmEditEvent.Saved(saved, shouldSchedule = saved.enabled))
         }
     }
 

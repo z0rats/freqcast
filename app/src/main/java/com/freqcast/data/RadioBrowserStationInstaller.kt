@@ -19,9 +19,12 @@ class RadioBrowserStationInstaller(
 ) {
     /**
      * Inserts [station] unless its url is already saved locally - returns `true` once it's saved
-     * either way, `false` only on the rare unique-constraint race with the [repository.isUrlTaken]
-     * check right above it (defense-in-depth on top of [com.freqcast.data.AppDatabase]'s own
-     * indices); callers leave the station unmarked on `false` so the user can retry.
+     * either way, `false` only on the rare unique-constraint race with
+     * [RadioStationRepository.insertStationIfAbsent]'s own check right above it (defense-in-depth
+     * on top of [com.freqcast.data.AppDatabase]'s own indices); callers leave the station unmarked
+     * on `false` so the user can retry. A name collision with a different existing station is
+     * auto-renamed ([NameCollisionPolicy.RENAME]) rather than skipped, so a coincidental name clash
+     * never silently drops the add.
      *
      * The station is visible locally (with its auto-generated emoji icon) as soon as this
      * returns - a non-blank [RadioBrowserStation.favicon] is downloaded fire-and-forget in [scope]
@@ -33,18 +36,18 @@ class RadioBrowserStationInstaller(
         appContext: Context,
         station: RadioBrowserStation,
     ): Boolean {
-        if (repository.isUrlTaken(station.url)) return true
         val stationId =
             try {
-                repository.insertStation(
+                repository.insertStationIfAbsent(
                     RadioStation(
-                        name = repository.uniqueName(station.name),
+                        name = station.name,
                         streamUrl = station.url,
                         description = station.tags.takeIf { it.isNotBlank() },
                         isHls = station.hls,
                         radioBrowserUuid = station.uuid.takeIf { it.isNotBlank() },
                     ),
-                )
+                    onNameCollision = NameCollisionPolicy.RENAME,
+                ) ?: return true
             } catch (e: Exception) {
                 return false
             }

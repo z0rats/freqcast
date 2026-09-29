@@ -113,7 +113,7 @@ fun AlarmEditScreen(
             when (event) {
                 is AlarmEditEvent.Saved -> {
                     val alarm = event.alarm
-                    if (alarm.enabled && alarm.streamUrl != null) {
+                    if (event.shouldSchedule) {
                         val scheduled = AlarmScheduler.schedule(context, alarm.id, alarm.hour, alarm.minute)
                         if (scheduled) {
                             Toast

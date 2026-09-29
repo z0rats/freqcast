@@ -1,22 +1,16 @@
 package com.freqcast.ui
 
 import android.content.Context
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.freqcast.data.CuratedStations
 import com.freqcast.data.RadioBrowserApi
 import com.freqcast.data.RadioBrowserStation
 import com.freqcast.data.RadioBrowserStationInstaller
 import com.freqcast.data.RadioStation
 import com.freqcast.data.RadioStationRepository
 import com.freqcast.ui.playback.SettingsStore
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,24 +18,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import kotlin.coroutines.coroutineContext
 
 sealed interface MainScreenEvent {
     data class StationDeleted(
         val station: RadioStation,
     ) : MainScreenEvent
 }
-
-/**
- * Search-catalog fallback shown when [MainViewModel.filteredStations] comes up empty for a
- * non-trivial query — see [MainViewModel.onLocalResultsChanged].
- */
-data class CatalogFallbackState(
-    val query: String = "",
-    val results: List<RadioBrowserStation> = emptyList(),
-    val isSearching: Boolean = false,
-    val addedUrls: Set<String> = emptySet(),
-)
 
 class MainViewModel(
     private val repository: RadioStationRepository,
@@ -58,20 +40,16 @@ class MainViewModel(
     private val _currentPlayingStationId = MutableStateFlow<Long?>(null)
     val currentPlayingStationId: StateFlow<Long?> = _currentPlayingStationId.asStateFlow()
 
-    // Non-null for exactly one station, right after CuratedStations.pack is seeded on a fresh
-    // install - StationListPane plays a one-time swipe-to-reveal peek animation on that station,
-    // then calls clearSwipeHint(). See SettingsStore.hasShownSwipeHint for why this only ever
-    // fires once per install.
-    private val _swipeHintStationId = MutableStateFlow<Long?>(null)
-    val swipeHintStationId: StateFlow<Long?> = _swipeHintStationId.asStateFlow()
+    private val curatedPackSeeder = CuratedPackSeeder(repository, settingsStore)
+    val swipeHintStationId: StateFlow<Long?> = curatedPackSeeder.swipeHintStationId
 
     private val eventChannel = Channel<MainScreenEvent>(Channel.BUFFERED)
     val events: Flow<MainScreenEvent> = eventChannel.receiveAsFlow()
 
-    private val _catalogFallback = MutableStateFlow(CatalogFallbackState())
-    val catalogFallback: StateFlow<CatalogFallbackState> = _catalogFallback.asStateFlow()
-    private var catalogSearchJob: Job? = null
     private val installer = RadioBrowserStationInstaller(repository, radioBrowserApi)
+    private val catalogFallbackSearch =
+        CatalogFallbackSearch(viewModelScope, radioBrowserApi, installer, onStationAdded = ::loadStations)
+    val catalogFallback: StateFlow<CatalogFallbackState> = catalogFallbackSearch.state
 
     val filteredStations =
         combine(_stations, _searchQuery) { stations, query ->
@@ -99,44 +77,7 @@ class MainViewModel(
     }
 
     private fun onLocalResultsChanged(localResults: List<RadioStation>) {
-        val query = _searchQuery.value.trim()
-        if (localResults.isNotEmpty() || query.length < MIN_CATALOG_QUERY_LENGTH) {
-            catalogSearchJob?.cancel()
-            _catalogFallback.value = CatalogFallbackState()
-            return
-        }
-        // Already have a completed search for this exact query - e.g. _stations reloaded for an
-        // unrelated reason (undoDelete, onResume) while the query itself didn't change.
-        if (query == _catalogFallback.value.query && _catalogFallback.value.results.isNotEmpty()) return
-        scheduleCatalogSearch(query)
-    }
-
-    private fun scheduleCatalogSearch(query: String) {
-        catalogSearchJob?.cancel()
-        catalogSearchJob =
-            viewModelScope.launch {
-                delay(CATALOG_SEARCH_DEBOUNCE_MS)
-                runCatalogSearch(query)
-            }
-    }
-
-    private suspend fun runCatalogSearch(query: String) {
-        _catalogFallback.value = _catalogFallback.value.copy(query = query, isSearching = true)
-        try {
-            val results = radioBrowserApi.search(query, RadioBrowserApi.SearchBy.NAME, CATALOG_RESULT_LIMIT)
-            // An in-flight search superseded by a newer query may not have surfaced its
-            // cancellation yet by the time it returns - check explicitly rather than let a stale
-            // search's results overwrite whatever a newer one already put in _catalogFallback.
-            coroutineContext.ensureActive()
-            _catalogFallback.value = _catalogFallback.value.copy(results = results, isSearching = false)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Supplementary section - the user already sees the local "no results" state, so a
-            // network failure here just leaves the fallback empty rather than showing its own error.
-            Log.w(TAG, "catalog fallback search failed: query=\"$query\"", e)
-            _catalogFallback.value = _catalogFallback.value.copy(results = emptyList(), isSearching = false)
-        }
+        catalogFallbackSearch.onLocalResultsChanged(localResults, _searchQuery.value.trim())
     }
 
     /** Adds a Radio Browser search result from [catalogFallback] - same install path as DiscoverStationsViewModel.addStation. */
@@ -144,16 +85,7 @@ class MainViewModel(
         context: Context,
         station: RadioBrowserStation,
     ) {
-        if (_catalogFallback.value.addedUrls.contains(station.url)) return
-        viewModelScope.launch {
-            if (installer.install(this, context.applicationContext, station)) {
-                _catalogFallback.value =
-                    _catalogFallback.value.copy(addedUrls = _catalogFallback.value.addedUrls + station.url)
-                // Local list stops being empty for this query -> onLocalResultsChanged clears the
-                // fallback section on its own; no manual sync needed here.
-                loadStations()
-            }
-        }
+        catalogFallbackSearch.addStation(context, station)
     }
 
     fun loadStations() {
@@ -162,34 +94,11 @@ class MainViewModel(
         }
     }
 
-    /**
-     * Inserts [CuratedStations.pack] the first time this runs on a given install (guarded by
-     * [SettingsStore.hasSeededCuratedPack], so it never re-runs after a user deletes some or all
-     * of the pack). Called once from [MainActivity]'s startup effect, before the first [loadStations].
-     * [context] resolves each entry's bundled icon via [CuratedStations.withResolvedIcon] - not
-     * stored on the ViewModel, same as [SettingsViewModel.importStations]'s per-call Context.
-     */
-    suspend fun seedCuratedStationsIfNeeded(context: Context) {
-        if (settingsStore.hasSeededCuratedPack) return
-        val insertedIds =
-            CuratedStations.pack.map { station ->
-                repository.insertStation(CuratedStations.withResolvedIcon(context, station))
-            }
-        settingsStore.hasSeededCuratedPack = true
-
-        if (!settingsStore.hasShownSwipeHint) {
-            // The second entry, not the first - purely a visual choice (demonstrating the gesture
-            // on the very first row read as "the whole list works this way" rather than pointing
-            // at one specific station). Falls back to the first if the pack ever shrinks to 1.
-            _swipeHintStationId.value = insertedIds.getOrNull(1) ?: insertedIds.firstOrNull()
-            settingsStore.hasShownSwipeHint = true
-        }
-    }
+    /** See [CuratedPackSeeder.seedIfNeeded]. Called once from [MainActivity]'s startup effect, before the first [loadStations]. */
+    suspend fun seedCuratedStationsIfNeeded(context: Context) = curatedPackSeeder.seedIfNeeded(context)
 
     /** Called once the one-time swipe hint animation (see [swipeHintStationId]) has played. */
-    fun clearSwipeHint() {
-        _swipeHintStationId.value = null
-    }
+    fun clearSwipeHint() = curatedPackSeeder.clearSwipeHint()
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
@@ -243,14 +152,6 @@ class MainViewModel(
     }
 
     companion object {
-        private const val TAG = "MainViewModel"
-
-        // Below this, an almost-empty query would fan out to a huge, mostly-irrelevant catalog
-        // result set for very little signal.
-        private const val MIN_CATALOG_QUERY_LENGTH = 3
-        private const val CATALOG_SEARCH_DEBOUNCE_MS = 400L
-        private const val CATALOG_RESULT_LIMIT = 6
-
         fun provideFactory(
             repository: RadioStationRepository,
             settingsStore: SettingsStore,

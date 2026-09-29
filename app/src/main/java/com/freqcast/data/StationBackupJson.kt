@@ -11,9 +11,9 @@ import java.util.Base64
  * used by both bulk and per-station backups. Deliberately excludes `sortOrder` (app-local list
  * position, not meaningful across devices/imports — imported stations are appended to the end of
  * the target list, same as any other new station) and, since removal, `isFavorite` (older backup
- * files may still have it; `RadioStationRepository.importStationsFromJson` simply doesn't read it
+ * files may still have it; `StationBackupIO.importJson` simply doesn't read it
  * anymore). `description` was named `genre` before the column was renamed; older backup files still
- * carry that key, so `RadioStationRepository.importStationsFromJson` falls back to reading it too.
+ * carry that key, so `StationBackupIO.importJson` falls back to reading it too.
  * `iconData` is a base64-encoded copy of a locally stored icon image's bytes (see [encodeIconData]);
  * it's absent for emoji icons, stations with no icon, or unreadable icon files.
  */
