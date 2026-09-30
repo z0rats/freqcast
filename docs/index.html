@@ -7,7 +7,7 @@
 <meta name="description" content="Freqcast is a free, open-source Android radio player — background playback, Android Auto, a home-screen widget, live rewind, sleep timers and alarms. Add any station by pasting its website; Freqcast finds and verifies the stream for you.">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg-start: #291e17;
@@ -213,10 +213,6 @@
     color: var(--accent-3);
     text-shadow: 0 0 12px rgba(255, 184, 112, 0.7);
     white-space: nowrap;
-  }
-  @media (max-width: 480px) {
-    .tuner-labels span:first-child, .tuner-labels span:nth-last-child(2) { display: none; }
-    .tuner-labels { font-size: 11px; }
   }
   .hero-grid {
     display: grid;
@@ -636,7 +632,73 @@
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
   }
+
+  /* Mobile fit: contain the hero glow, keep grid tracks from growing to fit long code lines, slimmer sticky chrome */
+  .hero { overflow-x: clip; }
+  .download-card > * { min-width: 0; }
+  @media (max-width: 860px) { .download-card { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 480px) {
+    .nav-inner { height: 56px; }
+    .tuner-strip { top: 56px; height: 34px; }
+    #demo { scroll-margin-top: 96px; }
+    /* only the moving readout on phones: the static labels collided with the needle */
+    .tuner-labels > span { display: none; }
+    .tuner-labels { font-size: 11px; }
+  }
+
+  /* ---------- Interactive demo (player.css holds the phone UI itself) ---------- */
+  .demo-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    gap: 64px;
+    align-items: center;
+  }
+  .demo-copy .section-head { margin-bottom: 28px; }
+  .demo-tips { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+  .demo-tips li {
+    position: relative;
+    padding-left: 28px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--text-soft);
+  }
+  .demo-tips li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.5em;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px -1px rgba(255, 184, 112, 0.7);
+  }
+  .demo-tips b { color: var(--text); font-weight: 600; }
+  .demo-note {
+    margin: 28px 0 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    color: var(--text-dim);
+  }
+  #fc-demo .demo-fallback { max-width: 300px; margin: 0 auto; border-radius: 24px; }
+  #demo { padding: 32px 0 56px; scroll-margin-top: 108px; }
+  /* Desktop: size the phone by viewport height so the whole device (and the LIVE DEMO tag above it) fits on a laptop screen */
+  @media (min-width: 901px) {
+    .demo-grid { grid-template-columns: minmax(0, 1fr) auto; }
+    #fc-demo {
+      width: min(400px, calc((100vh - 240px) * 0.5036));
+      width: min(400px, calc((100dvh - 240px) * 0.5036));
+      min-width: 250px;
+    }
+  }
+  @media (max-width: 900px) {
+    .demo-grid { grid-template-columns: 1fr; gap: 32px; }
+    #fc-demo { order: -1; }
+  }
 </style>
+<link rel="stylesheet" href="demo/player.css">
 </head>
 <body>
 
@@ -652,6 +714,7 @@
         <a href="ru/index.html">RU</a>
       </div>
       <div class="nav-links">
+        <a href="#demo">Live demo</a>
         <a href="#features">Features</a>
         <a href="#screenshots">Screenshots</a>
         <a href="#privacy">Privacy</a>
@@ -676,12 +739,11 @@
       <p class="eyebrow">Free &amp; open source · Android 10+</p>
       <h1>Internet radio,<br><em>fully tuned in</em>.</h1>
       <p class="lede">
-        Freqcast is a free, open-source Android radio player — background playback, Android Auto,
-        a home-screen widget, live rewind, sleep timers and wake-up alarms, all in one place.
-        Add a station by pasting its website; Freqcast does the rest.
+        Freqcast is a free, open-source Android radio player. Paste a station’s website and it finds the stream for you — then listen in the background, in the car or from a home-screen widget, with live rewind, sleep timers and alarms.
       </p>
       <div class="cta-row">
         <a class="btn btn-primary" href="https://github.com/z0rats/freqcast/releases/latest">Download APK</a>
+        <a class="btn btn-ghost" href="#demo">Try it live ↓</a>
         <a class="btn btn-ghost" href="https://github.com/z0rats/freqcast">View source on GitHub</a>
       </div>
       <p class="hero-meta">NO ACCOUNT · NO ADS · NO CATALOG LOCK-IN · GPL-3.0</p>
@@ -697,6 +759,29 @@
     </div>
   </div>
 </header>
+
+<hr class="hr">
+
+<section id="demo">
+  <div class="wrap demo-grid">
+    <div class="demo-copy">
+      <div class="section-head">
+        <p class="kicker">Try it</p>
+        <h2>Don’t take our word for it. Play it.</h2>
+        <p>The real library, Discover and Settings screens, running in your browser with live stations. Tap play — that’s real radio.</p>
+      </div>
+      <ul class="demo-tips">
+          <li><b>Tap ▶</b> to tune in; swipe the mini player sideways to switch station.</li>
+          <li><b>Open Discover</b>, search the global directory and tap Add — the station lands in your library.</li>
+          <li><b>Swipe a card left</b> to edit, share or delete. <b>Press, hold and drag</b> to reorder.</li>
+      </ul>
+      <p class="demo-note">Demo: alarms, editing and the full-screen player are in the app. Some directory stations use plain http and can’t start from a web page.</p>
+    </div>
+    <div id="fc-demo" data-lang="en" data-base="demo/">
+      <img class="demo-fallback" src="screenshots/en/1.png" alt="Freqcast library screen listing the curated stations" loading="lazy">
+    </div>
+  </div>
+</section>
 
 <hr class="hr">
 
@@ -742,7 +827,7 @@
     <div class="section-head">
       <p class="kicker">Grounded in real feedback</p>
       <h2>Real complaints, actually fixed</h2>
-      <p>Not hypothetical gaps — recurring frustrations with internet radio apps, gathered from public reviews and forum threads.</p>
+      <p>Recurring frustrations with internet radio apps, from public reviews and forum threads.</p>
     </div>
     <div class="gripe-list">
       <div class="gripe">
@@ -750,16 +835,12 @@
         <span class="gripe-fix">Zero ads. Always.</span>
       </div>
       <div class="gripe">
-        <p class="gripe-complaint">"No way to back up a station list, or move it to a new phone."</p>
-        <span class="gripe-fix">Export &amp; import — JSON, OPML, M3U, PLS</span>
-      </div>
-      <div class="gripe">
         <p class="gripe-complaint">"Favorites can't be reordered — you're stuck with whatever order you added them in." <a class="gripe-source" href="https://4pda.to/forum/index.php?showtopic=970808&view=findpost&p=144466793" target="_blank" rel="noopener noreferrer">source ↗</a></p>
         <span class="gripe-fix">Drag to reorder, any time</span>
       </div>
       <div class="gripe">
         <p class="gripe-complaint">"Turned out the 'radio' app was quietly running dozens of third-party trackers." <a class="gripe-source" href="https://4pda.to/forum/index.php?showtopic=1049214&view=findpost&p=115466089" target="_blank" rel="noopener noreferrer">source ↗</a></p>
-        <span class="gripe-fix">Zero trackers. GPL-3.0, F-Droid submission pending.</span>
+        <span class="gripe-fix">Zero trackers. Open source.</span>
       </div>
       <div class="gripe">
         <p class="gripe-complaint">"Adding a stream by hand either isn't supported, or the app crashes trying to reconnect." <a class="gripe-source" href="https://forum.f-droid.org/t/usable-web-radio-streaming-app/33280" target="_blank" rel="noopener noreferrer">source ↗</a></p>
@@ -768,10 +849,6 @@
       <div class="gripe">
         <p class="gripe-complaint">"No Android Auto — a gap open-source radio apps have left unfilled for years." <a class="gripe-source" href="https://github.com/segler-alex/RadioDroid/pull/1258" target="_blank" rel="noopener noreferrer">source ↗</a></p>
         <span class="gripe-fix">Android Auto, from day one</span>
-      </div>
-      <div class="gripe">
-        <p class="gripe-complaint">"No home-screen widget — every play needs opening the app first."</p>
-        <span class="gripe-fix">Home screen widget included</span>
       </div>
     </div>
   </div>
@@ -784,17 +861,10 @@
     <div class="section-head">
       <p class="kicker">Everything included</p>
       <h2>One player, no compromises</h2>
-      <p>Every feature below ships in the same free build — nothing is metered, gated, or upsold.</p>
+      <p>All free. Nothing metered, gated or upsold.</p>
     </div>
     <div class="features">
 
-      <div class="feature-card">
-        <div class="feature-icon">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l9-2v12"></path><circle cx="6" cy="18" r="3"></circle><circle cx="15" cy="16" r="3"></circle></svg>
-        </div>
-        <h3>No stream-URL hunting</h3>
-        <p>Paste a station's website and Freqcast discovers and verifies the playable stream on its own.</p>
-      </div>
 
       <div class="feature-card">
         <div class="feature-icon">
@@ -879,7 +949,7 @@
     <div class="section-head">
       <p class="kicker">Inside the app</p>
       <h2>A look inside</h2>
-      <p>Always-dark by design — a warm amber-on-charcoal palette built to read at a glance, day or night.</p>
+      <p>Always dark: warm amber on charcoal, easy to read day or night.</p>
     </div>
     <div class="shots">
       <figure class="shot">
@@ -896,7 +966,7 @@
             <img src="screenshots/2.jpg" alt="Freqcast Discover screen showing Jazz search results from the Radio Browser directory" loading="lazy">
           </div>
         </div>
-        <figcaption><b>Discover.</b> Search a global directory of stations by name, genre, country or language.</figcaption>
+        <figcaption><b>Discover.</b> Search the global directory and add in one tap.</figcaption>
       </figure>
       <figure class="shot">
         <div class="phone">
@@ -916,11 +986,9 @@
   <div class="wrap philosophy">
     <div>
       <p class="kicker">Why Freqcast</p>
-      <h2>No account. No ads. No catalog lock-in.</h2>
+      <h2>Yours, on your device.</h2>
       <p style="color:var(--text-soft); font-size:15px; line-height:1.65; margin:0;">
-        Internet radio has quietly survived for decades, but the Android apps around it have grown
-        fragmented — ads, proprietary station catalogs, accounts you never asked for. Freqcast stores
-        everything locally and works with any station that has a public HTTP/HTTPS or HLS stream.
+        Freqcast keeps everything local and plays any station with a public HTTP/HTTPS or HLS stream. No account, no ads, no proprietary catalog.
       </p>
       <div class="pillars">
         <div class="pillar">
@@ -978,7 +1046,6 @@
         <ul class="req-list" style="margin-top:24px;">
           <li>Requires Android 10 (API 29) or later</li>
           <li>Signed release build, reproducible from source</li>
-          <li>Licensed under GPL-3.0</li>
         </ul>
       </div>
       <div>
@@ -1015,6 +1082,7 @@ cd freqcast<br>
   </div>
 </footer>
 
+<script src="demo/player.js" defer></script>
 <script>
 (function () {
   var canvas = document.getElementById('eq');
