@@ -1,0 +1,1 @@
+Installed from F-Droid, RuStore, Google Play or another app store? Freqcast no longer checks GitHub for updates on its own — the store handles that. Sideloaded APKs still get the check.
