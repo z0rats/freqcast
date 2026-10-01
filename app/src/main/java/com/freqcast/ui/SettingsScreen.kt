@@ -81,6 +81,7 @@ import com.freqcast.ui.theme.text_hint
 import com.freqcast.ui.theme.text_primary
 import com.freqcast.util.BatteryOptimization
 import com.freqcast.util.FeedbackLinks
+import com.freqcast.util.InstallSource
 import com.freqcast.util.StationShare
 import kotlinx.coroutines.launch
 
@@ -108,7 +109,12 @@ class SettingsActivity : AppCompatActivity() {
         val repository = RadioStationRepository.create(this)
         val settingsStore = SettingsStore(this)
         val viewModelFactory =
-            SettingsViewModel.provideFactory(repository, settingsStore, FeedbackLinks.appVersionName(this))
+            SettingsViewModel.provideFactory(
+                repository,
+                settingsStore,
+                FeedbackLinks.appVersionName(this),
+                checkForUpdates = !InstallSource.isManagedByStore(this),
+            )
 
         setContent {
             FreqcastTheme {

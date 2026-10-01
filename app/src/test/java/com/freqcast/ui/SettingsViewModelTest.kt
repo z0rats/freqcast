@@ -63,6 +63,7 @@ class SettingsViewModelTest {
         scheduler: TestCoroutineScheduler,
         currentVersion: String = "3.4.3",
         settingsStore: SettingsStore = SettingsStore(RuntimeEnvironment.getApplication()),
+        checkForUpdates: Boolean = true,
     ): SettingsViewModel {
         Dispatchers.setMain(StandardTestDispatcher(scheduler))
         return SettingsViewModel(
@@ -70,6 +71,7 @@ class SettingsViewModelTest {
             settingsStore,
             currentVersion,
             UpdateChecker(releaseUrl = server.url("/").toString()),
+            checkForUpdates,
         )
     }
 
@@ -121,6 +123,17 @@ class SettingsViewModelTest {
 
             assertEquals(UpdateStatus.UP_TO_DATE, viewModel.uiState.value.updateStatus)
             assertNull(viewModel.uiState.value.updateUrl)
+        }
+
+    @Test
+    fun `no update request is made when checkForUpdates is false`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler, checkForUpdates = false)
+
+            advanceUntilIdle()
+
+            assertEquals(0, server.requestCount)
+            assertEquals(UpdateStatus.UNKNOWN, viewModel.uiState.value.updateStatus)
         }
 
     @Test

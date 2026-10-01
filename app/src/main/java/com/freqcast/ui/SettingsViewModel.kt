@@ -32,6 +32,7 @@ class SettingsViewModel(
     private val settingsStore: SettingsStore,
     currentVersion: String,
     private val updateChecker: UpdateChecker = UpdateChecker(),
+    checkForUpdates: Boolean = true,
 ) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
@@ -56,17 +57,21 @@ class SettingsViewModel(
     }
 
     init {
-        viewModelScope.launch {
-            // Silent on failure (updateChecker returns null) — leaves updateStatus at UNKNOWN,
-            // so the footer just shows the version with no claim about being up to date or not.
-            val latest = updateChecker.latestRelease() ?: return@launch
-            val status =
-                if (isNewerVersion(currentVersion, latest.version)) UpdateStatus.AVAILABLE else UpdateStatus.UP_TO_DATE
-            _uiState.value =
-                _uiState.value.copy(
-                    updateStatus = status,
-                    updateUrl = latest.url.takeIf { status == UpdateStatus.AVAILABLE },
-                )
+        // Skipped when an app store (F-Droid) installed us — it handles updates itself, and the
+        // GitHub request would be a needless network call from a store-managed install.
+        if (checkForUpdates) {
+            viewModelScope.launch {
+                // Silent on failure (updateChecker returns null) — leaves updateStatus at UNKNOWN,
+                // so the footer just shows the version with no claim about being up to date or not.
+                val latest = updateChecker.latestRelease() ?: return@launch
+                val isNewer = isNewerVersion(currentVersion, latest.version)
+                val status = if (isNewer) UpdateStatus.AVAILABLE else UpdateStatus.UP_TO_DATE
+                _uiState.value =
+                    _uiState.value.copy(
+                        updateStatus = status,
+                        updateUrl = latest.url.takeIf { status == UpdateStatus.AVAILABLE },
+                    )
+            }
         }
     }
 
@@ -101,6 +106,10 @@ class SettingsViewModel(
             repository: RadioStationRepository,
             settingsStore: SettingsStore,
             currentVersion: String,
-        ): ViewModelProvider.Factory = viewModelFactory { SettingsViewModel(repository, settingsStore, currentVersion) }
+            checkForUpdates: Boolean = true,
+        ): ViewModelProvider.Factory =
+            viewModelFactory {
+                SettingsViewModel(repository, settingsStore, currentVersion, checkForUpdates = checkForUpdates)
+            }
     }
 }
