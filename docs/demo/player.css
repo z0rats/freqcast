@@ -38,14 +38,14 @@
   border-radius: 34px;
   background: linear-gradient(160deg, #1c130e, #0f0a07);
   border: 1px solid rgba(255, 237, 221, 0.12);
-  box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.7), 0 0 60px -20px rgba(255, 184, 112, 0.35);
+  box-shadow: 16px 16px 0 #8a5316;
   transform-origin: 0 0;
 }
 
 .fc-screen {
   position: relative;
   width: 392px;
-  height: 800px;
+  height: 760px;
   border-radius: 26px;
   overflow: hidden;
   overflow: clip;   /* clip (unlike hidden) can't be scrolled by focus, so off-screen overlays never shift the screen */
@@ -263,8 +263,8 @@
 .fc-live {
   display: flex; align-items: center; gap: 10px; width: max-content; max-width: calc(100vw - 32px); margin: 0 0 14px;
   position: relative; left: 50%; transform: translateX(-50%);
-  padding: 6px 10px 6px 12px; border-radius: 999px;
-  background: rgba(255, 184, 112, 0.16); border: 1px solid rgba(255, 184, 112, 0.5);
+  padding: 7px 14px 7px 14px; background: #35271c;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace); font-size: 12px; letter-spacing: 0.06em;
   text-transform: uppercase; color: #ffb870; white-space: nowrap;
 }
@@ -290,8 +290,9 @@
 .fc-caption { margin: 20px auto 0; max-width: 380px; text-align: center; font-size: 13px; line-height: 1.5; color: rgba(255, 246, 236, 0.6); }
 .fc-device.fc-idle { animation: fc-glow 2.6s ease-in-out infinite; }
 @keyframes fc-glow {
-  0%, 100% { box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.7), 0 0 50px -18px rgba(255, 184, 112, 0.3); }
-  50% { box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.7), 0 0 90px -8px rgba(255, 184, 112, 0.75); }
+  0%, 100% { box-shadow: 16px 16px 0 #8a5316; }
+  50% { box-shadow: 24px 24px 0 #b9741f; }
+}
 }
 .fc-row.fc-nudge .fc-play { position: relative; }
 .fc-row.fc-nudge .fc-play::before {
@@ -399,7 +400,7 @@ button.fc-srow { cursor: pointer; }
 .fc-sdrop { color: var(--fc-accent); }
 .fc-sdrop svg { width: 24px; height: 24px; }
 .fc-sdiv { height: 1px; background: var(--fc-border); }
-.fc-switch { position: relative; width: 52px; height: 32px; border-radius: 16px; background: var(--fc-card); border: 2px solid var(--fc-border); transition: background 0.15s ease, border-color 0.15s ease; }
+.fc-switch { display: block; position: relative; width: 52px; height: 32px; border-radius: 16px; background: var(--fc-card); border: 2px solid var(--fc-border); transition: background 0.15s ease, border-color 0.15s ease; }
 .fc-switch-thumb { position: absolute; top: 50%; left: 6px; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; background: var(--fc-hint); transition: all 0.15s ease; }
 .fc-switch.fc-on { background: var(--fc-accent); border-color: var(--fc-accent); }
 .fc-switch.fc-on .fc-switch-thumb { left: 20px; width: 24px; height: 24px; margin-top: -12px; background: var(--fc-text); }

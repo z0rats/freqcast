@@ -95,7 +95,7 @@
   var ROW_H = 80, ROW_GAP = 8, LIST_TOP = 8, LIST_BOTTOM = 88;
   var REVEAL = 184 + 8;          // StationItem: revealThreshold + cardSpacing
   var MINI_W = 360, MINI_GAP = 14;
-  var DEV_W = 414, DEV_H = 822;
+  var DEV_W = 414, DEV_H = 782;
   var LONG_PRESS_MS = 400, SLOP = 8;
 
   // ---- icons ----
@@ -712,6 +712,10 @@
     popups.forEach(function (p) { if (!p.hidden && !p.contains(e.target) && !p._anchor.contains(e.target)) p.hidden = true; });
   });
 
+  function setUnderInert(on) {
+    [main, bottom].forEach(function (e) { if (on) e.setAttribute('inert', ''); else e.removeAttribute('inert'); });
+  }
+
   function makeOverlay(title, barBg) {
     var ov = el('div', 'fc-ov');
     var bar = el('div', 'fc-ov-bar');
@@ -729,8 +733,8 @@
     screen.appendChild(ov);
     var api = {
       el: ov, body: body, isOpen: false, onOpen: null,
-      open: function () { api.isOpen = true; ov.classList.add('fc-open'); if (api.onOpen) api.onOpen(); },
-      close: function () { api.isOpen = false; ov.classList.remove('fc-open'); closePopups(); layout(); render(); }
+      open: function () { api.isOpen = true; ov.classList.add('fc-open'); setUnderInert(true); if (api.onOpen) api.onOpen(); },
+      close: function () { api.isOpen = false; ov.classList.remove('fc-open'); setUnderInert(false); closePopups(); layout(); render(); }
     };
     back.addEventListener('click', api.close);
     return api;
@@ -749,7 +753,10 @@
     d.appendChild(btns);
     scrim.appendChild(d);
     screen.appendChild(scrim);
-    function done(cb) { scrim.remove(); if (cb) cb(); }
+    function done(cb) { document.removeEventListener('keydown', onKey); scrim.remove(); if (cb) cb(); }
+    function onKey(e) { if (e.key === 'Escape') done(onCancel); }
+    document.addEventListener('keydown', onKey);
+    bo.focus();
     bc.addEventListener('click', function () { done(onCancel); });
     bo.addEventListener('click', function () { done(onConfirm); });
     scrim.addEventListener('click', function (e) { if (e.target === scrim) done(onCancel); });
@@ -1177,13 +1184,16 @@
     var toggleLang = dropdown(langRow, LANGS, function (i) { langVal.textContent = LANGS[i]; });
     p1.appendChild(langRow); p1.appendChild(divider());
 
-    var sw = el('button', 'fc-switch fc-on');
-    sw.setAttribute('role', 'switch'); sw.setAttribute('aria-checked', 'true'); sw.setAttribute('aria-label', STR.sMetered);
+    var sw = el('span', 'fc-switch fc-on');
+    sw.setAttribute('aria-hidden', 'true');
     sw.appendChild(el('span', 'fc-switch-thumb'));
-    p1.appendChild(sRow(I.cell, STR.sMetered, sw, function () {
+    var swRow = sRow(I.cell, STR.sMetered, sw, function () {
       var on = !sw.classList.contains('fc-on');
-      sw.classList.toggle('fc-on', on); sw.setAttribute('aria-checked', String(on));
-    }));
+      sw.classList.toggle('fc-on', on); swBtn.setAttribute('aria-checked', String(on));
+    });
+    var swBtn = swRow.firstChild;
+    swBtn.setAttribute('role', 'switch'); swBtn.setAttribute('aria-checked', 'true');
+    p1.appendChild(swRow);
     p1.appendChild(divider());
 
     var bufVal = txt('span', 'fc-sval', fmt(STR.sBufShort, 30));
