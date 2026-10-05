@@ -5,7 +5,7 @@ ktlintGradle = "14.2.0"
 ktlint = "1.8.0"
 kotlinComposeCompiler = "2.4.20"
 roborazzi = "1.75.0"
-kover = "0.9.9"
+kover = "0.9.10"
 
 coreKtx = "1.19.1"
 appcompat = "1.8.0"
