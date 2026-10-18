@@ -1,0 +1,1 @@
+Curated stations are now read-only: swipe one to share or delete it. Want your own take on one? Delete it and add the station yourself — Settings → "Restore curated stations" brings the originals back anytime.
