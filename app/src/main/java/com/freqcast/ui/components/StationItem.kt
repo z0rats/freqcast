@@ -84,8 +84,10 @@ fun StationItem(
     // Border/elevation glow driving the swipe hint - 0f the rest of the time, so it never affects
     // normal StationCard styling (see StationCard's isDragging/isActive border precedence).
     val highlightAnim = remember { Animatable(0f) }
-    // Wide enough to reveal 3 action buttons (Edit, Share, Delete): 3 * 48dp + 2 * 8dp spacing + 16dp end padding.
-    val revealThreshold = 184.dp
+    // Curated stations are read-only (ADR-0054): no Edit action, only Share and Delete.
+    val canEdit = !station.isCurated
+    // Wide enough to reveal the action buttons: n * 48dp + (n - 1) * 8dp spacing + 16dp end padding.
+    val revealThreshold = if (canEdit) 184.dp else 120.dp
     val cardSpacing = Spacing.sm
     val revealThresholdPx = with(density) { revealThreshold.toPx() }
     val cardSpacingPx = with(density) { cardSpacing.toPx() }
@@ -101,7 +103,7 @@ fun StationItem(
         // after it, rather than firing the instant the screen composes.
         delay(1800)
         highlightAnim.animateTo(1f, tween(300))
-        // Reveals the full swipe threshold (all three actions), not just a peek - the point is to
+        // Reveals the full swipe threshold (every action), not just a peek - the point is to
         // show Delete specifically (rightmost, so first exposed) exists at all, not merely hint at it.
         swipeReveal.revealAnimated()
         delay(1600)
@@ -126,10 +128,15 @@ fun StationItem(
                     .padding(end = cardSpacing),
         ) {
             SwipeActionsBackground(
-                onEditClick = {
-                    swipeReveal.close()
-                    onEditClick()
-                },
+                onEditClick =
+                    if (canEdit) {
+                        {
+                            swipeReveal.close()
+                            onEditClick()
+                        }
+                    } else {
+                        null
+                    },
                 onShareClick = {
                     swipeReveal.close()
                     onShareClick()
@@ -179,7 +186,8 @@ fun StationItem(
 
 @Composable
 private fun SwipeActionsBackground(
-    onEditClick: () -> Unit,
+    // null hides the Edit button (curated stations, ADR-0054).
+    onEditClick: (() -> Unit)?,
     onShareClick: () -> Unit,
     onDeleteClick: () -> Unit,
     // Drives the pulsing ring/scale on the Delete button during the swipe hint (see StationItem's
@@ -205,20 +213,22 @@ private fun SwipeActionsBackground(
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(
-                onClick = onEditClick,
-                modifier =
-                    Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = MaterialTheme.shapes.medium,
-                        ),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = stringResource(R.string.edit),
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                )
+            if (onEditClick != null) {
+                IconButton(
+                    onClick = onEditClick,
+                    modifier =
+                        Modifier
+                            .background(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = MaterialTheme.shapes.medium,
+                            ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = stringResource(R.string.edit),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
             }
             IconButton(
                 onClick = onShareClick,

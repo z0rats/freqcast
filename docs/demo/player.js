@@ -93,7 +93,8 @@
 
   // ---- layout constants (dp), same as the Compose code ----
   var ROW_H = 80, ROW_GAP = 8, LIST_TOP = 8, LIST_BOTTOM = 88;
-  var REVEAL = 184 + 8;          // StationItem: revealThreshold + cardSpacing
+  // StationItem: revealThreshold + cardSpacing; curated rows have no Edit button (ADR-0054)
+  function revealFor(s) { return (s.curated ? 120 : 184) + 8; }
   var MINI_W = 360, MINI_GAP = 14;
   var DEV_W = 414, DEV_H = 782;
   var LONG_PRESS_MS = 400, SLOP = 8;
@@ -321,14 +322,15 @@
   function emojiIcon() { return txt('span', 'fc-icon fc-icon-emoji', '📻'); }
 
   function buildRow(s) {
-    var r = { s: s, off: 0, open: false, removed: false };
+    var r = { s: s, off: 0, open: false, removed: false, reveal: revealFor(s) };
     var row = el('div', 'fc-row');
     row.setAttribute('role', 'listitem');
     var actions = el('div', 'fc-actions');
     var bEdit = el('button', 'fc-act fc-act-edit', I.edit); bEdit.setAttribute('aria-label', STR.edit);
     var bShare = el('button', 'fc-act fc-act-share', I.share); bShare.setAttribute('aria-label', STR.share);
     var bDel = el('button', 'fc-act fc-act-delete', I.del); bDel.setAttribute('aria-label', STR.del);
-    actions.appendChild(bEdit); actions.appendChild(bShare); actions.appendChild(bDel);
+    if (!s.curated) actions.appendChild(bEdit);
+    actions.appendChild(bShare); actions.appendChild(bDel);
 
     var card = el('div', 'fc-card');
     var icon;
@@ -382,13 +384,13 @@
   // animate: true → settle with the card's CSS transition; falsy → jump (used while dragging or resetting)
   function setOffset(r, off, animate) {
     r.off = off;
-    r.open = off < -REVEAL / 2;
+    r.open = off < -r.reveal / 2;
     r.card.style.transform = off ? 'translateX(' + off + 'px)' : '';
     if (off < 0) r.actions.style.visibility = 'visible';
     else if (animate) setTimeout(function () { if (r.off === 0) r.actions.style.visibility = 'hidden'; }, 420);
     else r.actions.style.visibility = 'hidden';
   }
-  function settleRow(r) { setOffset(r, r.off < -REVEAL / 2 ? -REVEAL : 0, true); }
+  function settleRow(r) { setOffset(r, r.off < -r.reveal / 2 ? -r.reveal : 0, true); }
 
   // ---- layout / render ----
   function layout() {
@@ -615,7 +617,7 @@
         }
       }
       if (mode === 'swipe') {
-        setOffset(r, Math.max(-REVEAL, Math.min(0, startOff + dx)));
+        setOffset(r, Math.max(-r.reveal, Math.min(0, startOff + dx)));
       } else if (mode === 'reorder') {
         dragTo(r, startTop + dy + (list.scrollTop - startScroll), e);
       }
@@ -1274,7 +1276,7 @@
     var r = rows[curatedStations[0].id];
     var steps = [
       [900, function () { r.el.classList.add('fc-hint'); }],
-      [300, function () { setOffset(r, -REVEAL, true); }],
+      [300, function () { setOffset(r, -r.reveal, true); }],
       [1600, function () { setOffset(r, 0, true); }],
       [400, function () { r.el.classList.remove('fc-hint'); }],
       [500, function () { startNudge(); }]
