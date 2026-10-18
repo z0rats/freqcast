@@ -5,6 +5,7 @@
 # Freqcast — Internet Radio Player
 
 [![codecov](https://codecov.io/gh/z0rats/freqcast/branch/master/graph/badge.svg)](https://codecov.io/gh/z0rats/freqcast)
+[![F-Droid](https://img.shields.io/f-droid/v/com.freqcast)](https://f-droid.org/packages/com.freqcast/)
 
 🌐 **[freqcast website & feature docs](https://z0rats.github.io/freqcast/)**
 
@@ -50,7 +51,9 @@ Freqcast started as that personal project and gradually evolved into a fully fea
 
 ## 📲 Install on your phone
 
-Grab the latest APK from the [Releases](../../releases) page and install it — no Play Store listing. 🎉
+<a href="https://f-droid.org/packages/com.freqcast/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80"></a>
+
+Get it from [F-Droid](https://f-droid.org/packages/com.freqcast/), or grab the latest APK from the [Releases](../../releases) page — both are the same signed build (F-Droid verifies it reproducibly), so you can switch between them without reinstalling. No Play Store listing. 🎉
 
 Requires **Android 10 (API 29)** or higher.
 
