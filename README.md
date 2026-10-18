@@ -27,15 +27,16 @@ Freqcast lets you paste the station's website instead. It first checks Radio Bro
 ## ✨ Features
 
 - ➕ **Paste a station website instead of hunting for a stream URL** — Freqcast automatically discovers and verifies the playable stream whenever possible
-- 🔎 **Discover stations** — search the Radio Browser directory by name, genre (with offline tag autocomplete), country, or "near me", and add results straight to your library
+- 🔎 **Discover stations** — search the Radio Browser directory by name, genre (with offline tag autocomplete), country, language, or "near me", and add results straight to your library
 - 🎁 Starts you off with a handful of curated stations — swipe any of them away if they're not your taste
 - 🔁 Background playback with automatic reconnect
-- ⏪ Timeshift for compatible streams
+- ⏪ Timeshift for compatible streams, and export the last few minutes as an audio clip to share (MP3/AAC streams)
 - 🎶 Live ICY metadata
 - 😴 Sleep timer and multiple wake-up alarms
 - 🏠 Home screen widget and Android Auto
 - 🤖 Play or stop a saved station via Gemini and other AI assistants, without opening the app (Android 16+)
-- 📤 Import/export station lists (JSON, OPML, M3U, PLS)
+- 📤 Import/export station lists (JSON, OPML, M3U, PLS) and share single stations
+- ↕️ Drag to reorder your station list; launcher shortcuts for your last-played and top stations
 - 📱 Tablet and foldable layouts
 - 🌐 Localized into English, Russian, Spanish and Simplified Chinese
 
@@ -80,6 +81,7 @@ Requires **Android 10 (API 29)** or higher.
 | WAKE_LOCK | 🔋 keep the network alive while playing with the screen off |
 | RECEIVE_BOOT_COMPLETED, SCHEDULE_EXACT_ALARM | ⏰ wake-up alarms survive reboot and fire at the exact time |
 | ACCESS_COARSE_LOCATION | 📍 only used for Discover's "near me" search; sent for that one search, never stored |
+| REQUEST_IGNORE_BATTERY_OPTIMIZATIONS | 🪫 lets Settings' "Disable battery optimization" open the system dialog, so OEM battery savers don't kill background playback; nothing changes unless you confirm it |
 
 ## 💖 Support
 

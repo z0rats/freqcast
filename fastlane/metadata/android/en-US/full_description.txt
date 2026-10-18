@@ -7,10 +7,13 @@ Features:
 - Paste a station website instead of hunting for a stream URL — Freqcast automatically discovers and verifies the playable stream whenever possible
 - Discover stations — search the Radio Browser directory by name, genre, country, language, or "near me", and add results straight to your library
 - Background playback with automatic reconnect
-- Timeshift (rewind) for compatible streams
+- Timeshift (rewind) for compatible streams, and export the last few minutes as a shareable audio clip (MP3/AAC streams)
 - Live ICY metadata
 - Sleep timer and multiple wake-up alarms
 - Home screen widget and Android Auto support
+- Play or stop a saved station via Gemini and other AI assistants (Android 16+)
+- Starts you off with a handful of curated stations
+- Drag to reorder your station list
 - Import/export station lists (JSON, OPML, M3U, PLS)
 - Tablet and foldable layouts
 - Localized into English, Russian, Spanish and Simplified Chinese
