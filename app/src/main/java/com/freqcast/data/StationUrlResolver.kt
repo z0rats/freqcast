@@ -8,6 +8,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -511,7 +512,7 @@ class StationUrlResolver(
 
         val candidates = mutableListOf<Candidate>()
         val discoveredOrigins = linkedSetOf<String>()
-        val subdomainRegex = Regex("""(https?://[\w-]+\.${Regex.escape(host)})""", RegexOption.IGNORE_CASE)
+        val subdomainRegex = Regex("""(https?://[\w-]+\.${Regex.escape(host)}(?::\d+)?)""", RegexOption.IGNORE_CASE)
 
         val bodies =
             coroutineScope {
@@ -568,8 +569,7 @@ class StationUrlResolver(
                     async(Dispatchers.IO) {
                         val fromBody = fetchText(iframeUrl)?.let { extractCandidates(it, iframeUrl) }.orEmpty()
                         if (fromBody.isNotEmpty()) return@async fromBody
-                        val origin =
-                            iframeUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return@async emptyList()
+                        val origin = iframeUrl.toHttpUrlOrNull()?.let(::originOf) ?: return@async emptyList()
                         panelStreamUrl(origin)?.let { listOf(Candidate(it, iframeUrl)) }.orEmpty()
                     }
                 }.awaitAll()
@@ -597,6 +597,15 @@ class StationUrlResolver(
             }.distinct()
             .take(max)
             .toList()
+
+    /**
+     * `scheme://host[:port]` - the port is kept when it isn't the scheme's default, since a
+     * self-hosted Icecast panel typically listens on a non-default one (`:8000`).
+     */
+    private fun originOf(url: HttpUrl): String {
+        val port = if (url.port != HttpUrl.defaultPort(url.scheme)) ":${url.port}" else ""
+        return "${url.scheme}://${url.host}$port"
+    }
 
     /** Well-known status endpoints for the two most common self-hosted radio panels, at [origin] (`scheme://host`). */
     internal fun panelStreamUrl(origin: String): String? = fromAzuraCast(origin) ?: fromIcecast(origin)

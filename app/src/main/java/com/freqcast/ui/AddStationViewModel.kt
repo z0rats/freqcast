@@ -138,13 +138,13 @@ class AddStationViewModel(
         // A pasted homepage/stream link may arrive with no scheme at all (e.g. "radioznb.ru") -
         // normalized once here so neither isValidUrl nor anything downstream rejects it just for
         // that.
-        val urlTrimmed =
-            _uiState.value.url
-                .trim()
-                .let { if (!it.contains("://")) "http://$it" else it }
+        val rawUrl = _uiState.value.url.trim()
+        val urlTrimmed = if (!rawUrl.contains("://")) "http://$rawUrl" else rawUrl
 
         when {
-            urlTrimmed.isEmpty() -> {
+            // Checked before normalization - "" would otherwise become "http://" and fall through
+            // to the generic invalid-url error instead of asking for a URL.
+            rawUrl.isEmpty() -> {
                 _uiState.value = _uiState.value.copy(urlErrorRes = R.string.enter_url)
                 return
             }
