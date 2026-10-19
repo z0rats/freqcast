@@ -33,6 +33,11 @@ class FakePlaybackController(
         private set
     var sleepTimerMinutes: Int? = null
 
+    /** Pushes [snapshot] as if the service had emitted it (state change from elsewhere, ticker, error). */
+    fun emit(snapshot: PlaybackSnapshot) {
+        snapshotFlow.value = snapshot
+    }
+
     override fun getCurrentStationName(): String? = fakeStationName
 
     override suspend fun toggle(station: RadioStation): ToggleResult {

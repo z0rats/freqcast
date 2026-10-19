@@ -1,8 +1,14 @@
 package com.freqcast.util
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 
 class InstallSourceTest {
     @Test
@@ -24,5 +30,36 @@ class InstallSourceTest {
         assertFalse(InstallSource.isStoreInstaller(null))
         assertFalse(InstallSource.isStoreInstaller("com.google.android.packageinstaller"))
         assertFalse(InstallSource.isStoreInstaller("com.android.chrome"))
+    }
+}
+
+/** [InstallSource.isManagedByStore] reading the real installer package on each side of the API 30 split. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [29])
+class InstallSourceInstallerLookupTest {
+    private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    @Test
+    fun `pre-R reads the deprecated installer package name`() {
+        @Suppress("DEPRECATION")
+        context.packageManager.setInstallerPackageName(context.packageName, "org.fdroid.fdroid")
+        assertTrue(InstallSource.isManagedByStore(context))
+
+        @Suppress("DEPRECATION")
+        context.packageManager.setInstallerPackageName(context.packageName, "com.android.chrome")
+        assertFalse(InstallSource.isManagedByStore(context))
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `R and later read the install source info`() {
+        shadowOf(context.packageManager).setInstallSourceInfo(context.packageName, "ru.vk.store", "ru.vk.store")
+        assertTrue(InstallSource.isManagedByStore(context))
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `no recorded install source is treated as sideloaded`() {
+        assertFalse(InstallSource.isManagedByStore(context))
     }
 }

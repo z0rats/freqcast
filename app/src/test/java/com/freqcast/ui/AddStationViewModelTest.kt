@@ -254,14 +254,25 @@ class AddStationViewModelTest {
             val viewModel = createViewModel(testScheduler)
             viewModel.onNameChange("New FM")
             // Contains whitespace, so it fails AddStationActivity.isValidUrl even after the
-            // no-scheme-prefix normalization save() applies first. (A literally blank url field
-            // hits this same branch, not save()'s separate urlTrimmed.isEmpty() one - the
-            // no-scheme-prefix normalization turns "" into "http://", never back to empty.)
+            // no-scheme-prefix normalization save() applies first.
             viewModel.onUrlChange("has space")
 
             viewModel.save()
 
             assertEquals(R.string.error_invalid_url, viewModel.uiState.value.urlErrorRes)
+            assertEquals(false, viewModel.uiState.value.isSaving)
+        }
+
+    @Test
+    fun `save with a blank url asks for a url instead of calling it invalid`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler)
+            viewModel.onNameChange("New FM")
+            viewModel.onUrlChange("   ")
+
+            viewModel.save()
+
+            assertEquals(R.string.enter_url, viewModel.uiState.value.urlErrorRes)
             assertEquals(false, viewModel.uiState.value.isSaving)
         }
 

@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -14,6 +13,7 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
+import com.freqcast.testing.composeHostRuleChain
 import com.freqcast.ui.RadioPlaybackService
 import org.junit.After
 import org.junit.Assert.assertNull
@@ -21,9 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
-import org.junit.rules.TestRule
 import org.junit.runner.RunWith
-import org.junit.runners.model.Statement
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
@@ -41,25 +39,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class RememberPlaybackControllerTest {
-    // Same workaround as DragDropStateTest: ComposeTestRule's host ComponentActivity isn't
-    // declared in this app's own manifest, so Robolectric can't resolve it unless registered
-    // first - must run before composeTestRule's own "before" launches it.
-    private val registerComposeHostActivity =
-        TestRule { base, _ ->
-            object : Statement() {
-                override fun evaluate() {
-                    val appContext = ApplicationProvider.getApplicationContext<Application>()
-                    shadowOf(appContext.packageManager)
-                        .addActivityIfNotPresent(ComponentName(appContext, ComponentActivity::class.java))
-                    base.evaluate()
-                }
-            }
-        }
-
     private val composeTestRule = createComposeRule()
 
     @get:Rule
-    val ruleChain: RuleChain = RuleChain.outerRule(registerComposeHostActivity).around(composeTestRule)
+    val ruleChain: RuleChain = composeHostRuleChain(composeTestRule)
 
     // MediaSession enforces a unique id per process (see RadioPlaybackServiceAutoTest/
     // RadioPlaybackServiceConnectionErrorTest's identical note) - must be torn down or the next

@@ -898,6 +898,137 @@ class StationUrlResolverTest {
     }
 
     @Test
+    fun `panelStreamUrl rejects Icecast status-json with no usable source`() {
+        for (body in listOf(
+            """{"icestats":{"source":[]}}""",
+            """{"icestats":{}}""",
+            """{"icestats":{"source":"not-an-object"}}""",
+            """{"icestats":{"source":{"listenurl":""}}}""",
+            "not json at all",
+        )) {
+            server.enqueue(MockResponse().setResponseCode(404))
+            server.enqueue(MockResponse().setBody(body))
+            assertNull(body, resolver().panelStreamUrl(server.url("/").toString().trimEnd('/')))
+        }
+    }
+
+    /** Routes by path, for stages that fetch several URLs concurrently (no FIFO order to rely on). */
+    private fun routeByPath(routes: Map<String, MockResponse>) {
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse =
+                    routes[request.requestUrl!!.encodedPath] ?: MockResponse().setResponseCode(404)
+            }
+    }
+
+    @Test
+    fun `resolve follows a third-party iframe player embed to the stream inside it`() =
+        runTest {
+            routeByPath(
+                mapOf(
+                    "/json/stations/search" to MockResponse().setBody("[]"),
+                    "/" to
+                        MockResponse().setBody(
+                            """<html><body><iframe src="http://player.zeno.test:${server.port}/embed/abc"></iframe></body></html>""",
+                        ),
+                    "/embed/abc" to
+                        MockResponse().setBody("""<audio src="http://player.zeno.test:${server.port}/live.mp3">"""),
+                    "/live.mp3" to MockResponse().setResponseCode(200).setHeader("Content-Type", "audio/mpeg"),
+                ),
+            )
+
+            val result = resolver().resolveStation("http://myradio.test:${server.port}/")
+
+            assertEquals("http://player.zeno.test:${server.port}/live.mp3", result?.streamUrl)
+        }
+
+    @Test
+    fun `an iframe with no stream falls back to probing its origin as an Icecast panel, port included`() =
+        runTest {
+            routeByPath(
+                mapOf(
+                    "/json/stations/search" to MockResponse().setBody("[]"),
+                    "/" to
+                        MockResponse().setBody(
+                            """<html><body><iframe src="http://panel.other.test:${server.port}/widget"></iframe></body></html>""",
+                        ),
+                    "/widget" to MockResponse().setBody("<div>player</div>"),
+                    "/status-json.xsl" to
+                        MockResponse().setBody(
+                            """{"icestats":{"source":{"listenurl":"http://panel.other.test:${server.port}/radio"}}}""",
+                        ),
+                    "/radio" to MockResponse().setResponseCode(200).setHeader("Content-Type", "audio/mpeg"),
+                ),
+            )
+
+            val result = resolver().resolveStation("http://myradio.test:${server.port}/")
+
+            assertEquals("http://panel.other.test:${server.port}/radio", result?.streamUrl)
+        }
+
+    @Test
+    fun `a linked script naming only a panel subdomain resolves via that panel's status-json, port included`() =
+        runTest {
+            routeByPath(
+                mapOf(
+                    "/json/stations/search" to MockResponse().setBody("[]"),
+                    "/" to MockResponse().setBody("""<html><body><script src="/app.js"></script></body></html>"""),
+                    "/app.js" to MockResponse().setBody("""var panel = "http://panel.myradio.test:${server.port}";"""),
+                    "/status-json.xsl" to
+                        MockResponse().setBody(
+                            """{"icestats":{"source":[{"listenurl":"http://panel.myradio.test:${server.port}/live"}]}}""",
+                        ),
+                    "/live" to MockResponse().setResponseCode(200).setHeader("Content-Type", "audio/mpeg"),
+                ),
+            )
+
+            val result = resolver().resolveStation("http://myradio.test:${server.port}/")
+
+            assertEquals("http://panel.myradio.test:${server.port}/live", result?.streamUrl)
+        }
+
+    @Test
+    fun `a throwing WebView sniff is treated as no candidates, not a crash`() =
+        runTest {
+            routeByPath(
+                mapOf(
+                    "/json/stations/search" to MockResponse().setBody("[]"),
+                    "/" to MockResponse().setBody("<html><body>nothing here</body></html>"),
+                ),
+            )
+            val stages = mutableListOf<ResolveStage>()
+
+            val result =
+                resolver(webViewSniff = { throw IllegalStateException("WebView died") })
+                    .resolveHomepage("http://myradio.test:${server.port}/") { stages += it }
+
+            assertEquals(Resolution.NotFound(tlsBlocked = false), result)
+            assertTrue(ResolveStage.RENDERING_PAGE in stages)
+        }
+
+    @Test
+    fun `a sniffed JSON API response that names no playable stream resolves to nothing`() =
+        runTest {
+            routeByPath(
+                mapOf(
+                    "/json/stations/search" to MockResponse().setBody("[]"),
+                    "/" to MockResponse().setBody("<html><body>spa</body></html>"),
+                    "/rest/v1/settings" to
+                        MockResponse()
+                            .setHeader("Content-Type", "application/json")
+                            .setBody("""[{"title":"no stream here"}]"""),
+                ),
+            )
+            val apiUrl = "http://myradio.test:${server.port}/rest/v1/settings"
+
+            val result =
+                resolver(webViewSniff = { SniffOutcome(listOf(SniffedRequest(apiUrl, emptyMap()))) })
+                    .resolveHomepage("http://myradio.test:${server.port}/")
+
+            assertEquals(Resolution.NotFound(tlsBlocked = false), result)
+        }
+
+    @Test
     fun `panelStreamUrl returns null when neither AzuraCast nor Icecast endpoints respond`() {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setResponseCode(404))
