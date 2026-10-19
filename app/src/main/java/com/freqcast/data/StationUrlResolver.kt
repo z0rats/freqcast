@@ -607,7 +607,7 @@ class StationUrlResolver(
         return "${url.scheme}://${url.host}$port"
     }
 
-    /** Well-known status endpoints for the two most common self-hosted radio panels, at [origin] (`scheme://host`). */
+    /** Well-known status endpoints for the two most common self-hosted radio panels, at [origin] (`scheme://host[:port]`). */
     internal fun panelStreamUrl(origin: String): String? = fromAzuraCast(origin) ?: fromIcecast(origin)
 
     private fun fromAzuraCast(origin: String): String? {

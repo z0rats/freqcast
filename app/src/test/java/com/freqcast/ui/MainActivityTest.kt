@@ -109,8 +109,13 @@ class MainActivityTest {
     @Test
     fun `a fresh install seeds the curated pack and lists it`() {
         launch()
-        val names = runBlocking { AppDatabase.getDatabase(context).radioStationDao().getAllStations() }.map { it.name }
-        assertEquals(CuratedStations.pack.map { it.name }, names)
+
+        // Seeding inserts one station at a time - wait for the whole pack, not just the first row
+        // (a slower CI runner otherwise catches it mid-seed).
+        fun names() =
+            runBlocking { AppDatabase.getDatabase(context).radioStationDao().getAllStations() }.map { it.name }
+        settleUntil { names().size == CuratedStations.pack.size }
+        assertEquals(CuratedStations.pack.map { it.name }, names())
         assertTrue(
             composeTestRule
                 .onAllNodes(
