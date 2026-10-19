@@ -199,4 +199,38 @@ class SettingsViewModelTest {
             assertEquals(CuratedStations.pack.size, stations.size)
             assertEquals(1, stations.count { it.name == keptStation.name })
         }
+
+    @Test
+    fun `export then import through the view model round-trips into an empty database`() =
+        runTest {
+            val viewModel = createViewModel(testScheduler, checkForUpdates = false)
+            assertNull("nothing to export yet", viewModel.exportStationsJson())
+
+            repository.insertStation(
+                com.freqcast.data.RadioStation(name = "Jazz FM", streamUrl = "https://jazz.example/s"),
+            )
+            val json = viewModel.exportStationsJson()!!
+            database.radioStationDao().getAllStations().forEach { database.radioStationDao().deleteStation(it.id) }
+
+            val result = viewModel.importStations(RuntimeEnvironment.getApplication(), json)
+
+            assertEquals(1, result.imported)
+            assertEquals(listOf("Jazz FM"), database.radioStationDao().getAllStations().map { it.name })
+        }
+
+    @Test
+    fun `factory builds a view model with update checks disabled`() {
+        Dispatchers.setMain(StandardTestDispatcher())
+        val factory =
+            SettingsViewModel.provideFactory(
+                repository,
+                SettingsStore(RuntimeEnvironment.getApplication()),
+                currentVersion = "1.2.3",
+                checkForUpdates = false,
+            )
+        val viewModel =
+            factory.create(SettingsViewModel::class.java, androidx.lifecycle.viewmodel.MutableCreationExtras())
+        assertEquals("1.2.3", viewModel.uiState.value.currentVersion)
+        assertEquals(0, server.requestCount)
+    }
 }

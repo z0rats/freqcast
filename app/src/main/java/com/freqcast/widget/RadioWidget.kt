@@ -49,37 +49,58 @@ class RadioWidget : GlanceAppWidget() {
         context: Context,
         id: GlanceId,
     ) {
-        val saved = WidgetStateStore(context).restore()
-        val hasStation = saved != null
-        val stationName = saved?.stationName ?: context.getString(R.string.widget_no_station)
-        val statusText =
-            when {
-                saved == null -> context.getString(R.string.widget_tap_to_browse)
-                saved.isPlaying -> context.getString(R.string.playing)
-                else -> context.getString(R.string.paused)
-            }
-        val emoji = EmojiGenerator.getEmojiForStation(saved?.stationName ?: "", saved?.streamUrl ?: "")
-        val iconBitmap = EmojiGenerator.getEmojiBitmap(emoji, 96)
-        val openIntent =
-            Intent(context, PlaybackActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                if (saved != null) {
-                    putExtra(PlaybackActivity.EXTRA_STATION_NAME, saved.stationName)
-                    putExtra(PlaybackActivity.EXTRA_STREAM_URL, saved.streamUrl)
-                }
-            }
+        val model = radioWidgetModel(context, WidgetStateStore(context).restore())
+        val iconBitmap = EmojiGenerator.getEmojiBitmap(model.emoji, 96)
 
         provideContent {
             RadioWidgetContent(
-                stationName = stationName,
-                statusText = statusText,
-                isPlaying = saved?.isPlaying ?: false,
-                hasStation = hasStation,
+                stationName = model.stationName,
+                statusText = model.statusText,
+                isPlaying = model.isPlaying,
+                hasStation = model.hasStation,
                 iconBitmap = iconBitmap,
-                openIntent = openIntent,
+                openIntent = model.openIntent,
             )
         }
     }
+}
+
+/** Everything [RadioWidgetContent] shows, derived from the last saved [WidgetStateStore.State]. */
+internal data class RadioWidgetModel(
+    val stationName: String,
+    val statusText: String,
+    val isPlaying: Boolean,
+    val hasStation: Boolean,
+    val emoji: String,
+    val openIntent: Intent,
+)
+
+internal fun radioWidgetModel(
+    context: Context,
+    saved: WidgetStateStore.State?,
+): RadioWidgetModel {
+    val statusText =
+        when {
+            saved == null -> context.getString(R.string.widget_tap_to_browse)
+            saved.isPlaying -> context.getString(R.string.playing)
+            else -> context.getString(R.string.paused)
+        }
+    val openIntent =
+        Intent(context, PlaybackActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (saved != null) {
+                putExtra(PlaybackActivity.EXTRA_STATION_NAME, saved.stationName)
+                putExtra(PlaybackActivity.EXTRA_STREAM_URL, saved.streamUrl)
+            }
+        }
+    return RadioWidgetModel(
+        stationName = saved?.stationName ?: context.getString(R.string.widget_no_station),
+        statusText = statusText,
+        isPlaying = saved?.isPlaying ?: false,
+        hasStation = saved != null,
+        emoji = EmojiGenerator.getEmojiForStation(saved?.stationName ?: "", saved?.streamUrl ?: ""),
+        openIntent = openIntent,
+    )
 }
 
 /** Internal (not private) so [runGlanceAppWidgetUnitTest][androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest] can render it in isolation with fixed inputs. */

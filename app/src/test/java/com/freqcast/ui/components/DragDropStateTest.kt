@@ -1,8 +1,5 @@
 package com.freqcast.ui.components
 
-import android.app.Application
-import android.content.ComponentName
-import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
-import androidx.test.core.app.ApplicationProvider
+import com.freqcast.testing.composeHostRuleChain
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,11 +20,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
-import org.junit.rules.TestRule
 import org.junit.runner.RunWith
-import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -50,28 +44,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class DragDropStateTest {
-    // ComposeTestRule launches a plain ComponentActivity to host content, but Robolectric only
-    // resolves activities declared in the merged manifest - which this app's own manifest doesn't
-    // declare. Registering it here (as an outer TestRule, so it runs before composeTestRule's own
-    // "before" launches the activity) is the same workaround Roborazzi itself uses for its host
-    // activity - Robolectric's instrumentation isn't registered yet at @BeforeClass time, so it
-    // can't be done there instead.
-    private val registerComposeHostActivity =
-        TestRule { base, _ ->
-            object : Statement() {
-                override fun evaluate() {
-                    val appContext = ApplicationProvider.getApplicationContext<Application>()
-                    shadowOf(appContext.packageManager)
-                        .addActivityIfNotPresent(ComponentName(appContext, ComponentActivity::class.java))
-                    base.evaluate()
-                }
-            }
-        }
-
     private val composeTestRule = createComposeRule()
 
     @get:Rule
-    val ruleChain: RuleChain = RuleChain.outerRule(registerComposeHostActivity).around(composeTestRule)
+    val ruleChain: RuleChain = composeHostRuleChain(composeTestRule)
 
     private val itemHeightDp = 50
 
@@ -185,5 +161,53 @@ class DragDropStateTest {
 
         assertTrue("expected a swap of (1, 0), got $moves", moves.contains(1 to 0))
         assertEquals(0, state.draggingItemIndex)
+    }
+
+    @Test
+    fun `dragging an item into the bottom edge zone auto-scrolls the list forward`() {
+        val lazyListState = layOutList(itemCount = 20)
+        val state = DragDropState(lazyListState, onMove = { _, _ -> }, onDragStopped = {})
+        val density = composeTestRule.density.density
+        composeTestRule.runOnIdle { state.onDragStart(Offset(10f, 10f)) }
+
+        // Viewport is 300dp, so the edge zone is the last 50dp: drag item 0 (0..50dp) to ~230..280dp.
+        composeTestRule.runOnIdle { state.onDrag(Offset(0f, 230 * density)) }
+        state.settleNow()
+
+        assertTrue(
+            "expected a forward scroll, got index=${lazyListState.firstVisibleItemIndex} offset=${lazyListState.firstVisibleItemScrollOffset}",
+            lazyListState.firstVisibleItemIndex > 0 || lazyListState.firstVisibleItemScrollOffset > 0,
+        )
+    }
+
+    @Test
+    fun `dragging an item into the top edge zone auto-scrolls the list back`() {
+        val lazyListState = layOutList(itemCount = 20)
+        composeTestRule.runOnIdle { runBlocking { lazyListState.scrollToItem(10) } }
+        composeTestRule.waitForIdle()
+        val state = DragDropState(lazyListState, onMove = { _, _ -> }, onDragStopped = {})
+        val density = composeTestRule.density.density
+        // Item 12 sits at 100..150dp in the viewport; drag it up into the top 50dp edge zone.
+        composeTestRule.runOnIdle { state.onDragStart(Offset(10f, 110 * density)) }
+        composeTestRule.runOnIdle { state.onDrag(Offset(0f, -90 * density)) }
+        state.settleNow()
+
+        assertTrue(
+            "expected a backward scroll from item 10, got ${lazyListState.firstVisibleItemIndex}/${lazyListState.firstVisibleItemScrollOffset}",
+            lazyListState.firstVisibleItemIndex < 10,
+        )
+    }
+
+    @Test
+    fun `an item resting mid-list does not auto-scroll`() {
+        val lazyListState = layOutList(itemCount = 20)
+        val state = DragDropState(lazyListState, onMove = { _, _ -> }, onDragStopped = {})
+        val density = composeTestRule.density.density
+        composeTestRule.runOnIdle { state.onDragStart(Offset(10f, 110 * density)) }
+        composeTestRule.runOnIdle { state.onDrag(Offset(0f, 2 * density)) }
+        state.settleNow()
+
+        assertEquals(0, lazyListState.firstVisibleItemIndex)
+        assertEquals(0, lazyListState.firstVisibleItemScrollOffset)
     }
 }

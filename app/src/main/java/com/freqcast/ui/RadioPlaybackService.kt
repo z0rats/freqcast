@@ -531,7 +531,7 @@ class RadioPlaybackService : MediaLibraryService() {
         val sessionActivity = playbackActivityPendingIntent(streamUrl)
         mediaSession =
             MediaLibrarySession
-                .Builder(this, p, MediaLibrarySessionCallback())
+                .Builder(this, p, librarySessionCallback)
                 .setSessionActivity(sessionActivity)
                 .build()
         // Links the notification's MediaStyle to this session's platform token so the system
@@ -1024,6 +1024,9 @@ class RadioPlaybackService : MediaLibraryService() {
             }
         }
     }
+
+    /** One instance for every session [buildMediaSession] creates; `internal` so tests can drive the browse/search callbacks directly. */
+    internal val librarySessionCallback: MediaLibrarySession.Callback by lazy { MediaLibrarySessionCallback() }
 
     private inner class MediaLibrarySessionCallback : MediaLibrarySession.Callback {
         override fun onGetLibraryRoot(
