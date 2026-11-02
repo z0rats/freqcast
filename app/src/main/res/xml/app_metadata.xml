@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AppFunctionAppMetadata xmlns:appfn="http://schemas.android.com/apk/androidx.appfunctions"
-    appfn:description="This app plays internet radio stations that the user has already saved to their list.
+    appfn:instructions="This app plays internet radio stations that the user has already saved to their list.
 
     Operational Patterns:
     - Use &apos;playStation&apos; to start playing a saved station by its display name.

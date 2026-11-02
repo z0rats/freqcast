@@ -1,7 +1,7 @@
 package com.freqcast.appfunctions
 
 import androidx.annotation.RequiresApi
-import androidx.appfunctions.AppFunction
+import androidx.appfunctions.AppFunctionDeclaration
 import androidx.appfunctions.AppFunctionElementNotFoundException
 import androidx.appfunctions.AppFunctionSerializable
 import androidx.appfunctions.AppFunctionService
@@ -57,7 +57,7 @@ abstract class BaseRadioAppFunctionService : AppFunctionService() {
      * @throws AppFunctionElementNotFoundException If no saved station's name matches. Suggest the
      *   user check the spelling, or add the station in the app first.
      */
-    @AppFunction(isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun playStation(stationName: String): PlaybackActionResult =
         withContext(Dispatchers.IO) {
             val station =
@@ -70,7 +70,7 @@ abstract class BaseRadioAppFunctionService : AppFunctionService() {
         }
 
     /** Stops whatever station is currently playing. A no-op if nothing is playing. */
-    @AppFunction(isDescribedByKDoc = true)
+    @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun stopPlayback() {
         withContext(Dispatchers.IO) { PlaybackCommands.stop(applicationContext) }
     }
