@@ -300,6 +300,11 @@ class RadioPlaybackService : MediaLibraryService() {
         flags: Int,
         startId: Int,
     ): Int {
+        // MediaSessionService starts itself with a UID extra on every foreground promotion and
+        // handles media-button intents. Skipping super left that loop spinning: onStartCommand
+        // once a second, two notification pipelines racing, shade flicker (ADR-0056).
+        super.onStartCommand(intent, flags, startId)
+
         val command = PlaybackCommands.parse(intent)
 
         if (command == PlaybackCommands.Command.Stop) {
@@ -321,15 +326,13 @@ class RadioPlaybackService : MediaLibraryService() {
             }
         } else if (player?.playbackState != Player.STATE_IDLE) {
             // A genuine process-death restart always finds the player IDLE (onCreate() just built a
-            // fresh one). A non-IDLE player here means something else delivered this null/extra-less
-            // intent while playback was already active - blindly "restoring" would tear down and
-            // re-request the stream that's already buffering/playing. Log (with what triggered it,
-            // since the actual source of these calls isn't confirmed yet) and ignore instead.
+            // fresh one). A non-IDLE player here means a duplicate/stray start while playback was
+            // already active — blindly "restoring" would tear down the stream that's already going.
             Log.d(
                 TAG,
                 "onStartCommand: ignoring stray intent=$intent action=${intent?.action}, playback already active",
             )
-        } else {
+        } else if (intent == null) {
             // Null intent means the system killed and restarted this service (START_STICKY);
             // resume whatever was last playing instead of just stopping silently.
             val saved = playbackStateStore.restore()
@@ -345,6 +348,18 @@ class RadioPlaybackService : MediaLibraryService() {
         }
 
         return START_STICKY
+    }
+
+    /**
+     * [PlayerNotificationManager] posts the media notification. The Media3 default also
+     * `startForegroundService`s on every player event, which re-enters [onStartCommand] and
+     * races our notification (ADR-0056). Not calling super skips Media3's notification provider.
+     */
+    override fun onUpdateNotification(
+        session: MediaSession,
+        startInForegroundRequired: Boolean,
+    ) {
+        // no-op
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaSession
@@ -914,6 +929,43 @@ class RadioPlaybackService : MediaLibraryService() {
         override fun seekToNext() = switchToAdjacentStation(StationNavigator::next)
 
         override fun seekToPrevious() = switchToAdjacentStation(StationNavigator::previous)
+
+        // After onAddMediaItems the session still calls setMediaItems. Swallow when we already
+        // started the station, or when the items have no URI (legacy playFromMediaId) — ExoPlayer
+        // NPEs on a missing LocalConfiguration (ADR-0055).
+        private fun setFromController(
+            mediaItems: List<MediaItem>,
+            play: () -> Unit,
+        ) {
+            if (!absorbControllerSetMediaItems(mediaItems)) play()
+        }
+
+        override fun setMediaItems(mediaItems: List<MediaItem>) =
+            setFromController(mediaItems) { super.setMediaItems(mediaItems) }
+
+        override fun setMediaItems(
+            mediaItems: List<MediaItem>,
+            resetPosition: Boolean,
+        ) = setFromController(mediaItems) { super.setMediaItems(mediaItems, resetPosition) }
+
+        override fun setMediaItems(
+            mediaItems: List<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ) = setFromController(mediaItems) { super.setMediaItems(mediaItems, startIndex, startPositionMs) }
+
+        override fun setMediaItem(mediaItem: MediaItem) =
+            setFromController(listOf(mediaItem)) { super.setMediaItem(mediaItem) }
+
+        override fun setMediaItem(
+            mediaItem: MediaItem,
+            startPositionMs: Long,
+        ) = setFromController(listOf(mediaItem)) { super.setMediaItem(mediaItem, startPositionMs) }
+
+        override fun setMediaItem(
+            mediaItem: MediaItem,
+            resetPosition: Boolean,
+        ) = setFromController(listOf(mediaItem)) { super.setMediaItem(mediaItem, resetPosition) }
     }
 
     /**
@@ -996,6 +1048,42 @@ class RadioPlaybackService : MediaLibraryService() {
         val station = browseTree.findStation(mediaId) ?: return false
         play(PlaybackRequest.of(station), station, PlayOrigin.IN_SESSION)
         return true
+    }
+
+    private fun browseTapMediaId(mediaItems: List<MediaItem>): String? =
+        mediaItems
+            .firstOrNull()
+            ?.mediaId
+            ?.takeIf { it.isNotEmpty() && !browseTree.isRoot(it) }
+
+    /**
+     * Resolves an Android Auto / Assistant tap (including legacy `playFromMediaId`, which arrives
+     * with a media id and no URI). Reloads the browse-tree cache on a miss so a tap that races
+     * [onGetChildren] still starts. Returns playable items with a URI; empty means unresolved.
+     */
+    internal suspend fun resolveBrowseTap(mediaItems: List<MediaItem>): MutableList<MediaItem> {
+        val mediaId = browseTapMediaId(mediaItems) ?: return mutableListOf()
+        if (!playFromBrowseTree(mediaId)) {
+            loadBrowsableStations()
+            if (!playFromBrowseTree(mediaId)) return mutableListOf()
+        }
+        val resolved = browseTree.mediaItemFor(mediaId) ?: return mutableListOf()
+        return mutableListOf(resolved)
+    }
+
+    /**
+     * True when the session's follow-up [Player.setMediaItems] must not reach ExoPlayer: the
+     * station is already playing through [applyPlayback], we can start it from the browse tree,
+     * or the items have no URI (legacy Auto `playFromMediaId` — ExoPlayer throws NPE on a
+     * missing `MediaItem.LocalConfiguration`).
+     */
+    internal fun absorbControllerSetMediaItems(mediaItems: List<MediaItem>): Boolean {
+        val mediaId = browseTapMediaId(mediaItems)
+        if (mediaId != null) {
+            if (currentRequest?.streamUrl == mediaId) return true
+            if (playFromBrowseTree(mediaId)) return true
+        }
+        return mediaItems.isEmpty() || mediaItems.any { it.localConfiguration == null }
     }
 
     /**
@@ -1100,30 +1188,30 @@ class RadioPlaybackService : MediaLibraryService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
-        ): ListenableFuture<MutableList<MediaItem>> {
-            // A tap on a station in the Android Auto / Assistant browse tree: play it through our
-            // own pipeline (HLS/timeshift handling, notification, retry) instead of letting media3
-            // hand the bare item straight to the player, and don't touch the session itself (see
-            // buildMediaSession's doc).
-            val mediaId = mediaItems.firstOrNull()?.mediaId
-            if (mediaId != null && playFromBrowseTree(mediaId)) {
-                return Futures.immediateFuture(mutableListOf())
-            }
-
-            val updatedItems =
-                mediaItems.map { item ->
-                    item
-                        .buildUpon()
-                        .setMediaMetadata(
-                            item.mediaMetadata
+        ): ListenableFuture<MutableList<MediaItem>> =
+            // Play through our own pipeline and return a URI-bearing item. Auto's legacy
+            // playFromMediaId arrives with mediaId only; handing that to ExoPlayer NPEs (ADR-0055).
+            // Unknown ids (another controller's raw URI, a deleted station) are passed through with
+            // our metadata stamped on — an empty list is Media3's "failed to resolve" contract.
+            serviceScope.future {
+                val resolved = resolveBrowseTap(mediaItems)
+                if (resolved.isNotEmpty()) {
+                    resolved
+                } else {
+                    mediaItems
+                        .map { item ->
+                            item
                                 .buildUpon()
-                                .setTitle(currentRequest?.stationName ?: getString(R.string.unknown_station))
-                                .setArtist(getString(R.string.app_name))
-                                .build(),
-                        ).build()
+                                .setMediaMetadata(
+                                    item.mediaMetadata
+                                        .buildUpon()
+                                        .setTitle(currentRequest?.stationName ?: getString(R.string.unknown_station))
+                                        .setArtist(getString(R.string.app_name))
+                                        .build(),
+                                ).build()
+                        }.toMutableList()
                 }
-            return Futures.immediateFuture(updatedItems.toMutableList())
-        }
+            }
     }
 
     companion object {

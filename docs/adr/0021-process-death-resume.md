@@ -6,4 +6,4 @@ Status: Accepted · Area: playback
 
 **Because.** Tearing down and re-requesting an already-buffering/playing stream on a stray intent interrupts playback.
 
-**Revisit.** What actually delivers a null intent mid-playback is unconfirmed (every `PlaybackCommands.start` carries a stream URL).
+**Revisit.** Superseded by ADR-0056: the mid-playback "stray" intents were Media3 `MediaSessionService` self-starts, not process-death.

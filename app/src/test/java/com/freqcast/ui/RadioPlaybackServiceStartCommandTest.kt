@@ -26,8 +26,9 @@ import org.robolectric.annotation.Config
 /**
  * Covers [RadioPlaybackService.onStartCommand]'s dispatch, separately from the browse-tree/ticker/
  * connection-error paths the other `RadioPlaybackService*Test` classes already own: which of its
- * four branches (explicit stop, a new stream request, a stray no-extras intent while already
- * playing, or a null intent after process death) fires for a given intent, and what it does.
+ * branches (explicit stop, a new stream request, a non-command intent while idle, a stray
+ * no-extras intent while already playing, or a null intent after process death) fires for a
+ * given intent, and what it does.
  */
 @UnstableApi
 @RunWith(RobolectricTestRunner::class)
@@ -109,6 +110,26 @@ class RadioPlaybackServiceStartCommandTest {
         // known-HLS hint/uuid/customIcon are looked up by URL (see onStartCommand's doc).
         awaitStationName(service, "Intent Name")
         assertEquals(streamUrl, service.getPlayer()?.currentMediaItem?.mediaId)
+    }
+
+    @Test
+    fun `a non-command intent while idle is not treated as process-death resume`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        PlaybackStateStore(context).save(stationName = "Saved FM", streamUrl = "https://example.com/saved.m3u8")
+        val service = Robolectric.buildService(RadioPlaybackService::class.java).create().get()
+        this.service = service
+        // Media3 self-starts carry extras but no PlaybackCommands stream URL. Must not restore
+        // the saved station (only a null intent after process death does that, ADR-0021/0056).
+        val result =
+            service.onStartCommand(
+                Intent(service, RadioPlaybackService::class.java).putExtra("unrelated", "x"),
+                0,
+                1,
+            )
+
+        assertEquals(android.app.Service.START_STICKY, result)
+        assertFalse(shadowOf(service).isStoppedBySelf)
+        assertNull(service.getCurrentStationName())
     }
 
     @Test

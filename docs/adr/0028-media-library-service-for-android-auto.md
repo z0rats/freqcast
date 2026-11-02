@@ -7,8 +7,8 @@ Status: Accepted · Area: playback / Auto
 - Flat browse tree (root → all stations, ADR-0007 order); `mediaId = streamUrl`.
 - `onBind()` is `super.onBind(intent) ?: binder`.
 - A `MediaLibrarySession` exists from `onCreate()` (`buildMediaSession(streamUrl = null)`).
-- `startPlayback()` is split: `buildMediaSession(streamUrl)` runs only from top-level entry points (`onCreate`, `onStartCommand`); `applyPlayback(streamUrl, isRetry)` (player/notification/timeshift/retry) is safe to call reentrantly. An Auto tap reaches `onAddMediaItems`, which resolves `mediaId` against `cachedStations`, calls `applyPlayback()` and returns an empty list.
-- `loadBrowsableStations()`/`playFromBrowseTree()` are `internal` for `RadioPlaybackServiceAutoTest`.
+- `startPlayback()` is split: `buildMediaSession(streamUrl)` runs only from top-level entry points (`onCreate`, `onStartCommand`); `applyPlayback(streamUrl, isRetry)` (player/notification/timeshift/retry) is safe to call reentrantly. An Auto tap reaches `onAddMediaItems`, which resolves `mediaId` against `cachedStations` and calls `applyPlayback()`. The list returned to the controller is the resolved item, not empty — ADR-0055.
+- `loadBrowsableStations()`/`playFromBrowseTree()`/`resolveBrowseTap()`/`absorbControllerSetMediaItems()` are `internal` for `RadioPlaybackServiceAutoTest`.
 
 **Because.**
 - The station list must be browsable from a head unit; Auto binds cross-process.
@@ -20,3 +20,5 @@ Status: Accepted · Area: playback / Auto
 
 **Rejected.**
 - Routing Auto taps through `startPlayback()` — rebuilds the session mid-callback.
+
+**Superseded in part by ADR-0055.** Returning an empty list from `onAddMediaItems` ended playback on Auto.

@@ -21,7 +21,7 @@ notification skip ──switchToAdjacentStation──┴────────
 ## Service core
 
 - `playbackSnapshot: StateFlow<PlaybackSnapshot>` is the single source of truth for UI — screens, widget and notification collect it instead of polling. The service delegates to `playback/TimeshiftController` (buffer/seek for rewind-live; ADR-0017) and `playback/PlaybackStateStore`.
-- Process-death resume from `PlaybackStateStore`, only when the player is `STATE_IDLE` — ADR-0021.
+- Process-death resume from `PlaybackStateStore`, only when the player is `STATE_IDLE` — ADR-0021. `onStartCommand` always calls `super` first (Media3 self-starts / media buttons); `onUpdateNotification` is a no-op so Media3 doesn't race `PlayerNotificationManager` — ADR-0056.
 - `PlaybackRequest` (`stationName`, `streamUrl`, `customIcon`, `knownHls`; `PlaybackRequest.of(station)` / `.of(name, url, lookedUpStation)`) is the one value `startPlayback()`/`applyPlayback()` take; all per-stream state is on the pure `playback/PlaybackSession` — ADR-0022.
 - Entry points and `PlayOrigin` click counting — ADR-0023. `radioBrowserUuid` and the `isHls` hint are resolved in `onStartCommand` via `repository.getStationByUrl()`, since `PlaybackCommands` only carries name/URL strings; Android Auto passes `station.isHls`/uuid straight from in-memory `cachedStations`.
 - Reconnect: capped exponential backoff keyed by attempt id — ADR-0025.
@@ -41,6 +41,7 @@ notification skip ──switchToAdjacentStation──┴────────
 
 - `MediaLibraryService`, manifest/binding/session-in-`onCreate` requirements — ADR-0028. Flat browse tree via `onGetLibraryRoot`/`onGetChildren`/`onGetItem`.
 - `buildMediaSession()` vs reentrant `applyPlayback()`; Auto taps never rebuild the session — ADR-0028. When `buildMediaSession(null)` runs (from `onCreate`), the session's `sessionActivity` intent carries no station extras; `PlaybackActivity` reads the live station once bound.
+- Auto `onAddMediaItems` → `resolveBrowseTap()` (reload browse cache on a miss; legacy `playFromMediaId` has no URI) and `TimeshiftSeekPlayer` swallows the session's follow-up `setMediaItems` — ADR-0055.
 
 ## Home screen widget
 
@@ -51,5 +52,5 @@ notification skip ──switchToAdjacentStation──┴────────
 
 ## AppFunctions (Android 16+)
 
-- `appfunctions/RadioAppFunctionService.kt`'s `BaseRadioAppFunctionService` (`@AppFunctionServiceEntryPoint`; KSP generates the concrete service + manifest `<service>`/schema XML) exposes `playStation(stationName)` (case-insensitive name match) / `stopPlayback()` to on-device agents via `PlaybackCommands` — no new playback path. `@RequiresApi(36)`, no back-port. `findStationByName` is `internal` for a plain JUnit test.
+- `appfunctions/RadioAppFunctionService.kt`'s `BaseRadioAppFunctionService` (`@AppFunctionServiceEntryPoint`; methods use `@AppFunctionDeclaration` — `@AppFunction` is a runtime interface as of 1.0.0-beta01). KSP generates the concrete service + manifest `<service>`/schema XML. Exposes `playStation(stationName)` (case-insensitive name match) / `stopPlayback()` via `PlaybackCommands` — no new playback path. `@RequiresApi(36)`, no back-port. `findStationByName` is `internal` for a plain JUnit test. `res/xml/app_metadata.xml` uses `appfn:instructions` (renamed from `appfn:description` in beta01).
 - Manual verification (agents never drive a device — see AGENTS.md): `adb shell cmd appfunctions list-app-functions --packageName com.freqcast`, then `adb shell cmd appfunctions execute-app-function` with a JSON payload, or ask an Android 16+ device's Gemini "play <station name> on Freqcast".

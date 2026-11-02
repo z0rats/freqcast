@@ -86,3 +86,5 @@ Where a reason was never written down, say `*reason not recorded*` instead of in
 | [0052](0052-metered-warning-direct-tap-only.md) | The metered-connection warning gates only a direct play tap | ui / settings |
 | [0053](0053-accessibility-single-state-mapping.md) | One playback-state → spoken-label mapping; merge only the text column | ui / accessibility |
 | [0054](0054-curated-stations-read-only.md) | Curated stations can't be edited | data / ui |
+| [0055](0055-auto-tap-returns-resolved-media-item.md) | Auto taps return the resolved `MediaItem`; the session player swallows the follow-up `setMediaItems` | playback / Auto |
+| [0056](0056-media-session-service-owns-start-command.md) | Always forward `MediaSessionService.onStartCommand`; `PlayerNotificationManager` owns the notification | playback / Auto |

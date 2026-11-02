@@ -3,6 +3,7 @@ package com.freqcast.ui
 import android.os.Bundle
 import android.os.Looper
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaSession
@@ -28,14 +29,14 @@ import org.robolectric.annotation.Config
 /**
  * Covers the Android Auto / Assistant browse tree end to end: the station list surfaces as
  * browsable media items in the DB's manual `sortOrder` order, and "tapping" one (the real user
- * scenario: [RadioPlaybackService.playFromBrowseTree] is what
+ * scenario: [RadioPlaybackService.resolveBrowseTap] is what
  * `MediaLibrarySessionCallback.onAddMediaItems` calls when a browse-tree item is selected) actually
  * starts that station playing through the real player/session pipeline. Also covers
  * [RadioPlaybackService.switchToAdjacentStation] (the media notification's skip-next/skip-previous
  * buttons, wired through `TimeshiftSeekPlayer.seekToNext`/`seekToPrevious`) end to end against the
  * same seeded station list, since it's the same "resolve a station, start it playing" shape.
  *
- * Goes through [RadioPlaybackService.loadBrowsableStations]/[RadioPlaybackService.playFromBrowseTree]
+ * Goes through [RadioPlaybackService.loadBrowsableStations]/[RadioPlaybackService.resolveBrowseTap]
  * directly rather than a full [androidx.media3.session.MediaBrowser] Binder round trip: media3's own
  * team tests that round trip with instrumentation, not Robolectric, which this project deliberately
  * doesn't have (see Testing in AGENTS.md) — these `internal` methods are the seam, same idea as
@@ -85,6 +86,12 @@ class RadioPlaybackServiceAutoTest {
                 dao.insertStation(
                     RadioStation(name = "Rock FM", streamUrl = "https://example.com/rock.m3u8", sortOrder = 2),
                 )
+                // Tap before onGetChildren: resolveBrowseTap must reload the empty browse cache.
+                val accepted =
+                    service.resolveBrowseTap(
+                        listOf(MediaItem.Builder().setMediaId("https://example.com/jazz.m3u8").build()),
+                    )
+                assertEquals(listOf("https://example.com/jazz.m3u8"), accepted.map { it.mediaId })
                 service.loadBrowsableStations()
             }
 
@@ -110,12 +117,28 @@ class RadioPlaybackServiceAutoTest {
         assertTrue(startedPlaying)
         assertEquals("Jazz FM", service.getCurrentStationName())
         assertEquals("https://example.com/jazz.m3u8", service.getPlayer()?.currentMediaItem?.mediaId)
+        // The session still calls setMediaItems with that list; swallowing it must not end playback
+        // (empty list / a plain URI item would: BUFFERING → ENDED, GitHub issue 33).
+        val playingItem = browseItems[1]
+        assertTrue(service.absorbControllerSetMediaItems(listOf(playingItem)))
+        assertEquals("https://example.com/jazz.m3u8", service.getPlayer()?.currentMediaItem?.mediaId)
+        assertTrue(service.getPlayer()?.playbackState != Player.STATE_ENDED)
+        // Legacy Auto playFromMediaId builds a MediaItem with mediaId and no URI. Handing that
+        // to ExoPlayer NPEs; absorb it and keep the HLS/timeshift source.
+        val legacyTap =
+            MediaItem.Builder().setMediaId("https://example.com/jazz.m3u8").build()
+        assertTrue(legacyTap.localConfiguration == null)
+        assertTrue(service.absorbControllerSetMediaItems(listOf(legacyTap)))
+        assertEquals("https://example.com/jazz.m3u8", service.getPlayer()?.currentMediaItem?.mediaId)
+        assertTrue(service.getPlayer()?.playbackState != Player.STATE_ENDED)
 
         // Tapping an unknown id (e.g. a stale browse-tree entry from before a station was deleted)
         // is a no-op: it must not disturb what's already playing.
-        val startedUnknown = service.playFromBrowseTree("https://not-a-real-station.example.com/stream")
-
-        assertFalse(startedUnknown)
+        val unknown = MediaItem.Builder().setMediaId("https://not-a-real-station.example.com/stream").build()
+        val unresolved = runBlocking { service.resolveBrowseTap(listOf(unknown)) }
+        assertTrue(unresolved.isEmpty())
+        assertFalse(service.playFromBrowseTree("https://not-a-real-station.example.com/stream"))
+        assertTrue(service.absorbControllerSetMediaItems(listOf(unknown)))
         assertEquals("Jazz FM", service.getCurrentStationName())
 
         // Notification skip-next/skip-previous buttons (see TimeshiftSeekPlayer.seekToNext/
@@ -212,12 +235,13 @@ class RadioPlaybackServiceAutoTest {
         // An item that isn't in the browse tree (e.g. a raw URI from another controller) isn't
         // played through our pipeline - it's handed back with our metadata stamped on.
         val passthrough =
-            callback
-                .onAddMediaItems(
+            awaitFuture(
+                callback.onAddMediaItems(
                     session,
                     browser,
                     mutableListOf(MediaItem.Builder().setMediaId("https://other.example/x").build()),
-                ).get()
+                ),
+            )
         assertEquals(listOf("https://other.example/x"), passthrough.map { it.mediaId })
         assertEquals(
             service.getString(R.string.app_name),
