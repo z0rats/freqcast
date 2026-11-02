@@ -1,0 +1,1 @@
+Android Auto: tapping a station in the car actually plays it instead of flashing an error and stopping a moment later. The media notification also no longer blinks while a stream is running.
