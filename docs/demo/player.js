@@ -360,16 +360,20 @@
     row.appendChild(card);
     inner.appendChild(row);
 
-    r.el = row; r.card = card; r.actions = actions; r.eq = eq; r.sub = sub; r.play = play;
+    r.el = row; r.card = card; r.actions = actions; r.eq = eq; r.sub = sub; r.play = play; r.text = text;
 
-    play.addEventListener('click', function () {
+    play.addEventListener('click', function (e) {
+      e.stopPropagation();
       if (suppressClick) return;
       if (r.open) { setOffset(r, 0, true); return; }
       togglePlay(s.id);
     });
     card.addEventListener('click', function (e) {
       if (suppressClick) return;
-      if (r.open && !e.target.closest('.fc-play')) setOffset(r, 0, true);
+      if (e.target.closest('.fc-play')) return;
+      if (r.open) { setOffset(r, 0, true); return; }
+      // Same toggle as the play icon: start, or pause when this station is already playing.
+      togglePlay(s.id);
     });
     bEdit.addEventListener('click', function () { setOffset(r, 0, true); notice(); });
     bShare.addEventListener('click', function () { setOffset(r, 0, true); notice(); });
@@ -432,6 +436,14 @@
       var isPlaying = active && st === 'playing';
       r.play.innerHTML = isPlaying ? I.pauseC : I.playC;
       r.play.setAttribute('aria-label', isPlaying ? STR.pause : STR.play);
+      // Name column announces Pause or Play to match what a card click will do.
+      if (r.open) {
+        r.text.removeAttribute('role');
+        r.text.removeAttribute('aria-label');
+      } else {
+        r.text.setAttribute('role', 'button');
+        r.text.setAttribute('aria-label', s.name + '. ' + (isPlaying ? STR.pause : STR.play));
+      }
     });
     renderMini();
   }

@@ -91,4 +91,6 @@ Where a reason was never written down, say `*reason not recorded*` instead of in
 | [0057](0057-auto-artwork-is-a-content-uri.md) | Superseded by ADR-0058. Was: Auto art is a FileProvider `content://` URI plus a read grant | playback / Auto |
 | [0058](0058-auto-artwork-provider-is-exported.md) | Superseded by ADR-0061. Was: Auto station art is an exported station-icon content URI | playback / Auto |
 | [0059](0059-favicon-rank-and-matte.md) | Favicon links are ranked, and a transparent dark mark is matted onto white before JPEG | discovery |
+| [0060](0060-station-row-tap-starts-playback.md) | Superseded by ADR-0062. Was: a station row tap starts playback and does not pause | ui / main screen |
 | [0061](0061-auto-for-you-artwork-includes-jpeg-bytes.md) | For you art is a 256px JPEG in `artworkData` plus the exported station-icon URI | playback / Auto |
+| [0062](0062-station-row-tap-toggles-playback.md) | A station row tap toggles playback | ui / main screen |

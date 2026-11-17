@@ -2,7 +2,7 @@
 
 Status: Accepted · Area: ui / settings
 
-**Decision.** `SettingsStore.warnOnMeteredConnection` (default `true`); the check (`ConnectivityManager.isActiveNetworkMetered`) lives in `MainScreen` and gates only the play button on a `StationItem`.
+**Decision.** `SettingsStore.warnOnMeteredConnection` (default `true`); the check (`ConnectivityManager.isActiveNetworkMetered`) lives in `MainScreen` and gates only a direct play tap on a `StationItem`: the row and the play icon (ADR-0062). Pausing is not gated.
 
 **Because.** The other paths are already-in-progress switches or background starts with no good confirmation surface.
 

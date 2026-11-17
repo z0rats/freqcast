@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -159,12 +160,12 @@ fun StationItem(
             isDragging = isDragging,
             highlightAlpha = highlightAnim.value,
             trackTitle = trackTitle,
-            onPlayClick = {
+            // A revealed row only closes. Otherwise the row and the icon share one toggle:
+            // pause when this station is playing, start otherwise (ADR-0062).
+            onToggleClick = {
                 if (swipeReveal.isRevealed) swipeReveal.close() else onPlayClick()
             },
-            onCardClick = {
-                if (swipeReveal.isRevealed) swipeReveal.close()
-            },
+            isRevealed = swipeReveal.isRevealed,
             modifier =
                 Modifier
                     .zIndex(1f)
@@ -278,8 +279,8 @@ private fun StationCard(
     isDragging: Boolean,
     highlightAlpha: Float,
     trackTitle: String?,
-    onPlayClick: () -> Unit,
-    onCardClick: () -> Unit,
+    onToggleClick: () -> Unit,
+    isRevealed: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val containerColor =
@@ -288,10 +289,31 @@ private fun StationCard(
         } else {
             card_surface
         }
+    // Spoken label for the row tap: Pause when it would pause, Play when it would start.
+    // A revealed row only closes, so it gets no Play/Pause label (ADR-0062).
+    val rowActionLabel = stringResource(if (isPlaying) R.string.pause else R.string.play)
+    val rowTogglesPlayback = !isRevealed
 
     Card(
-        onClick = onCardClick,
-        modifier = modifier.fillMaxWidth(),
+        onClick = onToggleClick,
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .then(
+                    if (rowTogglesPlayback) {
+                        // Labels the card's existing click. Does not merge the row: the icon is
+                        // its own clickable stop, and the name column below merges only itself
+                        // (ADR-0053).
+                        Modifier.semantics {
+                            onClick(label = rowActionLabel) {
+                                onToggleClick()
+                                true
+                            }
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation =
             CardDefaults.cardElevation(
@@ -342,8 +364,24 @@ private fun StationCard(
             Column(
                 // mergeDescendants: TalkBack reads the name and status/subtitle below as one
                 // combined stop instead of two separate swipes - the play/pause icon stays its
-                // own sibling stop outside this Column, so it's unaffected.
-                modifier = Modifier.weight(1f).semantics(mergeDescendants = true) {},
+                // own sibling stop outside this Column, so it's unaffected (ADR-0053).
+                // The click action is this column's, not a merge of the whole row: Pause or Play
+                // matching what the tap will do, or an unlabeled close while swipe-reveal is
+                // open (ADR-0062).
+                modifier =
+                    Modifier.weight(1f).semantics(mergeDescendants = true) {
+                        if (isRevealed) {
+                            onClick {
+                                onToggleClick()
+                                true
+                            }
+                        } else {
+                            onClick(label = rowActionLabel) {
+                                onToggleClick()
+                                true
+                            }
+                        }
+                    },
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Row(
@@ -399,7 +437,7 @@ private fun StationCard(
 
             PlayPauseIcon(
                 isPlaying = isPlaying,
-                onClick = onPlayClick,
+                onClick = onToggleClick,
             )
         }
     }

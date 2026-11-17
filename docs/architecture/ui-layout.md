@@ -20,6 +20,10 @@ render: isDragging = station.id == draggingItemKey → elevated Card/border, gra
 - Leading-edge swap test — ADR-0011.
 - Order source of truth (`sortOrder ASC, id ASC`) — ADR-0007.
 
+## Station row playback
+
+- Tapping a `StationItem` row toggles that station through the same callback as the play/pause icon, including the metered-connection warning on start (ADR-0052, ADR-0062). The icon stays visible and still toggles. A tap while swipe-reveal is open only closes the reveal. Long-press drag is unchanged (ADR-0008).
+
 ## Station icons
 
 - `RadioStation.customIcon` = emoji or image file path (leading `/` is `IconStorage.isImagePath()`'s discriminator; every render site falls back to the emoji if the file is missing). Default: `util/EmojiGenerator`. Override via `ui/components/StationIconPickerDialog.kt` (emoji, or photo picker → `IconStorage.saveImage()` ≤512px JPEG in `filesDir/station_icons/`). Shown in `StationCard`, `PlaybackScreen`'s `StationArt`, the notification large icon (`getCurrentLargeIcon()`), and — for a file icon only — Android Auto via `artworkUri` plus a 256px `artworkData` JPEG (ADR-0061); not in the mini-player cards (width goes to the name). `AddStationViewModel` deletes only the *replaced* file, only once `save()` commits — no cleanup on cancel (accepted orphan leak). Directory favicons backfill async (discovery.md); curated icons are bundled (ADR-0012).
@@ -39,9 +43,9 @@ render: isDragging = station.id == draggingItemKey → elevated Card/border, gra
 ## Main screen wiring
 
 - `StationListActions` (`MainScreen.kt`) bundles the 8 list callbacks; `MainActivity` builds a partial instance and `MainScreen` `.copy()`s in `onStationShareClick`/`onStationItemPlayClick` (they need Compose state). `MainScreen`'s own signature takes only `onAddStationClick`, `onPlayStation`, `onNowPlayingClick`, `playbackController`, `onResume`, plus `stationListActions`.
-- Metered-connection warning on direct play tap only — ADR-0052. **Settings screen** (`SettingsActivity`): General (language picker, metered warning, timeshift buffer size, "Disable battery optimization" via `util/BatteryOptimization.kt`), Backup (Export/Import — backup.md; "Restore curated stations" — ADR-0012), Support (feedback email/GitHub, version + update check — ADR-0014).
+- Metered-connection warning on a direct play tap only (the station row and its play icon) — ADR-0052, ADR-0062. **Settings screen** (`SettingsActivity`): General (language picker, metered warning, timeshift buffer size, "Disable battery optimization" via `util/BatteryOptimization.kt`), Backup (Export/Import — backup.md; "Restore curated stations" — ADR-0012), Support (feedback email/GitHub, version + update check — ADR-0014).
 - Swipe-to-reveal hint on the first curated station — ADR-0013.
 
 ## Accessibility (TalkBack)
 
-- One `PlaybackStatus` → spoken-label mapping, live-region track title, merge only the name+status column — ADR-0053.
+- One `PlaybackStatus` → spoken-label mapping, live-region track title, merge only the name+status column — ADR-0053. That column's click action is labeled Pause or Play to match the row tap; the play/pause icon stays its own stop (ADR-0062).

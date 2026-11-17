@@ -44,8 +44,9 @@ import org.robolectric.shadows.ShadowToast
 
 /**
  * [MainScreen] over a real [MainViewModel] + in-memory Room and a [FakePlaybackController]:
- * the list, the header actions, play/stop routing (incl. the metered-connection prompt), syncing
- * to playback started elsewhere, the mini player, delete + Undo, search and its directory fallback,
+ * the list, the header actions, play/stop routing (incl. the row tap and the metered-connection
+ * prompt), syncing to playback started elsewhere, the mini player, delete + Undo, search and its
+ * directory fallback,
  * and the wide-screen two-pane layout.
  *
  * The main clock is driven by hand: [MainScreen]'s list mounts `rememberDragDropState`, whose
@@ -182,6 +183,18 @@ class MainScreenTest {
     }
 
     @Test
+    fun `tapping the row starts the station, and tapping that row again stops it`() {
+        show(jazz, rock)
+        composeTestRule.onNodeWithText("Jazz FM").performClick()
+        settle()
+        assertEquals(listOf("play:Jazz FM"), calls)
+
+        composeTestRule.onAllNodes(hasText("Jazz FM"))[0].performClick()
+        settle()
+        assertEquals(listOf("play:Jazz FM", "stop"), calls)
+    }
+
+    @Test
     fun `playback started elsewhere is picked up as the current station`() {
         val controller = FakePlaybackController()
         show(jazz, rock, controller = controller)
@@ -245,6 +258,30 @@ class MainScreenTest {
 
         composeTestRule.onNodeWithContentDescription(context.getString(R.string.play)).performClick()
         settle()
+        composeTestRule.onNodeWithText(context.getString(R.string.metered_connection_continue)).performClick()
+        settle()
+        assertEquals(listOf("play:Jazz FM"), calls)
+    }
+
+    @Test
+    fun `on a metered connection the row tap asks before playing`() {
+        settingsStore.warnOnMeteredConnection = true
+        val cm = shadowOf(context.getSystemService(ConnectivityManager::class.java))
+        cm.setDefaultNetworkActive(true)
+        cm.setActiveNetworkInfo(
+            ShadowNetworkInfo.newInstance(
+                NetworkInfo.DetailedState.CONNECTED,
+                ConnectivityManager.TYPE_MOBILE,
+                0,
+                true,
+                NetworkInfo.State.CONNECTED,
+            ),
+        )
+        show(jazz)
+
+        composeTestRule.onNodeWithText("Jazz FM").performClick()
+        settle()
+        composeTestRule.onNodeWithText(context.getString(R.string.metered_connection_dialog_message)).assertExists()
         composeTestRule.onNodeWithText(context.getString(R.string.metered_connection_continue)).performClick()
         settle()
         assertEquals(listOf("play:Jazz FM"), calls)
