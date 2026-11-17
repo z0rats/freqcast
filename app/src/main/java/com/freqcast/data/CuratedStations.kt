@@ -57,6 +57,14 @@ object CuratedStations {
                 description = "Radio, Shows & Podcasts",
                 isCurated = true,
             ),
+            RadioStation(
+                name = "Rough Radio",
+                // Community radio based in Rome, served by Radiocult's live stream endpoint.
+                streamUrl = "https://rough-radio-9a2b1da0.radiocult.fm/stream",
+                customIcon = "🎙️",
+                description = "Independent Radio · Rome",
+                isCurated = true,
+            ),
         )
 
     /**
@@ -71,6 +79,7 @@ object CuratedStations {
             "KURS Radio" to R.raw.curated_kurs,
             "HKCR" to R.raw.curated_hkcr,
             "SURPRISE.FM" to R.raw.curated_surprise,
+            "Rough Radio" to R.raw.curated_roughradio,
         )
 
     /**
