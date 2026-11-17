@@ -6,10 +6,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -21,7 +20,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -93,7 +91,7 @@ class MainActivityTest {
 
     private fun tapPlayOnFirstStation() {
         composeTestRule
-            .onAllNodesWithContentDescription(context.getString(R.string.play))[0]
+            .onNodeWithText(firstCurated.name)
             .performSemanticsAction(SemanticsActions.OnClick)
         repeat(5) {
             composeTestRule.mainClock.advanceTimeByFrame()
@@ -116,13 +114,6 @@ class MainActivityTest {
             runBlocking { AppDatabase.getDatabase(context).radioStationDao().getAllStations() }.map { it.name }
         settleUntil { names().size == CuratedStations.pack.size }
         assertEquals(CuratedStations.pack.map { it.name }, names())
-        assertTrue(
-            composeTestRule
-                .onAllNodes(
-                    hasContentDescription(context.getString(R.string.play)),
-                ).fetchSemanticsNodes()
-                .isNotEmpty(),
-        )
     }
 
     @Test

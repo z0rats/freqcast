@@ -10,7 +10,7 @@ Status: Accepted · Area: ui / accessibility
 **Because.**
 - The two surfaces can't drift into different wording for the same state.
 - An ICY track change is announced without re-focusing.
-- TalkBack reads name+status as one stop while the play/pause button stays separately focusable.
+- TalkBack reads name+status as one stop. On `MiniPlayerCardFull` the play/pause button stays separately focusable; on `StationCard` the card click is the play/pause action (ADR-0063).
 
 **Rejected.**
 - Merging the whole row — swallows the button into the merged node's actions.

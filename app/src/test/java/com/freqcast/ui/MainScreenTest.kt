@@ -6,7 +6,6 @@ import android.net.NetworkInfo
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -170,14 +169,14 @@ class MainScreenTest {
     }
 
     @Test
-    fun `tapping play starts the station and shows the mini player, tapping again stops it`() {
+    fun `tapping a row starts the station and the mini-player pause stops it`() {
         show(jazz, rock)
-        composeTestRule.onAllNodesWithContentDescription(context.getString(R.string.play))[0].performClick()
+        composeTestRule.onNodeWithText("Jazz FM").performClick()
         settle()
         assertEquals(listOf("play:Jazz FM"), calls)
         assertEquals(2, composeTestRule.onAllNodes(hasText("Jazz FM")).fetchSemanticsNodes().size) // row + mini player
 
-        composeTestRule.onAllNodesWithContentDescription(context.getString(R.string.pause))[0].performClick()
+        composeTestRule.onNodeWithContentDescription(context.getString(R.string.pause)).performClick()
         settle()
         assertEquals(listOf("play:Jazz FM", "stop"), calls)
     }
@@ -249,35 +248,12 @@ class MainScreenTest {
         )
         show(jazz)
 
-        composeTestRule.onNodeWithContentDescription(context.getString(R.string.play)).performClick()
+        composeTestRule.onNodeWithText("Jazz FM").performClick()
         settle()
         composeTestRule.onNodeWithText(context.getString(R.string.metered_connection_dialog_message)).assertExists()
         composeTestRule.onNodeWithText(context.getString(R.string.cancel)).performClick()
         settle()
         assertTrue(calls.isEmpty())
-
-        composeTestRule.onNodeWithContentDescription(context.getString(R.string.play)).performClick()
-        settle()
-        composeTestRule.onNodeWithText(context.getString(R.string.metered_connection_continue)).performClick()
-        settle()
-        assertEquals(listOf("play:Jazz FM"), calls)
-    }
-
-    @Test
-    fun `on a metered connection the row tap asks before playing`() {
-        settingsStore.warnOnMeteredConnection = true
-        val cm = shadowOf(context.getSystemService(ConnectivityManager::class.java))
-        cm.setDefaultNetworkActive(true)
-        cm.setActiveNetworkInfo(
-            ShadowNetworkInfo.newInstance(
-                NetworkInfo.DetailedState.CONNECTED,
-                ConnectivityManager.TYPE_MOBILE,
-                0,
-                true,
-                NetworkInfo.State.CONNECTED,
-            ),
-        )
-        show(jazz)
 
         composeTestRule.onNodeWithText("Jazz FM").performClick()
         settle()

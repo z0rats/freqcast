@@ -93,4 +93,5 @@ Where a reason was never written down, say `*reason not recorded*` instead of in
 | [0059](0059-favicon-rank-and-matte.md) | Favicon links are ranked, and a transparent dark mark is matted onto white before JPEG | discovery |
 | [0060](0060-station-row-tap-starts-playback.md) | Superseded by ADR-0062. Was: a station row tap starts playback and does not pause | ui / main screen |
 | [0061](0061-auto-for-you-artwork-includes-jpeg-bytes.md) | For you art is a 256px JPEG in `artworkData` plus the exported station-icon URI | playback / Auto |
-| [0062](0062-station-row-tap-toggles-playback.md) | A station row tap toggles playback | ui / main screen |
+| [0062](0062-station-row-tap-toggles-playback.md) | Superseded by ADR-0063. Was: a station row tap toggles playback and keeps the play icon | ui / main screen |
+| [0063](0063-station-row-has-no-play-icon.md) | Station list rows have no play/pause icon; the row tap toggles playback | ui / main screen |

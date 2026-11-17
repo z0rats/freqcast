@@ -7,12 +7,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -37,11 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -160,8 +156,8 @@ fun StationItem(
             isDragging = isDragging,
             highlightAlpha = highlightAnim.value,
             trackTitle = trackTitle,
-            // A revealed row only closes. Otherwise the row and the icon share one toggle:
-            // pause when this station is playing, start otherwise (ADR-0062).
+            // A revealed row only closes. Otherwise the card tap toggles playback
+            // (ADR-0063): pause when this station is playing, start otherwise.
             onToggleClick = {
                 if (swipeReveal.isRevealed) swipeReveal.close() else onPlayClick()
             },
@@ -290,7 +286,7 @@ private fun StationCard(
             card_surface
         }
     // Spoken label for the row tap: Pause when it would pause, Play when it would start.
-    // A revealed row only closes, so it gets no Play/Pause label (ADR-0062).
+    // A revealed row only closes, so it gets no Play/Pause label (ADR-0063).
     val rowActionLabel = stringResource(if (isPlaying) R.string.pause else R.string.play)
     val rowTogglesPlayback = !isRevealed
 
@@ -301,9 +297,8 @@ private fun StationCard(
                 .fillMaxWidth()
                 .then(
                     if (rowTogglesPlayback) {
-                        // Labels the card's existing click. Does not merge the row: the icon is
-                        // its own clickable stop, and the name column below merges only itself
-                        // (ADR-0053).
+                        // Labels the card's existing click. The name column below merges only
+                        // itself so TalkBack still reads name+status as one stop (ADR-0053).
                         Modifier.semantics {
                             onClick(label = rowActionLabel) {
                                 onToggleClick()
@@ -363,11 +358,9 @@ private fun StationCard(
 
             Column(
                 // mergeDescendants: TalkBack reads the name and status/subtitle below as one
-                // combined stop instead of two separate swipes - the play/pause icon stays its
-                // own sibling stop outside this Column, so it's unaffected (ADR-0053).
-                // The click action is this column's, not a merge of the whole row: Pause or Play
-                // matching what the tap will do, or an unlabeled close while swipe-reveal is
-                // open (ADR-0062).
+                // combined stop instead of two separate swipes. There is no play/pause sibling
+                // on the row; this column's click is labeled Pause or Play, or unlabeled
+                // close while swipe-reveal is open (ADR-0053, ADR-0063).
                 modifier =
                     Modifier.weight(1f).semantics(mergeDescendants = true) {
                         if (isRevealed) {
@@ -434,11 +427,6 @@ private fun StationCard(
                     )
                 }
             }
-
-            PlayPauseIcon(
-                isPlaying = isPlaying,
-                onClick = onToggleClick,
-            )
         }
     }
 }
@@ -456,34 +444,4 @@ private fun CuratedBadge(modifier: Modifier = Modifier) {
                 .border(BorderStroke(1.dp, glass_accent.copy(alpha = 0.5f)), MaterialTheme.shapes.extraSmall)
                 .padding(horizontal = 6.dp, vertical = 2.dp),
     )
-}
-
-@Composable
-private fun PlayPauseIcon(
-    isPlaying: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val iconRes =
-        if (isPlaying) {
-            R.drawable.ic_pause_circle
-        } else {
-            R.drawable.ic_play_circle
-        }
-
-    Box(
-        modifier =
-            modifier
-                .size(48.dp)
-                .clip(MaterialTheme.shapes.extraSmall)
-                .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Image(
-            painter = painterResource(iconRes),
-            contentDescription = if (isPlaying) stringResource(R.string.pause) else stringResource(R.string.play),
-            modifier = Modifier.size(32.dp),
-            colorFilter = ColorFilter.tint(glass_accent),
-        )
-    }
 }

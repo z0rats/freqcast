@@ -197,9 +197,6 @@
 .fc-eq i:nth-child(3) { animation-duration: 0.38s; }
 @keyframes fc-eq { to { transform: scaleY(1); } }
 
-.fc-play { flex: none; width: 48px; height: 48px; margin-right: -4px; border-radius: 8px; display: grid; place-items: center; color: var(--fc-accent); }
-.fc-play svg { width: 32px; height: 32px; }
-
 /* ---------- empty / no-results ---------- */
 .fc-empty {
   position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
@@ -294,18 +291,17 @@
   50% { box-shadow: 24px 24px 0 #b9741f; }
 }
 }
-.fc-row.fc-nudge .fc-play { position: relative; }
-.fc-row.fc-nudge .fc-play::before {
-  content: ""; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px;
-  border-radius: 50%; border: 2px solid var(--fc-accent); animation: fc-ring 1.4s ease-out infinite; pointer-events: none;
+.fc-row.fc-nudge .fc-card { animation: fc-card-hint 1.4s ease-out infinite; }
+@keyframes fc-card-hint {
+  from { box-shadow: 0 0 0 0 var(--fc-accent); }
+  to { box-shadow: 0 0 0 8px transparent; }
 }
-@keyframes fc-ring { from { transform: scale(0.9); opacity: 0.95; } to { transform: scale(1.9); opacity: 0; } }
 .fc-tip {
-  position: absolute; z-index: 7; right: 40px; top: 78px; padding: 7px 12px; border-radius: 12px;
+  position: absolute; z-index: 7; left: 16px; top: 78px; padding: 7px 12px; border-radius: 12px;
   background: var(--fc-primary); color: #3a2109; font-size: 12px; font-weight: 500; white-space: nowrap;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); animation: fc-bob 1.4s ease-in-out infinite; pointer-events: none;
 }
-.fc-tip::before { content: ""; position: absolute; top: -5px; right: 20px; width: 10px; height: 10px; background: var(--fc-primary); transform: rotate(45deg); border-radius: 2px; }
+.fc-tip::before { content: ""; position: absolute; top: -5px; left: 24px; width: 10px; height: 10px; background: var(--fc-primary); transform: rotate(45deg); border-radius: 2px; }
 @keyframes fc-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
 
 /* ---------- toast + dialog ---------- */

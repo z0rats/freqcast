@@ -24,10 +24,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * [StationItem]'s behaviour: the subtitle's status/track/description precedence, the play button
- * and the row tap that toggles playback like the play/pause icon (ADR-0062), the swipe-to-reveal action
- * row (Edit hidden for curated stations, ADR-0054), and the one-time swipe hint. Visual styling
- * is covered separately by `StationItemScreenshotTest`.
+ * [StationItem]'s behaviour: the subtitle's status/track/description precedence, the row tap that
+ * toggles playback (ADR-0063), the swipe-to-reveal action row (Edit hidden for curated stations,
+ * ADR-0054), and the one-time swipe hint. Visual styling is covered separately by
+ * `StationItemScreenshotTest`.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -94,7 +94,6 @@ class StationItemTest {
     fun `playing row shows the live track title instead of the description`() {
         show(isActive = true, isPlaying = true, trackTitle = "Miles Davis - So What")
         composeTestRule.onNodeWithText("Miles Davis - So What").assertIsDisplayed()
-        composeTestRule.onNodeWithContentDescription(context.getString(R.string.pause)).assertIsDisplayed()
     }
 
     @Test
@@ -122,13 +121,6 @@ class StationItemTest {
     }
 
     @Test
-    fun `tapping play invokes the play callback`() {
-        show()
-        composeTestRule.onNodeWithContentDescription(context.getString(R.string.play)).performClick()
-        assertEquals(listOf("play"), calls)
-    }
-
-    @Test
     fun `tapping the row starts playback once`() {
         show()
         composeTestRule.onNodeWithText("Jazz FM").performClick()
@@ -136,16 +128,14 @@ class StationItemTest {
     }
 
     @Test
-    fun `the row play action is labeled and the icon stays its own stop`() {
+    fun `the row play action is labeled Play`() {
         show()
         val play = context.getString(R.string.play)
+        composeTestRule.onNodeWithContentDescription(play).assertDoesNotExist()
         val name = composeTestRule.onNodeWithText("Jazz FM").fetchSemanticsNode()
-        val icon = composeTestRule.onNodeWithContentDescription(play).fetchSemanticsNode()
         assertEquals(play, name.config.getOrNull(SemanticsActions.OnClick)?.label)
-        assertTrue(name.id != icon.id)
 
-        calls.clear()
-        composeTestRule.onNodeWithText("Jazz FM").performSemanticsAction(SemanticsActions.OnClick)
+        composeTestRule.onNodeWithText("Jazz FM").performClick()
         assertEquals(listOf("play"), calls)
     }
 
@@ -153,10 +143,9 @@ class StationItemTest {
     fun `tapping the row of the playing station pauses it`() {
         show(isActive = true, isPlaying = true)
         val pause = context.getString(R.string.pause)
+        composeTestRule.onNodeWithContentDescription(pause).assertDoesNotExist()
         val name = composeTestRule.onNodeWithText("Jazz FM").fetchSemanticsNode()
-        val icon = composeTestRule.onNodeWithContentDescription(pause).fetchSemanticsNode()
         assertEquals(pause, name.config.getOrNull(SemanticsActions.OnClick)?.label)
-        assertTrue(name.id != icon.id)
 
         composeTestRule.onNodeWithText("Jazz FM").performClick()
         assertEquals(listOf("play"), calls)
@@ -186,18 +175,6 @@ class StationItemTest {
         assertTrue(calls.isEmpty())
 
         composeTestRule.onNodeWithText("Jazz FM").performClick()
-        assertEquals(listOf("play"), calls)
-    }
-
-    @Test
-    fun `play tap while revealed closes the row instead of playing`() {
-        show()
-        swipeOpen()
-        composeTestRule.onNodeWithContentDescription(context.getString(R.string.play)).performClick()
-        composeTestRule.waitForIdle()
-        assertTrue(calls.isEmpty())
-
-        composeTestRule.onNodeWithContentDescription(context.getString(R.string.play)).performClick()
         assertEquals(listOf("play"), calls)
     }
 

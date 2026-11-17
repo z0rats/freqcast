@@ -1,6 +1,6 @@
 # ADR-0062: A station row tap toggles playback
 
-Status: Accepted · Area: ui / main screen
+Status: Superseded by ADR-0063 · Area: ui / main screen
 
 Supersedes ADR-0060.
 

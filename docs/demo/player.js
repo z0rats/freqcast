@@ -37,7 +37,7 @@
       sRestored: 'Restored %1$d station(s)', sBattery: 'Disable battery optimization',
       sGithub: 'Report a bug on GitHub', sEmail: 'Send feedback', sVersion: 'Version %1$s',
       inApp: 'This is a demo — available in the app', hls: 'HLS: open in Safari or the app',
-      live: 'Live demo', volume: 'Volume (this page only, not part of the app)', tap: 'Tap ▶ — it really plays',
+      live: 'Live demo', volume: 'Volume (this page only, not part of the app)', tap: 'Tap a station — it really plays',
       caption: 'Not a video: these are live streams and the live Radio Browser directory.',
       label: 'Freqcast interactive demo'
     },
@@ -64,7 +64,7 @@
       sRestored: 'Восстановлено станций: %1$d', sBattery: 'Отключить оптимизацию батареи',
       sGithub: 'Сообщить об ошибке на GitHub', sEmail: 'Отправить отзыв', sVersion: 'Версия %1$s',
       inApp: 'Это демо — в приложении это работает', hls: 'HLS: откройте в Safari или в приложении',
-      live: 'Живое демо', volume: 'Громкость (только для этой страницы, не часть приложения)', tap: 'Нажмите ▶ — играет по-настоящему',
+      live: 'Живое демо', volume: 'Громкость (только для этой страницы, не часть приложения)', tap: 'Нажмите станцию — играет по-настоящему',
       caption: 'Это не видео: здесь живые эфиры и живой каталог Radio Browser.',
       label: 'Интерактивная демонстрация Freqcast'
     }
@@ -354,25 +354,16 @@
     var sub = el('span', 'fc-sub');
     subRow.appendChild(eq); subRow.appendChild(sub);
     text.appendChild(nameRow); text.appendChild(subRow);
-    var play = el('button', 'fc-play');
-    card.appendChild(icon); card.appendChild(text); card.appendChild(play);
+    card.appendChild(icon); card.appendChild(text);
     row.appendChild(actions);
     row.appendChild(card);
     inner.appendChild(row);
 
-    r.el = row; r.card = card; r.actions = actions; r.eq = eq; r.sub = sub; r.play = play; r.text = text;
+    r.el = row; r.card = card; r.actions = actions; r.eq = eq; r.sub = sub; r.text = text;
 
-    play.addEventListener('click', function (e) {
-      e.stopPropagation();
+    card.addEventListener('click', function () {
       if (suppressClick) return;
       if (r.open) { setOffset(r, 0, true); return; }
-      togglePlay(s.id);
-    });
-    card.addEventListener('click', function (e) {
-      if (suppressClick) return;
-      if (e.target.closest('.fc-play')) return;
-      if (r.open) { setOffset(r, 0, true); return; }
-      // Same toggle as the play icon: start, or pause when this station is already playing.
       togglePlay(s.id);
     });
     bEdit.addEventListener('click', function () { setOffset(r, 0, true); notice(); });
@@ -434,8 +425,6 @@
       // StationItem: playing/starting/error replace the description; paused shows it (or the URL)
       r.sub.textContent = active && st !== 'paused' ? statusText(st) : (s.desc || s.url);
       var isPlaying = active && st === 'playing';
-      r.play.innerHTML = isPlaying ? I.pauseC : I.playC;
-      r.play.setAttribute('aria-label', isPlaying ? STR.pause : STR.play);
       // Name column announces Pause or Play to match what a card click will do.
       if (r.open) {
         r.text.removeAttribute('role');
@@ -597,7 +586,7 @@
     var sx = 0, sy = 0, startOff = 0, mode = null, pid = null, lp = null, startScroll = 0, startTop = 0;
 
     card.addEventListener('pointerdown', function (e) {
-      if (e.button !== 0 || e.target.closest('.fc-play')) return;
+      if (e.button !== 0) return;
       cancelHint();
       sx = e.clientX / scale; sy = e.clientY / scale;
       startOff = r.off; mode = null; pid = e.pointerId;

@@ -22,7 +22,7 @@ render: isDragging = station.id == draggingItemKey → elevated Card/border, gra
 
 ## Station row playback
 
-- Tapping a `StationItem` row toggles that station through the same callback as the play/pause icon, including the metered-connection warning on start (ADR-0052, ADR-0062). The icon stays visible and still toggles. A tap while swipe-reveal is open only closes the reveal. Long-press drag is unchanged (ADR-0008).
+- Tapping a `StationItem` row toggles that station (metered-connection warning on start — ADR-0052, ADR-0063). There is no play/pause icon on the row; that control lives on `NowPlayingBottomBar`. A tap while swipe-reveal is open only closes the reveal. Long-press drag is unchanged (ADR-0008).
 
 ## Station icons
 
@@ -43,9 +43,9 @@ render: isDragging = station.id == draggingItemKey → elevated Card/border, gra
 ## Main screen wiring
 
 - `StationListActions` (`MainScreen.kt`) bundles the 8 list callbacks; `MainActivity` builds a partial instance and `MainScreen` `.copy()`s in `onStationShareClick`/`onStationItemPlayClick` (they need Compose state). `MainScreen`'s own signature takes only `onAddStationClick`, `onPlayStation`, `onNowPlayingClick`, `playbackController`, `onResume`, plus `stationListActions`.
-- Metered-connection warning on a direct play tap only (the station row and its play icon) — ADR-0052, ADR-0062. **Settings screen** (`SettingsActivity`): General (language picker, metered warning, timeshift buffer size, "Disable battery optimization" via `util/BatteryOptimization.kt`), Backup (Export/Import — backup.md; "Restore curated stations" — ADR-0012), Support (feedback email/GitHub, version + update check — ADR-0014).
+- Metered-connection warning on a direct play tap only (the station row) — ADR-0052, ADR-0063. **Settings screen** (`SettingsActivity`): General (language picker, metered warning, timeshift buffer size, "Disable battery optimization" via `util/BatteryOptimization.kt`), Backup (Export/Import — backup.md; "Restore curated stations" — ADR-0012), Support (feedback email/GitHub, version + update check — ADR-0014).
 - Swipe-to-reveal hint on the first curated station — ADR-0013.
 
 ## Accessibility (TalkBack)
 
-- One `PlaybackStatus` → spoken-label mapping, live-region track title, merge only the name+status column — ADR-0053. That column's click action is labeled Pause or Play to match the row tap; the play/pause icon stays its own stop (ADR-0062).
+- One `PlaybackStatus` → spoken-label mapping, live-region track title, merge only the name+status column — ADR-0053. The station card's click is labeled Pause or Play (ADR-0063).
