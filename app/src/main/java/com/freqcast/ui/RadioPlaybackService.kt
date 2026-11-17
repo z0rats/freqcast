@@ -267,7 +267,10 @@ class RadioPlaybackService : MediaLibraryService() {
         timeshift = TimeshiftController(cacheDir)
         playbackStateStore = PlaybackStateStore(this)
         repository = RadioStationRepository.create(this)
-        browseTree = RadioBrowseTree(repository, getString(R.string.app_name))
+        browseTree =
+            RadioBrowseTree(repository, getString(R.string.app_name)) { customIcon ->
+                IconStorage.contentUri(this, customIcon)
+            }
         createNotificationChannel()
         initializePlayer()
         // Built immediately (not lazily on first startPlayback) so a MediaLibrarySession always
@@ -687,11 +690,11 @@ class RadioPlaybackService : MediaLibraryService() {
                 .setMediaId(streamUrl)
                 .setUri(streamUrl)
                 .setMediaMetadata(
-                    MediaMetadata
-                        .Builder()
-                        .setTitle(request.stationName ?: getString(R.string.unknown_station))
-                        .setArtist(getString(R.string.app_name))
-                        .build(),
+                    playbackMetadata(
+                        title = request.stationName ?: getString(R.string.unknown_station),
+                        artist = getString(R.string.app_name),
+                        customIcon = request.customIcon,
+                    ),
                 )
         // Explicit HLS type when URL doesn't end with .m3u8 (per ExoPlayer HLS guide)
         if (isHls && !streamUrl.lowercase().endsWith(".m3u8")) {
@@ -756,6 +759,61 @@ class RadioPlaybackService : MediaLibraryService() {
                 .setArtist(trackTitle)
                 .build()
         p.replaceMediaItem(p.currentMediaItemIndex, currentItem.buildUpon().setMediaMetadata(updatedMetadata).build())
+    }
+
+    /**
+     * Station title/artist plus a `content://` artwork URI when [customIcon] is a stored image.
+     * Android Auto reads that URI from another process, so the grant has to happen here, not only
+     * when the browse tree is served (ADR-0057). [MediaMetadata.buildUpon] on the track-title
+     * update keeps the URI.
+     */
+    private fun playbackMetadata(
+        title: String,
+        artist: String,
+        customIcon: String?,
+    ): MediaMetadata {
+        val metadata =
+            MediaMetadata
+                .Builder()
+                .setTitle(title)
+                .setArtist(artist)
+        IconStorage.contentUri(this, customIcon)?.let { uri ->
+            grantArtworkUri(uri)
+            metadata.setArtworkUri(uri)
+        }
+        return metadata.build()
+    }
+
+    /**
+     * Lets [readerPackage], connected session controllers, and Android Auto open [uri].
+     * Ignores any other URI: [onAddMediaItems] also sees items a controller attached itself.
+     */
+    private fun grantArtworkUri(
+        uri: Uri,
+        readerPackage: String? = null,
+    ) {
+        if (!IconStorage.isOwnContentUri(uri)) return
+        val readers =
+            buildSet {
+                add(ANDROID_AUTO_PACKAGE)
+                if (!readerPackage.isNullOrBlank()) add(readerPackage)
+                mediaSession?.connectedControllers?.forEach { controller ->
+                    if (controller.packageName.isNotBlank()) add(controller.packageName)
+                }
+            }
+        readers.forEach { pkg ->
+            runCatching { grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                .onFailure { error -> Log.w(TAG, "artwork grant failed for $pkg", error) }
+        }
+    }
+
+    private fun grantArtwork(
+        readerPackage: String,
+        items: Iterable<MediaItem>,
+    ) {
+        items.forEach { item ->
+            item.mediaMetadata.artworkUri?.let { grantArtworkUri(it, readerPackage) }
+        }
     }
 
     private fun registerNetworkCallback() {
@@ -1135,7 +1193,11 @@ class RadioPlaybackService : MediaLibraryService() {
             if (!browseTree.isRoot(parentId)) {
                 return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
             }
-            return serviceScope.future { LibraryResult.ofItemList(loadBrowsableStations(), params) }
+            return serviceScope.future {
+                val items = loadBrowsableStations()
+                grantArtwork(browser.packageName, items)
+                LibraryResult.ofItemList(items, params)
+            }
         }
 
         override fun onGetItem(
@@ -1148,6 +1210,7 @@ class RadioPlaybackService : MediaLibraryService() {
             }
             val item = browseTree.mediaItemFor(mediaId)
             return if (item != null) {
+                grantArtwork(browser.packageName, listOf(item))
                 Futures.immediateFuture(LibraryResult.ofItem(item, null))
             } else {
                 Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
@@ -1168,7 +1231,9 @@ class RadioPlaybackService : MediaLibraryService() {
         ): ListenableFuture<LibraryResult<Void>> =
             serviceScope.future {
                 loadBrowsableStations()
-                session.notifySearchResultChanged(browser, query, browseTree.search(query).size, params)
+                val results = browseTree.search(query)
+                grantArtwork(browser.packageName, results)
+                session.notifySearchResultChanged(browser, query, results.size, params)
                 LibraryResult.ofVoid()
             }
 
@@ -1181,7 +1246,9 @@ class RadioPlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
             serviceScope.future {
-                LibraryResult.ofItemList(browseTree.search(query), params)
+                val results = browseTree.search(query)
+                grantArtwork(browser.packageName, results)
+                LibraryResult.ofItemList(results, params)
             }
 
         override fun onAddMediaItems(
@@ -1195,27 +1262,33 @@ class RadioPlaybackService : MediaLibraryService() {
             // our metadata stamped on — an empty list is Media3's "failed to resolve" contract.
             serviceScope.future {
                 val resolved = resolveBrowseTap(mediaItems)
-                if (resolved.isNotEmpty()) {
-                    resolved
-                } else {
-                    mediaItems
-                        .map { item ->
-                            item
-                                .buildUpon()
-                                .setMediaMetadata(
-                                    item.mediaMetadata
-                                        .buildUpon()
-                                        .setTitle(currentRequest?.stationName ?: getString(R.string.unknown_station))
-                                        .setArtist(getString(R.string.app_name))
-                                        .build(),
-                                ).build()
-                        }.toMutableList()
-                }
+                val items =
+                    if (resolved.isNotEmpty()) {
+                        resolved
+                    } else {
+                        mediaItems
+                            .map { item ->
+                                item
+                                    .buildUpon()
+                                    .setMediaMetadata(
+                                        item.mediaMetadata
+                                            .buildUpon()
+                                            .setTitle(
+                                                currentRequest?.stationName
+                                                    ?: getString(R.string.unknown_station),
+                                            ).setArtist(getString(R.string.app_name))
+                                            .build(),
+                                    ).build()
+                            }.toMutableList()
+                    }
+                grantArtwork(controller.packageName, items)
+                items
             }
     }
 
     companion object {
         private const val TAG = "RadioPlayback"
+        private const val ANDROID_AUTO_PACKAGE = "com.google.android.projection.gearhead"
 
         /** Rewind amount for both the in-app button and the [TimeshiftSeekPlayer]-routed system seek controls. */
         const val TIMESHIFT_SEEK_BACK_MS = 5000L

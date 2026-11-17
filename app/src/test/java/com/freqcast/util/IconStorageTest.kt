@@ -46,6 +46,25 @@ class IconStorageTest {
     }
 
     @Test
+    fun `contentUri is null for an emoji, a missing file, and a file outside station_icons`() {
+        val outside = File(context.cacheDir, "not_an_icon.jpg").apply { writeText("x") }
+
+        assertNull(IconStorage.contentUri(context, null))
+        assertNull(IconStorage.contentUri(context, "📻"))
+        assertNull(IconStorage.contentUri(context, "/no/such/station_icons/a.jpg"))
+        assertNull(IconStorage.contentUri(context, outside.absolutePath))
+    }
+
+    @Test
+    fun `isOwnContentUri matches only this app's fileprovider authority`() {
+        assertTrue(
+            IconStorage.isOwnContentUri(Uri.parse("content://com.freqcast.fileprovider/station_icons/a.jpg")),
+        )
+        assertFalse(IconStorage.isOwnContentUri(Uri.parse("content://other.authority/station_icons/a.jpg")))
+        assertFalse(IconStorage.isOwnContentUri(Uri.parse("file:///data/station_icons/a.jpg")))
+    }
+
+    @Test
     fun `isImagePath is true only for absolute file paths, not emoji strings`() {
         assertTrue(IconStorage.isImagePath("/data/user/0/com.freqcast/files/station_icons/a.jpg"))
         assertFalse(IconStorage.isImagePath("📻"))

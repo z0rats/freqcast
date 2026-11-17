@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="backups" path="backups/" />
     <cache-path name="clips" path="clips/" />
+    <files-path name="station_icons" path="station_icons/" />
 </paths>

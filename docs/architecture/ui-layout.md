@@ -22,7 +22,7 @@ render: isDragging = station.id == draggingItemKey → elevated Card/border, gra
 
 ## Station icons
 
-- `RadioStation.customIcon` = emoji or image file path (leading `/` is `IconStorage.isImagePath()`'s discriminator; every render site falls back to the emoji if the file is missing). Default: `util/EmojiGenerator`. Override via `ui/components/StationIconPickerDialog.kt` (emoji, or photo picker → `IconStorage.saveImage()` ≤512px JPEG in `filesDir/station_icons/`). Shown in `StationCard`, `PlaybackScreen`'s `StationArt`, the notification large icon (`getCurrentLargeIcon()`); not in the mini-player cards (width goes to the name). `AddStationViewModel` deletes only the *replaced* file, only once `save()` commits — no cleanup on cancel (accepted orphan leak). Directory favicons backfill async (discovery.md); curated icons are bundled (ADR-0012).
+- `RadioStation.customIcon` = emoji or image file path (leading `/` is `IconStorage.isImagePath()`'s discriminator; every render site falls back to the emoji if the file is missing). Default: `util/EmojiGenerator`. Override via `ui/components/StationIconPickerDialog.kt` (emoji, or photo picker → `IconStorage.saveImage()` ≤512px JPEG in `filesDir/station_icons/`). Shown in `StationCard`, `PlaybackScreen`'s `StationArt`, the notification large icon (`getCurrentLargeIcon()`), and — for a file icon only — Android Auto via `artworkUri` (ADR-0057); not in the mini-player cards (width goes to the name). `AddStationViewModel` deletes only the *replaced* file, only once `save()` commits — no cleanup on cancel (accepted orphan leak). Directory favicons backfill async (discovery.md); curated icons are bundled (ADR-0012).
 
 ## Theming & dimens
 

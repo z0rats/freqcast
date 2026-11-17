@@ -42,6 +42,7 @@ notification skip ──switchToAdjacentStation──┴────────
 - `MediaLibraryService`, manifest/binding/session-in-`onCreate` requirements — ADR-0028. Flat browse tree via `onGetLibraryRoot`/`onGetChildren`/`onGetItem`.
 - `buildMediaSession()` vs reentrant `applyPlayback()`; Auto taps never rebuild the session — ADR-0028. When `buildMediaSession(null)` runs (from `onCreate`), the session's `sessionActivity` intent carries no station extras; `PlaybackActivity` reads the live station once bound.
 - Auto `onAddMediaItems` → `resolveBrowseTap()` (reload browse cache on a miss; legacy `playFromMediaId` has no URI) and `TimeshiftSeekPlayer` swallows the session's follow-up `setMediaItems` — ADR-0055.
+- A file `customIcon` is attached as `artworkUri` (`IconStorage.contentUri`, `filesDir/station_icons/` via the existing FileProvider) on browse items and on the playing item. Read is granted to the browsing controller and to `com.google.android.projection.gearhead`. Emoji-only stations have no Auto artwork — ADR-0057.
 
 ## Home screen widget
 

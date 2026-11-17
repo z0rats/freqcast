@@ -5,7 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import androidx.core.content.FileProvider
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 /**
@@ -21,7 +23,43 @@ object IconStorage {
     private const val ICONS_DIR = "station_icons"
     private const val MAX_DIMENSION_PX = 512
 
+    // Must match the authority declared for the FileProvider in AndroidManifest.xml.
+    private const val FILE_PROVIDER_AUTHORITY = "com.freqcast.fileprovider"
+
     fun isImagePath(customIcon: String): Boolean = customIcon.startsWith("/")
+
+    /**
+     * `content://` URI Android Auto can load for a stored icon (ADR-0057). Null for an emoji, a
+     * missing file, or a path that is not a file directly inside this app's [ICONS_DIR].
+     */
+    fun contentUri(
+        context: Context,
+        customIcon: String?,
+    ): Uri? {
+        if (customIcon == null || !isImagePath(customIcon)) return null
+        val iconsDir =
+            try {
+                File(context.filesDir, ICONS_DIR).canonicalFile
+            } catch (e: IOException) {
+                return null
+            }
+        val iconFile =
+            try {
+                File(customIcon).canonicalFile
+            } catch (e: IOException) {
+                return null
+            }
+        if (!iconFile.isFile || iconFile.parentFile != iconsDir) return null
+        return try {
+            FileProvider.getUriForFile(context, FILE_PROVIDER_AUTHORITY, iconFile)
+        } catch (e: IllegalArgumentException) {
+            // Path is outside the roots in file_paths.xml. Same "no icon" outcome as a missing file.
+            null
+        }
+    }
+
+    /** True for a URI this app's FileProvider can grant, which is the only artwork Auto is given. */
+    fun isOwnContentUri(uri: Uri): Boolean = uri.authority == FILE_PROVIDER_AUTHORITY
 
     /** Downscales and copies the picked image into app-private storage; returns its absolute path, or null on failure. */
     fun saveImage(

@@ -1,5 +1,6 @@
 package com.freqcast.ui.playback
 
+import android.net.Uri
 import androidx.media3.common.util.UnstableApi
 import androidx.room.Room
 import com.freqcast.data.AppDatabase
@@ -80,6 +81,7 @@ class RadioBrowseTreeTest {
             assertEquals("Jazz FM", item?.mediaMetadata?.title.toString())
             assertEquals(true, item?.mediaMetadata?.isPlayable)
             assertEquals(false, item?.mediaMetadata?.isBrowsable)
+            assertNull(item?.mediaMetadata?.artworkUri)
 
             assertNull(tree.mediaItemFor("https://example.com/not-a-real-station"))
         }
@@ -96,6 +98,28 @@ class RadioBrowseTreeTest {
 
             assertEquals(1, results.size)
             assertEquals("https://example.com/jazz", results.single().mediaId)
+        }
+
+    @Test
+    fun `browsable item carries the artwork uri the resolver returns for that station icon`() =
+        runTest {
+            val icon = "/data/user/0/com.freqcast/files/station_icons/jazz.jpg"
+            val artwork = Uri.parse("content://com.freqcast.fileprovider/station_icons/jazz.jpg")
+            val withArt =
+                RadioBrowseTree(repository, "Freqcast") { customIcon ->
+                    if (customIcon == icon) artwork else null
+                }
+            repository.insertStation(
+                RadioStation(name = "Jazz FM", streamUrl = "https://example.com/jazz", customIcon = icon),
+            )
+            repository.insertStation(
+                RadioStation(name = "Talk", streamUrl = "https://example.com/talk", customIcon = "🎙️"),
+            )
+
+            val items = withArt.loadStations()
+
+            assertEquals(artwork, items[0].mediaMetadata.artworkUri)
+            assertNull(items[1].mediaMetadata.artworkUri)
         }
 
     @Test

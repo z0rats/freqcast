@@ -1,5 +1,6 @@
 package com.freqcast.ui.playback
 
+import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.freqcast.data.RadioStation
@@ -15,6 +16,7 @@ import com.freqcast.data.RadioStationRepository
 class RadioBrowseTree(
     private val repository: RadioStationRepository,
     private val appName: String,
+    private val artworkUriFor: (String?) -> Uri? = { null },
 ) {
     private var cachedStations: List<RadioStation> = emptyList()
 
@@ -57,21 +59,23 @@ class RadioBrowseTree(
             .filter { it.name.contains(query, ignoreCase = true) }
             .map { it.toBrowsableMediaItem() }
 
-    private fun RadioStation.toBrowsableMediaItem(): MediaItem =
-        MediaItem
+    private fun RadioStation.toBrowsableMediaItem(): MediaItem {
+        val metadata =
+            MediaMetadata
+                .Builder()
+                .setTitle(name)
+                .setArtist(appName)
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
+        artworkUriFor(customIcon)?.let(metadata::setArtworkUri)
+        return MediaItem
             .Builder()
             .setMediaId(streamUrl)
             .setUri(streamUrl)
-            .setMediaMetadata(
-                MediaMetadata
-                    .Builder()
-                    .setTitle(name)
-                    .setArtist(appName)
-                    .setIsBrowsable(false)
-                    .setIsPlayable(true)
-                    .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
-                    .build(),
-            ).build()
+            .setMediaMetadata(metadata.build())
+            .build()
+    }
 
     companion object {
         const val ROOT_ID = "root"
