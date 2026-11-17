@@ -1,0 +1,5 @@
+Android Auto now shows station logos on cards and the For you shelf instead of music-note placeholders. [#41](https://github.com/z0rats/freqcast/issues/41)
+
+Tap a station row to play or pause; tapping the playing station pauses it, and the play icon stays in place. [#40](https://github.com/z0rats/freqcast/issues/40)
+
+Station pages now use sharper favicons; transparent dark logos get a white background. Rough Radio joins the curated stations.
