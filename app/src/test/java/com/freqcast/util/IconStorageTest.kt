@@ -2,6 +2,7 @@ package com.freqcast.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -59,12 +60,49 @@ class IconStorageTest {
     }
 
     @Test
-    fun `isOwnContentUri matches only this app's fileprovider authority`() {
+    fun `isOwnContentUri matches only the station icon provider`() {
         assertTrue(
-            IconStorage.isOwnContentUri(Uri.parse("content://com.freqcast.fileprovider/station_icons/a.jpg")),
+            IconStorage.isOwnContentUri(
+                Uri.parse("content://com.freqcast.stationicons/icons/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jpg"),
+            ),
         )
-        assertFalse(IconStorage.isOwnContentUri(Uri.parse("content://other.authority/station_icons/a.jpg")))
+        assertFalse(IconStorage.isOwnContentUri(Uri.parse("content://com.freqcast.fileprovider/station_icons/a.jpg")))
+        assertFalse(IconStorage.isOwnContentUri(Uri.parse("content://other.authority/icons/a.jpg")))
         assertFalse(IconStorage.isOwnContentUri(Uri.parse("file:///data/station_icons/a.jpg")))
+    }
+
+    @Test
+    fun `artworkJpeg is null for an emoji and returns the stored jpeg when it is already small`() {
+        assertNull(IconStorage.artworkJpeg(context, null))
+        assertNull(IconStorage.artworkJpeg(context, "📻"))
+
+        val path = IconStorage.saveImage(context, sourceUriFor(64, 64))!!
+        val bytes = IconStorage.artworkJpeg(context, path)
+        assertNotNull(bytes)
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes!!.size)
+        assertNotNull(decoded)
+        assertEquals(64, decoded!!.width)
+        assertEquals(64, decoded.height)
+    }
+
+    @Test
+    fun `artworkJpeg downscales an icon above the auto card limit`() {
+        val path = IconStorage.saveImage(context, sourceUriFor(512, 512))!!
+
+        val bytes = IconStorage.artworkJpeg(context, path)!!
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+
+        assertTrue(decoded.width <= IconStorage.AUTO_ARTWORK_MAX_PX)
+        assertTrue(decoded.height <= IconStorage.AUTO_ARTWORK_MAX_PX)
+        assertTrue(decoded.width > 0)
+    }
+
+    @Test
+    fun `contentUri is null for a file in station_icons whose name is not a uuid jpg`() {
+        val dir = File(context.filesDir, "station_icons").apply { mkdirs() }
+        val file = File(dir, "logo.jpg").apply { writeBytes(byteArrayOf(1)) }
+
+        assertNull(IconStorage.contentUri(context, file.absolutePath))
     }
 
     @Test
@@ -208,6 +246,7 @@ class IconStorageTest {
 
     private fun pngBytes(draw: (Bitmap) -> Unit): ByteArray {
         val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.TRANSPARENT)
         draw(bitmap)
         return ByteArrayOutputStream().use { out ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)

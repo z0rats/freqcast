@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- station_icons/ is served by StationIconProvider, not this FileProvider (ADR-0058). -->
     <cache-path name="backups" path="backups/" />
     <cache-path name="clips" path="clips/" />
-    <files-path name="station_icons" path="station_icons/" />
 </paths>

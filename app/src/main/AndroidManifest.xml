@@ -123,6 +123,15 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <!-- Station logos only. Exported, no read permission (ADR-0061). openFile rejects
+             every path that is not one UUID.jpg directly inside filesDir/station_icons.
+             query returns OpenableColumns. Backups and clips stay on the unexported
+             FileProvider above. -->
+        <provider
+            android:name=".util.StationIconProvider"
+            android:authorities="${applicationId}.stationicons"
+            android:exported="true"
+            android:grantUriPermissions="true" />
     </application>
 
 </manifest>

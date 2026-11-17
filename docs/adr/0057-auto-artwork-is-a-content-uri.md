@@ -1,6 +1,6 @@
 # ADR-0057: Android Auto station art is a FileProvider `content://` URI
 
-Status: Accepted · Area: playback / Auto
+Status: Superseded by ADR-0058 · Area: playback / Auto
 
 **Decision.** A station whose `customIcon` is a file under `filesDir/station_icons/` is exposed as `MediaMetadata.artworkUri` via the existing `com.freqcast.fileprovider` (`IconStorage.contentUri`). Browse items (`RadioBrowseTree`), the playing item (`applyPlayback`), and the ICY title update (which keeps the URI through `buildUpon`) all use it. `RadioPlaybackService` grants `FLAG_GRANT_READ_URI_PERMISSION` on those URIs only (`IconStorage.isOwnContentUri`) to the browsing controller, to every connected session controller, and to `com.google.android.projection.gearhead`. An emoji `customIcon` gets no artwork URI.
 

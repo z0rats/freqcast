@@ -123,6 +123,30 @@ class RadioBrowseTreeTest {
         }
 
     @Test
+    fun `browsable item carries artwork bytes when the resolver returns them`() =
+        runTest {
+            val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+            val withBytes =
+                RadioBrowseTree(
+                    repository,
+                    "Freqcast",
+                    artworkDataFor = { customIcon -> if (customIcon == "/icons/a.jpg") jpeg else null },
+                )
+            repository.insertStation(
+                RadioStation(name = "Jazz FM", streamUrl = "https://example.com/jazz", customIcon = "/icons/a.jpg"),
+            )
+            repository.insertStation(
+                RadioStation(name = "Talk", streamUrl = "https://example.com/talk", customIcon = "🎙️"),
+            )
+
+            val items = withBytes.loadStations()
+
+            assertTrue(jpeg.contentEquals(items[0].mediaMetadata.artworkData))
+            assertNull(items[1].mediaMetadata.artworkData)
+            assertNull(items[0].mediaMetadata.artworkUri)
+        }
+
+    @Test
     fun `search returns nothing before loadStations has ever been called`() {
         assertEquals(emptyList<Any>(), tree.search("anything"))
     }

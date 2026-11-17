@@ -52,6 +52,7 @@ import com.freqcast.ui.playback.SettingsStore
 import com.freqcast.ui.playback.SleepTimerController
 import com.freqcast.ui.playback.TimeshiftController
 import com.freqcast.ui.playback.WidgetStateStore
+import com.freqcast.ui.playback.setAutoArtwork
 import com.freqcast.util.EmojiGenerator
 import com.freqcast.util.IconStorage
 import com.freqcast.util.STREAM_USER_AGENT
@@ -268,9 +269,12 @@ class RadioPlaybackService : MediaLibraryService() {
         playbackStateStore = PlaybackStateStore(this)
         repository = RadioStationRepository.create(this)
         browseTree =
-            RadioBrowseTree(repository, getString(R.string.app_name)) { customIcon ->
-                IconStorage.contentUri(this, customIcon)
-            }
+            RadioBrowseTree(
+                repository,
+                getString(R.string.app_name),
+                artworkDataFor = { customIcon -> IconStorage.artworkJpeg(this, customIcon) },
+                artworkUriFor = { customIcon -> IconStorage.contentUri(this, customIcon) },
+            )
         createNotificationChannel()
         initializePlayer()
         // Built immediately (not lazily on first startPlayback) so a MediaLibrarySession always
@@ -762,10 +766,10 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     /**
-     * Station title/artist plus a `content://` artwork URI when [customIcon] is a stored image.
-     * Android Auto reads that URI from another process, so the grant has to happen here, not only
-     * when the browse tree is served (ADR-0057). [MediaMetadata.buildUpon] on the track-title
-     * update keeps the URI.
+     * Station title/artist, a `content://` artwork URI, and the JPEG bytes, when [customIcon] is a
+     * stored image (ADR-0061). [MediaMetadata.buildUpon] on the track-title update keeps both.
+     * The bytes are what the legacy session puts in `ALBUM_ART` / `DISPLAY_ICON` without opening
+     * the URI; For you snapshots that metadata.
      */
     private fun playbackMetadata(
         title: String,
@@ -777,16 +781,17 @@ class RadioPlaybackService : MediaLibraryService() {
                 .Builder()
                 .setTitle(title)
                 .setArtist(artist)
-        IconStorage.contentUri(this, customIcon)?.let { uri ->
-            grantArtworkUri(uri)
-            metadata.setArtworkUri(uri)
-        }
+        val artworkUri = IconStorage.contentUri(this, customIcon)
+        artworkUri?.let(::grantArtworkUri)
+        metadata.setAutoArtwork(artworkUri, IconStorage.artworkJpeg(this, customIcon))
         return metadata.build()
     }
 
     /**
-     * Lets [readerPackage], connected session controllers, and Android Auto open [uri].
-     * Ignores any other URI: [onAddMediaItems] also sees items a controller attached itself.
+     * Grants [readerPackage], connected session controllers, Android Auto, and the For you browser
+     * read access to [uri]. For you's card bitmap comes from [MediaMetadata.artworkData] (ADR-0061);
+     * the grant still covers a client that opens the URI. Ignores any other URI: [onAddMediaItems]
+     * also sees items a controller attached itself.
      */
     private fun grantArtworkUri(
         uri: Uri,
@@ -796,6 +801,7 @@ class RadioPlaybackService : MediaLibraryService() {
         val readers =
             buildSet {
                 add(ANDROID_AUTO_PACKAGE)
+                add(ANDROID_AUTO_FOR_YOU_PACKAGE)
                 if (!readerPackage.isNullOrBlank()) add(readerPackage)
                 mediaSession?.connectedControllers?.forEach { controller ->
                     if (controller.packageName.isNotBlank()) add(controller.packageName)
@@ -1289,6 +1295,9 @@ class RadioPlaybackService : MediaLibraryService() {
     companion object {
         private const val TAG = "RadioPlayback"
         private const val ANDROID_AUTO_PACKAGE = "com.google.android.projection.gearhead"
+
+        /** Browses the library to fill the system For you shelf. Not the projection host. */
+        private const val ANDROID_AUTO_FOR_YOU_PACKAGE = "com.google.android.googlequicksearchbox"
 
         /** Rewind amount for both the in-app button and the [TimeshiftSeekPlayer]-routed system seek controls. */
         const val TIMESHIFT_SEEK_BACK_MS = 5000L

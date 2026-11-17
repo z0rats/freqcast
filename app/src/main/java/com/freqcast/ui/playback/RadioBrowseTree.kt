@@ -16,6 +16,7 @@ import com.freqcast.data.RadioStationRepository
 class RadioBrowseTree(
     private val repository: RadioStationRepository,
     private val appName: String,
+    private val artworkDataFor: (String?) -> ByteArray? = { null },
     private val artworkUriFor: (String?) -> Uri? = { null },
 ) {
     private var cachedStations: List<RadioStation> = emptyList()
@@ -68,7 +69,7 @@ class RadioBrowseTree(
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
-        artworkUriFor(customIcon)?.let(metadata::setArtworkUri)
+        metadata.setAutoArtwork(artworkUriFor(customIcon), artworkDataFor(customIcon))
         return MediaItem
             .Builder()
             .setMediaId(streamUrl)
@@ -80,4 +81,13 @@ class RadioBrowseTree(
     companion object {
         const val ROOT_ID = "root"
     }
+}
+
+/** URI plus the JPEG bytes Android Auto's legacy browser turns into the card bitmap (ADR-0061). */
+internal fun MediaMetadata.Builder.setAutoArtwork(
+    uri: Uri?,
+    jpeg: ByteArray?,
+) {
+    uri?.let(::setArtworkUri)
+    jpeg?.let { setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER) }
 }

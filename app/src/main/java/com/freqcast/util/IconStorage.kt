@@ -7,7 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.net.Uri
 import android.util.Log
-import androidx.core.content.FileProvider
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -23,7 +23,15 @@ import java.util.UUID
 object IconStorage {
     private const val TAG = "IconStorage"
     private const val ICONS_DIR = "station_icons"
+    private const val ICONS_URI_SEGMENT = "icons"
     private const val MAX_DIMENSION_PX = 512
+
+    /**
+     * Largest side of the JPEG placed in [androidx.media3.common.MediaMetadata.artworkData].
+     * Media3 turns those bytes into one bitmap per browse item; a 512px icon is about a megabyte
+     * uncompressed and blows the binder transaction For you's child list travels in (ADR-0061).
+     */
+    internal const val AUTO_ARTWORK_MAX_PX = 256
 
     /**
      * Opaque pixels at least this bright are left on the JPEG's implicit black matte. Darker
@@ -34,26 +42,118 @@ object IconStorage {
     /** Below this share of pixels being transparent, the bitmap is treated as already opaque. */
     private const val MIN_TRANSPARENT_PERCENT = 5
 
-    // Must match the authority declared for the FileProvider in AndroidManifest.xml.
-    private const val FILE_PROVIDER_AUTHORITY = "com.freqcast.fileprovider"
+    /**
+     * Authority of [StationIconProvider]. Must match `${applicationId}.stationicons` in the manifest.
+     * Not the backup/clip FileProvider — that one stays unexported (ADR-0061).
+     */
+    internal const val ICON_CONTENT_AUTHORITY = "com.freqcast.stationicons"
+
+    /** `IconStorage.saveImage` writes `UUID.randomUUID().jpg`. Anything else is not a station icon. */
+    private val ICON_FILE_NAME =
+        Regex("""[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.jpg""")
 
     fun isImagePath(customIcon: String): Boolean = customIcon.startsWith("/")
 
     /**
-     * `content://` URI Android Auto can load for a stored icon (ADR-0057). Null for an emoji, a
-     * missing file, or a path that is not a file directly inside this app's [ICONS_DIR].
+     * `content://` URI Android Auto can load for a stored icon (ADR-0061). Null for an emoji, a
+     * missing file, a name that is not a UUID `.jpg`, or a path that is not a file directly
+     * inside this app's [ICONS_DIR].
      */
     fun contentUri(
         context: Context,
         customIcon: String?,
     ): Uri? {
-        if (customIcon == null || !isImagePath(customIcon)) return null
-        val iconsDir =
+        val iconFile = storedIconFile(context, customIcon) ?: return null
+        return iconContentUri(iconFile.name)
+    }
+
+    /** True for a URI [StationIconProvider] serves. */
+    fun isOwnContentUri(uri: Uri): Boolean = uri.authority == ICON_CONTENT_AUTHORITY
+
+    /**
+     * JPEG bytes for [androidx.media3.common.MediaMetadata.artworkData] (ADR-0061). Same acceptance
+     * rules as [contentUri]. A file already within [AUTO_ARTWORK_MAX_PX] is returned as stored;
+     * anything larger is decoded and recompressed so the legacy browser's bitmap stays small.
+     * Null when the file is missing or is not a decodable image.
+     */
+    fun artworkJpeg(
+        context: Context,
+        customIcon: String?,
+    ): ByteArray? {
+        val iconFile = storedIconFile(context, customIcon) ?: return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(iconFile.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        if (bounds.outWidth <= AUTO_ARTWORK_MAX_PX && bounds.outHeight <= AUTO_ARTWORK_MAX_PX) {
+            return iconFile.readBytes()
+        }
+        var sampleSize = 1
+        while (
+            bounds.outWidth / sampleSize > AUTO_ARTWORK_MAX_PX ||
+            bounds.outHeight / sampleSize > AUTO_ARTWORK_MAX_PX
+        ) {
+            sampleSize *= 2
+        }
+        val decoded =
+            BitmapFactory.decodeFile(
+                iconFile.absolutePath,
+                BitmapFactory.Options().apply { inSampleSize = sampleSize },
+            ) ?: return null
+        val scaled = scaleDown(decoded, AUTO_ARTWORK_MAX_PX)
+        return try {
+            ByteArrayOutputStream().use { out ->
+                if (!scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)) {
+                    null
+                } else {
+                    out.toByteArray()
+                }
+            }
+        } finally {
+            if (scaled !== decoded) scaled.recycle()
+            decoded.recycle()
+        }
+    }
+
+    internal fun iconContentUri(fileName: String): Uri =
+        Uri
+            .Builder()
+            .scheme("content")
+            .authority(ICON_CONTENT_AUTHORITY)
+            .appendPath(ICONS_URI_SEGMENT)
+            .appendPath(fileName)
+            .build()
+
+    /**
+     * The JPEG [uri] may open, or null. Rejects every other authority, a path that is not
+     * `icons/<uuid>.jpg`, and any file whose canonical path is not that name directly inside
+     * [ICONS_DIR] — traversal, a symlink out of the directory, a missing file.
+     */
+    internal fun fileForIconUri(
+        context: Context,
+        uri: Uri,
+    ): File? {
+        if (uri.authority != ICON_CONTENT_AUTHORITY) return null
+        val segments = uri.pathSegments
+        if (segments.size != 2 || segments[0] != ICONS_URI_SEGMENT) return null
+        val name = segments[1]
+        if (!ICON_FILE_NAME.matches(name)) return null
+        val iconsDir = canonicalIconsDir(context) ?: return null
+        val file =
             try {
-                File(context.filesDir, ICONS_DIR).canonicalFile
+                File(iconsDir, name).canonicalFile
             } catch (e: IOException) {
                 return null
             }
+        if (file.parentFile != iconsDir || !file.isFile) return null
+        return file
+    }
+
+    private fun storedIconFile(
+        context: Context,
+        customIcon: String?,
+    ): File? {
+        if (customIcon == null || !isImagePath(customIcon)) return null
+        val iconsDir = canonicalIconsDir(context) ?: return null
         val iconFile =
             try {
                 File(customIcon).canonicalFile
@@ -61,16 +161,16 @@ object IconStorage {
                 return null
             }
         if (!iconFile.isFile || iconFile.parentFile != iconsDir) return null
-        return try {
-            FileProvider.getUriForFile(context, FILE_PROVIDER_AUTHORITY, iconFile)
-        } catch (e: IllegalArgumentException) {
-            // Path is outside the roots in file_paths.xml. Same "no icon" outcome as a missing file.
-            null
-        }
+        if (!ICON_FILE_NAME.matches(iconFile.name)) return null
+        return iconFile
     }
 
-    /** True for a URI this app's FileProvider can grant, which is the only artwork Auto is given. */
-    fun isOwnContentUri(uri: Uri): Boolean = uri.authority == FILE_PROVIDER_AUTHORITY
+    private fun canonicalIconsDir(context: Context): File? =
+        try {
+            File(context.filesDir, ICONS_DIR).canonicalFile
+        } catch (e: IOException) {
+            null
+        }
 
     /** Downscales and copies the picked image into app-private storage; returns its absolute path, or null on failure. */
     fun saveImage(
@@ -163,7 +263,8 @@ object IconStorage {
      * absolute path. Shared by [persistDownscaled] (whose [decodeSampledBitmap] already downscaled
      * during decode, so this is a no-op there) and [saveImageBytes]' `.ico` path, whose
      * [IcoDecoder] output is decoded at full size and hasn't been downscaled yet.
-     * A transparent dark mark is matted onto white first (ADR-0059). The file stays a `.jpg`.
+     * A transparent dark mark is matted onto white first (ADR-0059) — the file stays a `.jpg`,
+     * which is the only name [contentUri] will hand to Android Auto.
      */
     private fun persistBitmap(
         context: Context,
@@ -185,9 +286,9 @@ object IconStorage {
 
     /**
      * JPEG has no alpha, and a decoded PNG stores transparent pixels as black. A dark mark on
-     * that background compresses to a solid black disc, which the station list then clips to a
-     * circle. Composite those onto white. A light mark already reads against the black and is
-     * left as-is; a mostly opaque photo is left as-is too.
+     * that background (a sunburst favicon, a mask icon) compresses to a solid black disc, which
+     * the station list then clips to a circle. Composite those onto white. A light mark already
+     * reads against the black and is left as-is; a mostly opaque photo is left as-is too.
      */
     private fun matteDarkTransparentMark(bitmap: Bitmap): Bitmap {
         if (!bitmap.hasAlpha()) return bitmap
@@ -225,9 +326,14 @@ object IconStorage {
         return (red * 30 + green * 59 + blue * 11) / 100
     }
 
-    private fun downscaleIfNeeded(bitmap: Bitmap): Bitmap {
-        if (bitmap.width <= MAX_DIMENSION_PX && bitmap.height <= MAX_DIMENSION_PX) return bitmap
-        val scale = MAX_DIMENSION_PX.toFloat() / maxOf(bitmap.width, bitmap.height)
+    private fun downscaleIfNeeded(bitmap: Bitmap): Bitmap = scaleDown(bitmap, MAX_DIMENSION_PX)
+
+    private fun scaleDown(
+        bitmap: Bitmap,
+        maxPx: Int,
+    ): Bitmap {
+        if (bitmap.width <= maxPx && bitmap.height <= maxPx) return bitmap
+        val scale = maxPx.toFloat() / maxOf(bitmap.width, bitmap.height)
         val newWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
         val newHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)

@@ -88,5 +88,7 @@ Where a reason was never written down, say `*reason not recorded*` instead of in
 | [0054](0054-curated-stations-read-only.md) | Curated stations can't be edited | data / ui |
 | [0055](0055-auto-tap-returns-resolved-media-item.md) | Auto taps return the resolved `MediaItem`; the session player swallows the follow-up `setMediaItems` | playback / Auto |
 | [0056](0056-media-session-service-owns-start-command.md) | Always forward `MediaSessionService.onStartCommand`; `PlayerNotificationManager` owns the notification | playback / Auto |
-| [0057](0057-auto-artwork-is-a-content-uri.md) | Android Auto station art is a FileProvider `content://` URI | playback / Auto |
+| [0057](0057-auto-artwork-is-a-content-uri.md) | Superseded by ADR-0058. Was: Auto art is a FileProvider `content://` URI plus a read grant | playback / Auto |
+| [0058](0058-auto-artwork-provider-is-exported.md) | Superseded by ADR-0061. Was: Auto station art is an exported station-icon content URI | playback / Auto |
 | [0059](0059-favicon-rank-and-matte.md) | Favicon links are ranked, and a transparent dark mark is matted onto white before JPEG | discovery |
+| [0061](0061-auto-for-you-artwork-includes-jpeg-bytes.md) | For you art is a 256px JPEG in `artworkData` plus the exported station-icon URI | playback / Auto |
