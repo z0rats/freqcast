@@ -2,6 +2,9 @@ package com.freqcast.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -201,5 +204,59 @@ class IconStorageTest {
         val decoded = IconStorage.decodeBitmap(path)
         assertNotNull(decoded)
         assertEquals(32, decoded!!.width)
+    }
+
+    private fun pngBytes(draw: (Bitmap) -> Unit): ByteArray {
+        val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        draw(bitmap)
+        return ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            bitmap.recycle()
+            out.toByteArray()
+        }
+    }
+
+    @Test
+    fun `saveImageBytes mattes a transparent dark mark onto white`() {
+        val bytes =
+            pngBytes { bitmap ->
+                Canvas(bitmap).drawCircle(16f, 16f, 6f, Paint().apply { color = Color.BLACK })
+            }
+
+        val decoded = IconStorage.decodeBitmap(IconStorage.saveImageBytes(context, bytes)!!)!!
+        val corner = decoded.getPixel(0, 0)
+        val center = decoded.getPixel(decoded.width / 2, decoded.height / 2)
+
+        assertTrue(Color.red(corner) > 200 && Color.green(corner) > 200 && Color.blue(corner) > 200)
+        assertTrue(Color.red(center) < 40 && Color.green(center) < 40 && Color.blue(center) < 40)
+    }
+
+    @Test
+    fun `saveImageBytes leaves a transparent light mark on the black jpeg matte`() {
+        val bytes =
+            pngBytes { bitmap ->
+                Canvas(bitmap).drawCircle(16f, 16f, 6f, Paint().apply { color = Color.WHITE })
+            }
+
+        val decoded = IconStorage.decodeBitmap(IconStorage.saveImageBytes(context, bytes)!!)!!
+        val corner = decoded.getPixel(0, 0)
+        val center = decoded.getPixel(decoded.width / 2, decoded.height / 2)
+
+        assertTrue(Color.red(corner) < 40 && Color.green(corner) < 40 && Color.blue(corner) < 40)
+        assertTrue(Color.red(center) > 200 && Color.green(center) > 200 && Color.blue(center) > 200)
+    }
+
+    @Test
+    fun `saveImageBytes does not matte an opaque image`() {
+        val bytes =
+            pngBytes { bitmap ->
+                bitmap.eraseColor(Color.RED)
+            }
+
+        val decoded = IconStorage.decodeBitmap(IconStorage.saveImageBytes(context, bytes)!!)!!
+        val corner = decoded.getPixel(0, 0)
+
+        assertTrue(Color.red(corner) > 200)
+        assertTrue(Color.green(corner) < 40 && Color.blue(corner) < 40)
     }
 }

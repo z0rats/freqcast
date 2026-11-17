@@ -462,33 +462,44 @@ class StationUrlResolver(
         JSON_ICON_KEY_REGEX.find(body.replace("\\/", "/"))?.groupValues?.get(1)
 
     /**
-     * A candidate favicon for [baseUrl]'s page: one of its `<link rel="icon">`/`<link
-     * rel="shortcut icon">`/`<link rel="apple-touch-icon">` tags, resolved to an absolute URL. Not
-     * verified reachable - the caller (favicon download) treats a 404 the same as never having
-     * found a candidate at all. Unlike a stream URL, a favicon is never guessed at a standard path
-     * (e.g. `/favicon.ico`) without the page actually declaring one - most of this class's other
-     * candidate sources rely on convention because there's no alternative, but here the page
-     * itself is already in hand, so acting only on what it actually says avoids firing requests at
-     * hosts that were never confirmed to serve anything at that path.
+     * A candidate favicon for [baseUrl]'s page: one `<link>` whose `rel` contains `icon`
+     * (`icon`, `shortcut icon`, `apple-touch-icon`, `mask-icon`), resolved to an absolute URL.
+     * Not verified reachable — the caller (favicon download) treats a 404 the same as never
+     * having found a candidate at all. Unlike a stream URL, a favicon is never guessed at a
+     * standard path (e.g. `/favicon.ico`) without the page actually declaring one.
      *
-     * A page listing several of these (common: a plain `.ico` for old browsers plus a PNG
-     * `apple-touch-icon` for everything else) prefers the first non-`.ico` one - [IconStorage]
-     * can decode a `.ico` favicon itself now, but a real PNG the page already offers is one less
-     * thing that can go wrong, and still the only option for the handful of `.ico` variants
-     * (indexed palettes, compressed DIBs) [IcoDecoder] doesn't cover.
+     * Several links are ranked, not taken in document order (ADR-0059). A mask icon, a
+     * `prefers-color-scheme: dark` icon, an SVG, and a `.ico` all lose to a PNG/JPEG/WebP; a
+     * declared size of 16px or less loses to a larger (or unsized) one; otherwise the larger
+     * `sizes` / `imagesrcset` candidate wins. Ties keep the earlier link. The bytes are not
+     * inspected here — [com.freqcast.util.IconStorage] is what keeps a transparent dark mark
+     * from flattening to black when it is stored as a JPEG.
      */
     internal fun extractFavicon(
         html: String,
         baseUrl: String,
     ): String? {
-        val candidates =
-            FAVICON_LINK_REGEX
-                .findAll(html)
-                .mapNotNull { HREF_REGEX.find(it.value)?.groupValues?.get(1) }
-                .mapNotNull { resolveAgainst(it, baseUrl) }
-                .toList()
-        return candidates.firstOrNull { !it.substringBefore('?').endsWith(".ico", ignoreCase = true) }
-            ?: candidates.firstOrNull()
+        var bestScore = Int.MIN_VALUE
+        var bestUrl: String? = null
+        FAVICON_LINK_REGEX.findAll(html).forEach { match ->
+            val attrs = linkAttributes(match.value)
+            val rel = attrs["rel"].orEmpty()
+            val type = attrs["type"].orEmpty()
+            val media = attrs["media"].orEmpty()
+            val declaredSize = parseIconSize(attrs["sizes"].orEmpty())
+            val refs = mutableListOf<Pair<String, Int?>>()
+            attrs["href"]?.let { refs += it to declaredSize }
+            attrs["imagesrcset"]?.let { refs += parseImageSrcSet(it) }
+            refs.forEach { (ref, sizePx) ->
+                val url = resolveAgainst(ref, baseUrl) ?: return@forEach
+                val score = faviconScore(rel, type, media, url, sizePx)
+                if (score > bestScore) {
+                    bestScore = score
+                    bestUrl = url
+                }
+            }
+        }
+        return bestUrl
     }
 
     /** The homepage's own `<title>`, a decent default station name for a page with no better one. */
@@ -827,7 +838,91 @@ class StationUrlResolver(
         private val IFRAME_SRC_REGEX = Regex("""<iframe\b[^>]*\bsrc=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         private val FAVICON_LINK_REGEX =
             Regex("""<link\b[^>]*\brel=["'][^"']*icon[^"']*["'][^>]*>""", RegexOption.IGNORE_CASE)
-        private val HREF_REGEX = Regex("""\bhref=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        private val LINK_ATTR_REGEX =
+            Regex("""([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+        private val ICON_SIZE_REGEX = Regex("""(\d+)\s*x\s*\d+""", RegexOption.IGNORE_CASE)
+
+        private fun linkAttributes(tag: String): Map<String, String> {
+            val attrs = mutableMapOf<String, String>()
+            LINK_ATTR_REGEX.findAll(tag).forEach { match ->
+                val value = match.groupValues[2].ifEmpty { match.groupValues[3] }
+                attrs[match.groupValues[1].lowercase()] = value
+            }
+            return attrs
+        }
+
+        /** Largest `NxN` in a `sizes` attribute, or 256 for `any`. Null when the attribute is empty. */
+        private fun parseIconSize(sizes: String): Int? {
+            if (sizes.isBlank()) return null
+            if (sizes.equals("any", ignoreCase = true)) return 256
+            return ICON_SIZE_REGEX
+                .findAll(sizes)
+                .mapNotNull { it.groupValues[1].toIntOrNull() }
+                .maxOrNull()
+                ?.takeIf { it > 0 }
+        }
+
+        /** `192w` → 192, `2x` → 96. Anything else is an unsized candidate. */
+        private fun srcSetSize(descriptor: String?): Int? {
+            if (descriptor == null) return null
+            val number = descriptor.dropLast(1)
+            return when {
+                descriptor.endsWith("w") -> number.toIntOrNull()
+                descriptor.endsWith("x") -> number.toDoubleOrNull()?.times(48.0)?.toInt()
+                else -> null
+            }
+        }
+
+        /** `imagesrcset` entries as a URL to a pixel size (`192w`, or a `2x` density times 48). */
+        private fun parseImageSrcSet(srcset: String): List<Pair<String, Int?>> =
+            srcset.split(',').mapNotNull { part ->
+                val tokens = part.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
+                val url = tokens.firstOrNull() ?: return@mapNotNull null
+                val descriptor = tokens.getOrNull(1)?.lowercase()
+                url to srcSetSize(descriptor)
+            }
+
+        /**
+         * Higher is a better station icon. Penalties stack, so a mask-icon SVG still loses to a
+         * small PNG, and a dark-mode PNG still loses to a light one of any reasonable size.
+         * A negative score is still returned: a page whose only icon is a mask or an SVG keeps
+         * that URL rather than ending up with none.
+         */
+        private fun faviconScore(
+            rel: String,
+            type: String,
+            media: String,
+            url: String,
+            sizePx: Int?,
+        ): Int {
+            val relL = rel.lowercase()
+            val typeL = type.lowercase()
+            val mediaL = media.lowercase()
+            val path = url.substringBefore('?').substringBefore('#').lowercase()
+            var score = 0
+            if ("mask-icon" in relL) score -= 2_000
+            if ("prefers-color-scheme" in mediaL && "dark" in mediaL) score -= 800
+            val svg = "svg" in typeL || path.endsWith(".svg")
+            val ico = path.endsWith(".ico") || "x-icon" in typeL || "vnd.microsoft.icon" in typeL
+            if (svg) score -= 1_000
+            if (ico) score -= 500
+            score +=
+                when {
+                    sizePx == null -> 48
+                    sizePx <= 16 -> -300 + sizePx
+                    else -> sizePx.coerceAtMost(256)
+                }
+            val rasterExt =
+                path.endsWith(".png") ||
+                    path.endsWith(".jpg") ||
+                    path.endsWith(".jpeg") ||
+                    path.endsWith(".webp") ||
+                    path.endsWith(".gif")
+            val rasterType = "png" in typeL || "jpeg" in typeL || "webp" in typeL || "gif" in typeL
+            if (!svg && !ico && (rasterExt || rasterType)) score += 30
+            if ("apple-touch-icon" in relL) score += 10
+            return score
+        }
 
         /**
          * Hosts an `<iframe>` on a station's homepage is essentially never a player widget for -

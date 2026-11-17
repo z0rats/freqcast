@@ -426,6 +426,84 @@ class StationUrlResolverTest {
     }
 
     @Test
+    fun `extractFavicon prefers the largest png over a 32px icon and an unsized apple touch icon`() {
+        // The link set https://roughradio.live/ actually serves. All three files are the same
+        // black-on-transparent sunburst; the 32px one is what document order used to pick.
+        val html =
+            """
+            <html><head>
+            <link rel="icon" href="https://roughradio.live/wp-content/uploads/2025/10/cropped-logo-dashboard-copia-2-scaled-1-32x32.png" sizes="32x32" />
+            <link rel="icon" href="https://roughradio.live/wp-content/uploads/2025/10/cropped-logo-dashboard-copia-2-scaled-1-192x192.png" sizes="192x192" />
+            <link rel="apple-touch-icon" href="https://roughradio.live/wp-content/uploads/2025/10/cropped-logo-dashboard-copia-2-scaled-1-180x180.png" />
+            </head></html>
+            """.trimIndent()
+
+        assertEquals(
+            "https://roughradio.live/wp-content/uploads/2025/10/cropped-logo-dashboard-copia-2-scaled-1-192x192.png",
+            resolver().extractFavicon(html, "https://roughradio.live/"),
+        )
+    }
+
+    @Test
+    fun `extractFavicon takes the largest imagesrcset candidate rather than the href`() {
+        val html =
+            """
+            <html><head>
+            <link rel="icon" href="/icon-32.png" sizes="32x32" imagesrcset="/icon-32.png 32w, /icon-192.png 192w">
+            </head></html>
+            """.trimIndent()
+
+        assertEquals("https://myradio.test/icon-192.png", resolver().extractFavicon(html, "https://myradio.test/"))
+    }
+
+    @Test
+    fun `extractFavicon prefers a raster icon over a mask icon and an svg`() {
+        val html =
+            """
+            <html><head>
+            <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#000000">
+            <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+            <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
+            </head></html>
+            """.trimIndent()
+
+        assertEquals("https://myradio.test/favicon.png", resolver().extractFavicon(html, "https://myradio.test/"))
+    }
+
+    @Test
+    fun `extractFavicon prefers a light-mode icon over a dark-mode one`() {
+        val html =
+            """
+            <html><head>
+            <link rel="icon" href="/dark.png" type="image/png" media="(prefers-color-scheme: dark)">
+            <link rel="icon" href="/light.png" type="image/png" media="(prefers-color-scheme: light)">
+            </head></html>
+            """.trimIndent()
+
+        assertEquals("https://myradio.test/light.png", resolver().extractFavicon(html, "https://myradio.test/"))
+    }
+
+    @Test
+    fun `extractFavicon skips a 1x1 placeholder when a real size is declared`() {
+        val html =
+            """
+            <html><head>
+            <link rel="icon" href="/pixel.png" type="image/png" sizes="1x1">
+            <link rel="icon" href="/logo.png" type="image/png" sizes="64x64">
+            </head></html>
+            """.trimIndent()
+
+        assertEquals("https://myradio.test/logo.png", resolver().extractFavicon(html, "https://myradio.test/"))
+    }
+
+    @Test
+    fun `extractFavicon still returns a mask icon when the page declares nothing else`() {
+        val html = """<html><head><link rel="mask-icon" href="/pinned.svg" color="#000"></head></html>"""
+
+        assertEquals("https://myradio.test/pinned.svg", resolver().extractFavicon(html, "https://myradio.test/"))
+    }
+
+    @Test
     fun `resolve carries the scraped page's favicon link through`() =
         runTest {
             server.enqueue(

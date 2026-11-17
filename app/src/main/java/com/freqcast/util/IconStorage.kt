@@ -3,6 +3,8 @@ package com.freqcast.util
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
@@ -22,6 +24,15 @@ object IconStorage {
     private const val TAG = "IconStorage"
     private const val ICONS_DIR = "station_icons"
     private const val MAX_DIMENSION_PX = 512
+
+    /**
+     * Opaque pixels at least this bright are left on the JPEG's implicit black matte. Darker
+     * marks on a transparent bitmap are composited onto white instead (ADR-0059).
+     */
+    private const val DARK_MARK_LUMINANCE = 128
+
+    /** Below this share of pixels being transparent, the bitmap is treated as already opaque. */
+    private const val MIN_TRANSPARENT_PERCENT = 5
 
     // Must match the authority declared for the FileProvider in AndroidManifest.xml.
     private const val FILE_PROVIDER_AUTHORITY = "com.freqcast.fileprovider"
@@ -152,21 +163,66 @@ object IconStorage {
      * absolute path. Shared by [persistDownscaled] (whose [decodeSampledBitmap] already downscaled
      * during decode, so this is a no-op there) and [saveImageBytes]' `.ico` path, whose
      * [IcoDecoder] output is decoded at full size and hasn't been downscaled yet.
+     * A transparent dark mark is matted onto white first (ADR-0059). The file stays a `.jpg`.
      */
     private fun persistBitmap(
         context: Context,
         bitmap: Bitmap,
     ): String {
         val scaled = downscaleIfNeeded(bitmap)
+        val matted = matteDarkTransparentMark(scaled)
         val dir = File(context.filesDir, ICONS_DIR).apply { mkdirs() }
         val file = File(dir, "${UUID.randomUUID()}.jpg")
         try {
-            file.outputStream().use { out -> scaled.compress(Bitmap.CompressFormat.JPEG, 85, out) }
+            file.outputStream().use { out -> matted.compress(Bitmap.CompressFormat.JPEG, 85, out) }
         } finally {
-            if (scaled !== bitmap) bitmap.recycle()
-            scaled.recycle()
+            if (matted !== scaled) matted.recycle()
+            if (scaled !== bitmap) scaled.recycle()
+            bitmap.recycle()
         }
         return file.absolutePath
+    }
+
+    /**
+     * JPEG has no alpha, and a decoded PNG stores transparent pixels as black. A dark mark on
+     * that background compresses to a solid black disc, which the station list then clips to a
+     * circle. Composite those onto white. A light mark already reads against the black and is
+     * left as-is; a mostly opaque photo is left as-is too.
+     */
+    private fun matteDarkTransparentMark(bitmap: Bitmap): Bitmap {
+        if (!bitmap.hasAlpha()) return bitmap
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width == 0 || height == 0) return bitmap
+        var transparent = 0
+        var opaque = 0
+        var luminanceSum = 0L
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val color = bitmap.getPixel(x, y)
+                if (Color.alpha(color) < 16) {
+                    transparent++
+                } else {
+                    opaque++
+                    luminanceSum += luminance(color)
+                }
+            }
+        }
+        val samples = transparent + opaque
+        if (opaque == 0 || transparent * 100 / samples < MIN_TRANSPARENT_PERCENT) return bitmap
+        if (luminanceSum / opaque >= DARK_MARK_LUMINANCE) return bitmap
+        val matted = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(matted)
+        canvas.drawColor(Color.WHITE)
+        canvas.drawBitmap(bitmap, 0f, 0f, null)
+        return matted
+    }
+
+    private fun luminance(color: Int): Int {
+        val red = Color.red(color)
+        val green = Color.green(color)
+        val blue = Color.blue(color)
+        return (red * 30 + green * 59 + blue * 11) / 100
     }
 
     private fun downscaleIfNeeded(bitmap: Bitmap): Bitmap {
@@ -203,7 +259,12 @@ object IconStorage {
             sampleSize *= 2
         }
 
-        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val decodeOptions =
+            BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                // Default config can drop alpha. The matte in persistBitmap needs those pixels.
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
         return BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
     }
 }

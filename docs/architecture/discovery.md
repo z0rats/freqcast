@@ -35,6 +35,7 @@
 - **`data/StationUrlResolver.kt` is the entry point for anything pasted into `AddStationScreen`'s single URL field** (`stream_url` = "Stream or website URL"): staged pipeline probe → directory → HTML → linked scripts → iframes → WebView — ADR-0036. `internal resolveHomepage()` skips the probe so `StationUrlResolverTest`'s FIFO MockWebServer scripts don't have to account for it.
 - Directory match must be unique; ambiguity shows `CandidateStationPickerSheet` — ADR-0037.
 - VPN-blocked TLS gets `error_stream_blocked_vpn` from two signals — ADR-0035.
+- Favicon from the page: `StationUrlResolver.extractFavicon()` ranks every `<link>` whose `rel` contains `icon`, including each `imagesrcset` candidate, and returns one absolute URL (ADR-0059). A mask icon, a `prefers-color-scheme: dark` icon, an SVG, and a `.ico` lose to a PNG/JPEG/WebP; a declared size ≤16px loses to a larger or unsized one; otherwise the larger `sizes`/`w` wins. `IconStorage.saveImageBytes()` still stores a JPEG. A transparent mark whose opaque pixels are darker than mid-gray is composited onto white first — JPEG drops alpha, and those pixels are black, so a black-on-transparent site icon otherwise saves as a solid black disc (the list clips it to a circle). Light-on-transparent marks stay on that black. The in-page `og:image` is not a candidate.
 
 ## `util/WebViewStreamSniffer.kt` (stage 5)
 
